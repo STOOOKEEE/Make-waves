@@ -1,0 +1,29 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+.output/
+.nuxt/
+.nitro/
+*.tsbuildinfo
+
+# Tests / couverture
+coverage/
+
+# Env & secrets (jamais commit)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / éditeur
+.DS_Store
+._*
+.idea/
+.vscode/
