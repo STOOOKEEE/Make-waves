@@ -35,3 +35,11 @@ export class InvalidAmountError extends Error {
     this.name = "InvalidAmountError";
   }
 }
+
+/** Donnée de métrique d'attribution invalide (volume aberrant, plage KO). */
+export class InvalidMetricError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidMetricError";
+  }
+}

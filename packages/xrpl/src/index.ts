@@ -6,3 +6,5 @@ export * from "./tx/amount";
 export * from "./tx/memo";
 export * from "./tx/payment";
 export * from "./tx/offer";
+export * from "./metrics/types";
+export * from "./metrics/aggregate";

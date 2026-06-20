@@ -3,7 +3,7 @@
 > Deadline finale : 2026-09-21 · Reste : ~13 semaines (depuis 2026-06-21) · Capacité : équipe 2-3, full-time (40h+/sem) · Mis à jour : 2026-06-21
 > Spec : [`docs/SPEC.md`](SPEC.md) · Deadline inscription : **2026-07-21** (le MVP doit tourner avant)
 
-Cocher au fil du dev. 3 prix sur 4 sont des **métriques on-chain** (`SourceTag`) : l'objectif n'est pas « livrer du code » mais **faire monter les compteurs**. Tout est calé là-dessus.
+Cocher au fil du dev (`[x]` fait · `[~]` partiel · `[ ]` à faire). 3 prix sur 4 sont des **métriques on-chain** (`SourceTag`) : l'objectif n'est pas « livrer du code » mais **faire monter les compteurs**. Tout est calé là-dessus.
 
 **Pistes parallèles** (équipe) :
 - **[BC]** Blockchain / backend XRPL — *Armand* (xrpl.js, Xaman, SourceTag, multisig, indexeur de métriques).
@@ -33,7 +33,7 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 - [ ] Idem `Payment` taggé + `Memos` (le futur buy-in).
 - [ ] Réserver/déclarer le `SourceTag`, le figer en constante partagée (chemin critique #3).
 - [ ] Spike multisig prize pool : `SignerListSet` + encaissement + payout 2 gagnants (chemin critique #4).
-- [ ] Init repo code (monorepo ou front/back séparés), TS strict, lint, `.env` hors repo, structure modulaire.
+- [x] Init repo code (monorepo pnpm), TS strict, lint, `.env` hors repo, structure modulaire. *(fait)*
 - [ ] Brancher le feed de prix off-chain : lecture carnet + spot AMM (`xrpl.js`) + API CEX (CoinGecko/Binance), avec cache et double source.
 
 **[FE] Socle UI**
@@ -56,15 +56,15 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 
 **[BC] Backend Paper & on-chain**
 - [ ] Modèle de données (User, PaperWallet, PaperOrder, Competition, Entry, LeaderboardSnapshot, MetricEvent) — cf. SPEC §5.
-- [ ] Moteur Paper : portefeuille virtuel, ordres simulés au prix réel (snapshot feed), calcul PnL.
-- [ ] Moteur de compétitions : créer/rejoindre un tournoi, fenêtre, état, règles.
-- [ ] Ancrage on-chain : rejoindre = payload `Payment` buy-in taggé (`SourceTag` + `Memo` id tournoi) vers le compte prize pool multisig.
-- [ ] Indexeur de métriques : observer les tx taggées en mainnet → `MetricEvent` (volume, comptes actifs **distincts**).
-- [ ] Validation stricte des entrées (montants, adresses, devises, params tx) avant tout payload.
+- [x] Moteur Paper : portefeuille virtuel, ordres simulés au prix réel, calcul PnL. *(cœur pur `packages/core/paper`)*
+- [~] Moteur de compétitions : créer/rejoindre un tournoi, fenêtre, état, règles. *(calcul pool/rake/classement/payouts livré `packages/core/competition` ; création/état tournoi = backend, à faire)*
+- [~] Ancrage on-chain : rejoindre = payload `Payment` buy-in taggé (`SourceTag` + `Memo` id tournoi) vers le compte prize pool multisig. *(builder `buildBuyInPayment` livré `packages/xrpl` ; déclenchement Xaman = backend/front)*
+- [~] Indexeur de métriques : observer les tx taggées en mainnet → `MetricEvent` (volume, comptes actifs **distincts**). *(agrégation `aggregateAttribution` livrée `packages/xrpl/metrics` ; lecture ledger temps réel = backend)*
+- [x] Validation stricte des entrées (montants, adresses, devises, params tx) avant tout payload. *(dans tous les moteurs/builders)*
 
 **[FE] UI Paper & compétitions**
 - [ ] Terminal Paper jouable (passer un ordre, voir PnL, historique).
-- [ ] Leaderboard (classement PnL Paper).
+- [~] Leaderboard (classement PnL Paper). *(calcul `buildLeaderboard` livré `packages/core/leaderboard` ; UI à faire)*
 - [ ] Liste / page compétitions : rejoindre → déclenche le payload Xaman du buy-in.
 - [ ] Onboarding zéro friction (Xaman only, pas de signup email).
 

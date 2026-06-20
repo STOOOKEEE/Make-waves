@@ -4,6 +4,25 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Agrégateur d'attribution (xrpl/metrics) : le score du hackathon [Phase 1]
+
+**Quoi.** `packages/xrpl/metrics` : `aggregateAttribution(txs, tideSourceTag)` → `{ totalVolume, activeAccounts (distincts), txCount }`, et `filterByLedgerRange` pour le fenêtrage (leaderboard hebdo). 104 tests, typecheck + lint clean.
+
+**Pourquoi.** 3 prix sur 4 du hackathon sont ces métriques on-chain. C'est notre lecture de position (Most Volume / Most Users / 300 Active). Module pur : il prend des tx déjà observées et normalisées, calcule le score, sans I/O.
+
+**Cheminement.** `Set` pour les comptes distincts, somme du volume, comptage. Pur et fenêtrable (composition `aggregateAttribution(filterByLedgerRange(...))`). Volume 0 explicitement accepté (une tx taggée sans valeur compte quand même comme compte actif — important pour le prix « 300 active »).
+
+**Audit (sous-agent) — OK à commit, traité :**
+- 🟠 L'agrégation acceptait `tideSourceTag = 0` (via `assertValidSourceTag`) → bascule sur `assertAttributionTag` qui **rejette 0** : agréger sur 0 compterait toutes les tx non taggées comme nôtres (faux positif sur la métrique reine).
+- 🟡 Tests ajoutés : liste vide → `{0,0,0}`, fenêtre vide → `[]`, SourceTag 0 rejeté.
+- Choix de **lever** sur volume négatif (plutôt qu'ignorer) validé par l'audit pour le score officiel (échouer bruyamment > publier un classement faux). Pour un affichage live grand public, l'appelant devra wrapper l'appel.
+
+**⚠️ RISQUE À TRACER (le vrai piège du système).** `aggregateAttribution` additionne un `volume` **supposé déjà normalisé** en devise de référence par l'appelant (l'indexeur). Le module pur ne peut pas garantir cette normalisation (drops XRP vs IOU, mélange de devises, timestamp de prix). Une erreur de normalisation amont produirait un `totalVolume` faux qu'il sommerait sans broncher. **Mitigation à imposer quand l'indexeur existera :** un seul point de normalisation partagé (via le feed de prix), couvert par un test d'intégration. À ne pas oublier — c'est ce qui peut nous faire mal lire notre position.
+
+**Bugs & fix.** Aucun (logique de comptage juste, confirmée).
+
+---
+
 ## 2026-06-21 — Leaderboard (core) : valorisation + classement + PnL [Phase 1]
 
 **Quoi.** `packages/core/leaderboard` : `buildLeaderboard` valorise chaque portefeuille paper (`equity`), classe (`rankByEquity`) et ajoute le PnL. 92 tests, typecheck + lint clean.
