@@ -9,3 +9,5 @@ export * from "./competition/validate";
 export * from "./competition/prize";
 export * from "./competition/ranking";
 export * from "./competition/payout";
+export * from "./leaderboard/types";
+export * from "./leaderboard/leaderboard";

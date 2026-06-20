@@ -4,6 +4,22 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Leaderboard (core) : valorisation + classement + PnL [Phase 1]
+
+**Quoi.** `packages/core/leaderboard` : `buildLeaderboard` valorise chaque portefeuille paper (`equity`), classe (`rankByEquity`) et ajoute le PnL. 92 tests, typecheck + lint clean.
+
+**Pourquoi.** C'est le classement que le front affiche et le moteur d'engagement du produit (le « track record » partageable). Compose les deux moteurs déjà livrés plutôt que de dupliquer la logique.
+
+**Cheminement.** Module mince et pur qui réutilise `equity` (paper) et `rankByEquity` (compétitions) → pas de duplication. Propagation des erreurs de valorisation (prix manquant) intacte : on ne classe jamais à l'aveugle.
+
+**Audit (sous-agent) — OK à commit, traité :**
+- 🟠 Capital de départ **commun** à tous (pas par compte) : pas un bug aujourd'hui (départ uniforme), mais limite documentée dans le JSDoc (classement à l'equity absolue = choix produit assumé ; porter le départ dans `AccountSnapshot` quand des départs hétérogènes arriveront).
+- 🟡 Test ajouté : PnL égaux pour des ex-aequo.
+
+**Bugs & fix.** Aucun (composition juste, confirmée par l'audit).
+
+---
+
 ## 2026-06-21 — Moteur de compétitions (core) : pool, rake, classement, payouts [Phase 1]
 
 **Quoi.** `packages/core/competition` : `prizePool`/`rakeAmount`/`distributable` (économie du tournoi), `rankByEquity` (classement) et `computePayouts` (répartition des gains) + `undistributedAmount`. 87 tests au total, typecheck + lint clean.
