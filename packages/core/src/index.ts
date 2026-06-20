@@ -4,3 +4,8 @@ export * from "./paper/types";
 export * from "./paper/validate";
 export * from "./paper/account";
 export * from "./paper/equity";
+export * from "./competition/types";
+export * from "./competition/validate";
+export * from "./competition/prize";
+export * from "./competition/ranking";
+export * from "./competition/payout";

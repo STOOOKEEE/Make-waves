@@ -4,6 +4,26 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Moteur de compétitions (core) : pool, rake, classement, payouts [Phase 1]
+
+**Quoi.** `packages/core/competition` : `prizePool`/`rakeAmount`/`distributable` (économie du tournoi), `rankByEquity` (classement) et `computePayouts` (répartition des gains) + `undistributedAmount`. 87 tests au total, typecheck + lint clean.
+
+**Pourquoi.** Cœur du modèle économique (buy-in poker, cf. SPEC §3) : c'est ce qui transforme les buy-ins en prize pool et calcule qui touche combien à la clôture d'un tournoi.
+
+**Cheminement.** Modèle poker : pool = buy-in × participants, rake (commission) prélevé, reste réparti aux premiers selon des poids sommant à 1. Validation stricte (buy-in > 0, rake dans [0,1[, poids cohérents).
+
+**Audit (sous-agent) — findings traités avant commit :**
+- 🟠 **Ex-aequo réglés par l'ordre d'insertion** = inéquitable (deux joueurs à equity égale touchaient des gains différents). Refonte : classement **déterministe** (départage par `userId`), rangs « compétition standard » (ex-aequo = même rang : [300,200,200,100] → [1,2,2,4]), et **split-pot** — les ex-aequo mutualisent les tiers qu'ils occupent (comportement poker correct).
+- 🟡 **Reliquat invisible** quand le tournoi est sous-rempli → ajout de `undistributedAmount` pour exposer `distribuable − Σpayouts` (à récupérer en trésorerie).
+- 🟡 **Equity NaN/Infinity** corrompait le tri silencieusement → `assertValidEquity` dans `rankByEquity`.
+- 🟡 Tests de bord ajoutés : 0/1 participant, split-pot, déterminisme, rake 0, conservation stricte, NaN.
+
+**Dette connue (assumée).** Montants en `number`. Au paiement on-chain (drops XRPL = entiers), la conversion devra utiliser la **méthode du plus grand reste** pour garantir `Σ versé = distribuable arrondi` (sinon écart de quelques drops). Noté dans le JSDoc de `payout.ts`, à implémenter au point de signature des `Payment`.
+
+**Bugs & fix.** Aucun bug de formule (le cas nominal était juste) ; les corrections ci-dessus sont des garde-fous d'équité/robustesse.
+
+---
+
 ## 2026-06-21 — Package `@tide/xrpl` : transactions taggées (SourceTag + Memos) [Phase 0, chemin critique]
 
 **Quoi.** Constructeurs de transactions XRPL **non signées** (à passer à Xaman) : `buildBuyInPayment` (inscription tournoi = `Payment` taggé + memo) et `buildLiveOffer` (swap Live = `OfferCreate` taggé). Plus les briques validées : `assertValidAddress`, `assertValidSourceTag`/`assertAttributionTag`, `assertValidAmount`, `encodeMemo`. 60 tests au total, typecheck + lint clean.

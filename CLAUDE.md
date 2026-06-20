@@ -31,25 +31,39 @@ Un seul produit, deux modes partageant feed de prix / UI / leaderboard :
 - **Pas d'atomicité multi-tx** (amendment `Batch` désactivé).
 - Prize pool : **compte opérateur multisig** (pas d'Escrow — destination unique, ne peut pas payer N gagnants). Distribution semi-custodiale par `Payment` taggés vers les gagnants.
 
-## Structure
+## Structure (monorepo pnpm)
 
 ```
 make-waves/
-├── CLAUDE.md          # ce fichier (état courant)
-└── docs/
-    ├── SPEC.md        # spec technique de référence
-    ├── ROADMAP.md     # plan d'exécution (tâches à cocher, 13 sem.)
-    └── DEVLOG.md      # historique daté
+├── packages/
+│   ├── core/          # domaine pur (testable sans I/O)
+│   │   └── src/
+│   │       ├── paper/        # moteur paper : ordres, equity, PnL
+│   │       └── competition/  # tournois : pool, rake, classement, payouts
+│   └── xrpl/          # intégration XRPL : builders tx taggées (SourceTag + Memos)
+├── apps/              # (à venir) api + web
+├── docs/              # SPEC, ROADMAP, DEVLOG
+└── CLAUDE.md          # ce fichier (état courant)
 ```
-*Code à venir (Phase 0). Équipe 2-3, full-time.*
+*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time.*
 
 ## Commandes
 
-*À définir à l'init du code (Phase 0). Aucune commande pour l'instant — seule la doc existe.*
+```bash
+pnpm install      # dépendances
+pnpm test         # tests (vitest) — 76 tests
+pnpm typecheck    # types (tsc strict)
+pnpm lint         # eslint (no-explicit-any en erreur)
+```
 
 ## Où on en est
 
-**Phase 0 (setup & dé-risquage).** Spec rédigée, auditée et corrigée ; roadmap d'exécution prête (`docs/ROADMAP.md`). Chemin critique à attaquer : spike d'attribution (1 swap taggé en mainnet qui fait monter le compteur), questions orga, réserver le `SourceTag`, spike multisig du prize pool. Aucun code encore.
+**Phase 0/1 — fondations métier (off-chain) posées.** 3 features livrées, testées, auditées par sous-agent et commitées sur `dev` :
+1. Scaffold monorepo + **moteur Paper** (`packages/core/paper` : `applyMarketOrder`, equity/PnL).
+2. **Builders de tx taggées** (`packages/xrpl` : `buildBuyInPayment`, `buildLiveOffer` avec `SourceTag` + `Memos`).
+3. **Moteur de compétitions** (`packages/core/competition` : pool, rake, classement, payouts).
+
+**Suite immédiate :** feed de prix off-chain (lecture carnet/AMM + API CEX), service backend (apps/api) reliant paper + compétitions + indexeur de métriques, puis intégration Xaman côté front. Chemin critique non encore fait (nécessite Armand) : **spike d'attribution mainnet** (1 swap taggé qui fait monter le compteur orga), réserver le `SourceTag`, questions orga, spike multisig du prize pool.
 
 ## Conventions
 

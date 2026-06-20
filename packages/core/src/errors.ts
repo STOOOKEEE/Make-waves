@@ -34,3 +34,11 @@ export class InvalidPriceError extends Error {
     this.name = "InvalidPriceError";
   }
 }
+
+/** Paramètre de compétition invalide (buy-in, rake, poids de répartition...). */
+export class InvalidCompetitionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidCompetitionError";
+  }
+}
