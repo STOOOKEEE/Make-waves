@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Cœur du feed de prix (xrpl/price) : conversion + prix AMM/carnet [Phase 0/1]
+
+**Quoi.** `packages/xrpl/price` : `amountToQuantity` (montant XRPL → quantité ; drops/1e6 pour XRP, value pour token), `ammSpotPrice(base, quote)` (prix spot d'un pool AMM = ratio des réserves), `midPrice`, `relativeSpread`. 118 tests, typecheck + lint clean.
+
+**Pourquoi.** Le feed de prix alimente la simulation Paper (ordres au prix réel), la valorisation (leaderboard) et plus tard la best-execution. Ce module est la partie **pure** (calcul) ; les adaptateurs réseau (xrpl Client `amm_info`/`book_offers`, API CEX) viendront ensuite, vérifiés contre le mainnet.
+
+**Cheminement.** Postulat clé confirmé par l'audit (contre le type réel xrpl 4.6.0) : sur le type `Amount`, une **string est toujours des drops XRP**, un IOU est toujours un objet `{currency,issuer,value}` — la conversion drops/token n'est jamais ambiguë. `ammSpotPrice = quote/base` (prix de base exprimé en quote). Garde-fou carnet croisé (`ask < bid`) dans `relativeSpread`.
+
+**Audit (sous-agent) — OK à commit, zéro bloquant :**
+- Math confirmée juste (cohérence inverse `p1·p2 ≈ 1`), pas de division par zéro (montants validés > 0), erreurs typées.
+- 🟡 Tests ajoutés : spread nul (`bid == ask` → 0), grosses réserves (50M XRP → prix juste).
+- **Recommandation tracée :** `amountToQuantity` (`Number`) est OK pour un prix indicatif (un ratio), mais **ne jamais l'utiliser pour une valorisation monétaire sommable** (au-delà de ~9 Md XRP en drops, `Number` perd les drops de poids faible). Pour toute somme d'argent → `BigInt` sur les drops. C'est la même dette que côté paper, à respecter au point de règlement.
+
+**Bugs & fix.** Aucun.
+
+---
+
 ## 2026-06-21 — Agrégateur d'attribution (xrpl/metrics) : le score du hackathon [Phase 1]
 
 **Quoi.** `packages/xrpl/metrics` : `aggregateAttribution(txs, tideSourceTag)` → `{ totalVolume, activeAccounts (distincts), txCount }`, et `filterByLedgerRange` pour le fenêtrage (leaderboard hebdo). 104 tests, typecheck + lint clean.

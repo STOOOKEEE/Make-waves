@@ -8,3 +8,5 @@ export * from "./tx/payment";
 export * from "./tx/offer";
 export * from "./metrics/types";
 export * from "./metrics/aggregate";
+export * from "./price/quantity";
+export * from "./price/spot";

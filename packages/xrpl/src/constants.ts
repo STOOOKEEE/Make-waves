@@ -3,6 +3,9 @@
 /** Valeur maximale d'un SourceTag (champ uint32 du protocole XRPL). */
 export const MAX_SOURCE_TAG = 0xffffffff;
 
+/** Drops par XRP (le XRP a 6 décimales ; 1 XRP = 1 000 000 drops). */
+export const DROPS_PER_XRP = 1_000_000;
+
 /** MemoType identifiant une inscription à un tournoi Tide. */
 export const MEMO_TYPE_JOIN = "tide/join";
 

@@ -43,3 +43,11 @@ export class InvalidMetricError extends Error {
     this.name = "InvalidMetricError";
   }
 }
+
+/** Prix aberrant (non fini ou ≤ 0) dans le feed. */
+export class InvalidPriceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidPriceError";
+  }
+}
