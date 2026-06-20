@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Couche application : `PaperService` in-memory (apps/api) [Phase 1]
+
+**Quoi.** Création de `apps/api` (consomme `@tide/core` via workspace). `PaperService` : gère les comptes de paper trading **en mémoire** (ouvrir, placer un ordre, soldes, equity/PnL, leaderboard) en orchestrant les moteurs purs. 132 tests, typecheck + lint clean.
+
+**Pourquoi.** Backbone du backend : le pont entre les moteurs purs et la future couche HTTP/DB. Le construire d'abord en mémoire et testable verrouille les invariants d'état avant d'ajouter l'I/O.
+
+**Cheminement.** État dans une `Map`. `placeOrder` s'appuie sur `applyMarketOrder` (immutable) : il valide et vérifie le solde **avant** de muter, donc pas d'état incohérent (atomicité confirmée par l'audit). Persistance DB = adaptateur ultérieur (l'interface du service ne changera pas).
+
+**Audit (sous-agent) — 2 🟠 prouvés au runtime, corrigés avant commit :**
+- 🟠 **Fuite de référence** : `balancesOf`/`ordersOf` retournaient l'état interne (les `readonly` ne protègent qu'à la compilation ; `Object.assign(service.balancesOf(u), …)` corrompait le solde). → **copies défensives** sur les deux getters.
+- 🟠 `startingEquity` non validé (`new PaperService(-500)` → solde négatif ; `NaN` se propageait partout). → validation + `InvalidStartingEquityError`.
+- 🟡 Tests ajoutés : mutation externe rejetée, solde insuffisant propagé + **état intact après exception**, leaderboard avec prix manquant, capital de départ invalide.
+
+**Bugs & fix.** Cf. les 2 🟠 ci-dessus (fuite de référence = le point sérieux à fermer avant la couche HTTP).
+
+---
+
 ## 2026-06-21 — Cœur du feed de prix (xrpl/price) : conversion + prix AMM/carnet [Phase 0/1]
 
 **Quoi.** `packages/xrpl/price` : `amountToQuantity` (montant XRPL → quantité ; drops/1e6 pour XRP, value pour token), `ammSpotPrice(base, quote)` (prix spot d'un pool AMM = ratio des réserves), `midPrice`, `relativeSpread`. 118 tests, typecheck + lint clean.
