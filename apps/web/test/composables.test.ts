@@ -1,0 +1,158 @@
+import { describe, it, expect } from "vitest";
+import { TideClient } from "@tide/client";
+import type { ApiResponse, ApiTransport } from "@tide/client";
+import { usePaper } from "../src/composables/usePaper";
+import { useLeaderboard } from "../src/composables/useLeaderboard";
+import { useCompetitions } from "../src/composables/useCompetitions";
+
+function clientWith(routes: Record<string, ApiResponse>): TideClient {
+  const transport: ApiTransport = (request) =>
+    Promise.resolve(
+      routes[`${request.method} ${request.path}`] ?? {
+        status: 404,
+        body: { error: "introuvable" },
+      },
+    );
+  return new TideClient(transport);
+}
+
+const FILL = {
+  pair: { base: "XRP", quote: "RLUSD" },
+  side: "buy",
+  amount: 100,
+  price: 0.5,
+  quoteAmount: 50,
+};
+
+describe("usePaper", () => {
+  it("connecte et charge soldes + ordres", async () => {
+    const paper = usePaper(
+      clientWith({
+        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 10000 } },
+        "GET /accounts/a/orders": { status: 200, body: [] },
+      }),
+    );
+    paper.userId.value = "a";
+    await paper.connect();
+    expect(paper.connected.value).toBe(true);
+    expect(paper.balances.value).toEqual({ RLUSD: 10000 });
+  });
+
+  it("tolère un compte déjà existant (409)", async () => {
+    const paper = usePaper(
+      clientWith({
+        "POST /accounts": { status: 409, body: { error: "déjà ouvert" } },
+        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 5 } },
+        "GET /accounts/a/orders": { status: 200, body: [] },
+      }),
+    );
+    paper.userId.value = "a";
+    await paper.connect();
+    expect(paper.connected.value).toBe(true);
+    expect(paper.error.value).toBe("");
+  });
+
+  it("exige un identifiant", async () => {
+    const paper = usePaper(clientWith({}));
+    await paper.connect();
+    expect(paper.connected.value).toBe(false);
+    expect(paper.error.value).not.toBe("");
+  });
+
+  it("place un ordre puis rafraîchit", async () => {
+    const paper = usePaper(
+      clientWith({
+        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 9950, XRP: 100 } },
+        "GET /accounts/a/orders": { status: 200, body: [FILL] },
+        "POST /accounts/a/orders": { status: 201, body: FILL },
+      }),
+    );
+    paper.userId.value = "a";
+    await paper.connect();
+    await paper.placeOrder({
+      pair: { base: "XRP", quote: "RLUSD" },
+      side: "buy",
+      amount: 100,
+      price: 0.5,
+    });
+    expect(paper.orders.value).toHaveLength(1);
+    expect(paper.balances.value).toEqual({ RLUSD: 9950, XRP: 100 });
+  });
+
+  it("expose le message d'erreur serveur", async () => {
+    const paper = usePaper(
+      clientWith({
+        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "GET /accounts/a/balances": { status: 500, body: { error: "Erreur interne" } },
+        "GET /accounts/a/orders": { status: 200, body: [] },
+      }),
+    );
+    paper.userId.value = "a";
+    await paper.connect();
+    expect(paper.connected.value).toBe(false);
+    expect(paper.error.value).toBe("Erreur interne");
+  });
+});
+
+describe("useLeaderboard", () => {
+  it("charge le classement", async () => {
+    const board = useLeaderboard(
+      clientWith({
+        "GET /leaderboard": {
+          status: 200,
+          body: [{ userId: "a", equity: 1000, pnl: 0, rank: 1 }],
+        },
+      }),
+    );
+    await board.load();
+    expect(board.entries.value).toHaveLength(1);
+    expect(board.entries.value[0]?.userId).toBe("a");
+  });
+});
+
+describe("useCompetitions", () => {
+  it("crée puis inscrit un joueur", async () => {
+    const comp = useCompetitions(
+      clientWith({
+        "POST /competitions": { status: 201, body: { id: "c1" } },
+        "POST /competitions/c1/join": {
+          status: 200,
+          body: { competitionId: "c1", userId: "a" },
+        },
+        "GET /competitions/c1/participants": { status: 200, body: ["a"] },
+      }),
+    );
+    expect(
+      await comp.create({ id: "c1", buyIn: 10, rakeRatio: 0, payoutWeights: [1] }),
+    ).toBe(true);
+    await comp.join("c1", "a");
+    expect(comp.participants.value).toEqual(["a"]);
+  });
+
+  it("clôture et expose le résultat", async () => {
+    const comp = useCompetitions(
+      clientWith({
+        "POST /competitions/c1/close": {
+          status: 200,
+          body: { payouts: [], undistributed: 0 },
+        },
+      }),
+    );
+    await comp.close("c1");
+    expect(comp.lastResult.value).toEqual({ payouts: [], undistributed: 0 });
+  });
+
+  it("remonte l'erreur de création", async () => {
+    const comp = useCompetitions(
+      clientWith({
+        "POST /competitions": { status: 400, body: { error: "poids invalides" } },
+      }),
+    );
+    expect(
+      await comp.create({ id: "c1", buyIn: 10, rakeRatio: 0, payoutWeights: [0.5] }),
+    ).toBe(false);
+    expect(comp.error.value).toBe("poids invalides");
+  });
+});

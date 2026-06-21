@@ -4,6 +4,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Front MVP : composables testés + vues terminal/leaderboard/compétitions [Phase 1, UI]
+
+**Quoi.** Logique du front extraite en **composables testables** (`usePaper`, `useLeaderboard`, `useCompetitions`), et 3 vues minces (`TerminalView`, `LeaderboardView`, `CompetitionsView`) + nav à onglets dans `App.vue`. 237 tests (9 composables ajoutés), typecheck `vue-tsc` + lint clean, **build OK**. Le loop produit complet est démontrable.
+
+**Pourquoi.** Couvrir l'essentiel du produit côté UI (paper trading + leaderboard + compétitions) tout en gardant la **logique testable sans navigateur** : la réactivité Vue (`ref`) marche en node, donc les composables se testent sous vitest (pas de jsdom), et les `.vue` restent des coquilles minces juste build-vérifiées.
+
+**Cheminement.** Composables = injection du `TideClient` → testés avec un transport stub (routes → réponses). Gestion d'erreur centralisée (`errorMessage`), 409 « compte existant » toléré explicitement. Un seul client partagé par les vues (créé dans `App.vue`).
+
+**Frontière de vérification (honnête).** Garanti : build (`vite build` ✓), types (`vue-tsc` ✓), **logique des 3 composables testée** (connexion, 409 toléré, ordre + refresh, erreurs, chargement leaderboard, create/join/close compétitions). NON vérifié ici : le **rendu visuel / l'UX** des `.vue` — à valider de tes yeux (`pnpm --filter @tide/web dev`, avec l'API lancée).
+
+**Bugs & fix.** Aucun.
+
+---
+
 ## 2026-06-21 — Front : scaffold Vue 3 + Vite + terminal paper [Phase 1, UI]
 
 **Quoi.** `apps/web` : app **Vue 3 + Vite** (SPA). Transport HTTP `createFetchTransport` (branche `@tide/client` sur `fetch`, injectable). `App.vue` = terminal paper minimal mais fonctionnel : connexion par identifiant, affichage des soldes, formulaire d'ordre, historique. 228 tests, typecheck (`vue-tsc`) + lint clean, **build OK**.
