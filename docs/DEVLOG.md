@@ -4,6 +4,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Persistance SQLite des événements d'attribution (apps/api/store) [Phase 1]
+
+**Quoi.** `SqliteAttributionStore` : persiste les transactions d'attribution observées (`ObservedTx`) via le module **builtin `node:sqlite`** (zéro dépendance native). `record()` insère ; `metrics()`/`windowedMetrics()` relisent et agrègent via la logique `@tide/xrpl` déjà auditée. 182 tests (dont 8 ici), typecheck + lint clean.
+
+**Pourquoi.** Premier morceau de persistance réelle (la roadmap prévoit de remplacer l'in-memory). L'indexeur on-chain (à venir, nécessite mainnet) écrira ici chaque tx taggée ; le score du hackathon se calcule en relisant le store. Démontre le pattern DB que le reste suivra.
+
+**Cheminement.** `node:sqlite` choisi pour éviter toute compilation native (better-sqlite3) — important en sandbox/CI. Requêtes **préparées paramétrées** partout (pas d'injection). Validation à l'écriture (volume, sourceTag, ledgerIndex) cohérente avec l'agrégation. Réutilise `aggregateAttribution`/`filterByLedgerRange` (DRY, pas de réimplémentation).
+
+**Audit (sous-agent) — OK à commit, zéro bloquant :** pas d'injection SQL (requêtes préparées), `createRequire` confirmé typé (pas d'`any` qui fuit, `.all()` reste `Record<string, SQLOutputValue>`), `rowToTx` sans `any`, validation cohérente, `close()` libère la connexion. 🟡 (plus tard) : index disque, revérif `isFinite` à la lecture — non nécessaires pour le MVP mono-écrivain.
+
+**Bugs & fix.** `node:sqlite` n'est pas résolu par le bundler de vitest (vite strippe `node:` → cherche un paquet `sqlite` inexistant → « Failed to load url sqlite »). Fix : chargement via `createRequire(import.meta.url)("node:sqlite")` avec `import type` (erased) + cast `as typeof import("node:sqlite")` → typage conservé, hors analyse de vite.
+
+---
+
 ## 2026-06-21 — Backend runnable : cache de prix + createApp + entrypoint [Phase 1]
 
 **Quoi.** `PriceCache` (instantané sync + maj async), `createApp(config)` (assemble services + cache + serveur, sans effet de bord, testable) et `main.ts` (entrypoint : `fetch` réel, env, `listen`, refresh périodique). Le backend **tourne** maintenant. 174 tests, typecheck + lint clean.

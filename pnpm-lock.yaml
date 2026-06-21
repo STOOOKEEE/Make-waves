@@ -35,6 +35,9 @@ importers:
       '@tide/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@tide/xrpl':
+        specifier: workspace:*
+        version: link:../../packages/xrpl
       fastify:
         specifier: ^5.2.0
         version: 5.8.5
