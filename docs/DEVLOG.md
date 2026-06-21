@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Couche HTTP : serveur Fastify injectable (apps/api) [Phase 1]
+
+**Quoi.** `buildServer(deps)` (Fastify v5) expose les services en HTTP : comptes (`POST /accounts`, `GET …/balances`, `…/orders`), ordres (`POST …/orders`), `GET /leaderboard`, compétitions (`POST /competitions`, `…/join`, `…/close`, `GET …/participants`). + `parse.ts` (validation runtime au bord, sans `any`) et `errors.ts` (mapping erreur typée → code HTTP). 161 tests dont les routes via `inject()`. typecheck + lint clean.
+
+**Pourquoi.** Rend le backend **appelable** tout en restant testable : `buildServer` retourne l'instance, aucune écoute réseau → tests in-process via `inject()` (pas de port, pas de réseau).
+
+**Cheminement.** Dépendances **injectées** (`paper`, `competition`, `getPrices`) → fakes en test, vrai feed plus tard. Erreurs domaine mappées par **nom** (pas `instanceof`, évite le couplage cross-package) : 400 (validation), 404 (absent), 409 (conflit), 500 masqué. Validation au bord (`parseOrder`/`parseCompetition`/`parseUserId`) qui rejette les corps malformés avant le domaine ; narrowing `as Record<string, unknown>` après guard runtime (pas `as any`).
+
+**Audit (sous-agent) — OK à commit, zéro bloquant :**
+- Anti-fuite d'info **confirmée** : 500 masqué en « Erreur interne », 4xx n'exposent que des libellés/ids fournis par le client. Mapping `statusForError` **vérifié exhaustif** contre les 4 sources d'erreurs.
+- Validation au bord **non contournable** (amount string, pair manquante, poids non-number rejetés). Pas de double-réponse (pattern `reply.code()` + `return` correct en Fastify v5).
+- 🟠 Test ajouté : le chemin **500** (verrouille la non-fuite — `getPrices` qui lève → `{error:"Erreur interne"}`, pas le secret). 🟡 + 404 sur close inconnu.
+
+**Bugs & fix.** Test de clôture : mon attente était fausse (2 participants / 3 tiers → seuls tiers 1+2 versés = 16, reliquat 4 ; pas 20). Corrigé — le comportement sous-rempli du domaine était juste.
+
+---
+
 ## 2026-06-21 — Couche application : `CompetitionService` in-memory (apps/api) [Phase 1]
 
 **Quoi.** `CompetitionService` : cycle de vie des tournois en mémoire (créer, rejoindre, clôturer). `close()` classe les participants par equity via un `EquityProvider` injecté, calcule payouts + reliquat (moteur `@tide/core`), et marque la compétition clôturée. 148 tests, typecheck + lint clean.

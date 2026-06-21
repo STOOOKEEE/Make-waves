@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tide/core": "workspace:*"
+    "@tide/core": "workspace:*",
+    "fastify": "^5.2.0"
   }
 }
