@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# Autoriser le script de build d'esbuild (utilisé par vitest).
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild
