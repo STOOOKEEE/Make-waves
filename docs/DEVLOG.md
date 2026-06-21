@@ -4,6 +4,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Front : scaffold Vue 3 + Vite + terminal paper [Phase 1, UI]
+
+**Quoi.** `apps/web` : app **Vue 3 + Vite** (SPA). Transport HTTP `createFetchTransport` (branche `@tide/client` sur `fetch`, injectable). `App.vue` = terminal paper minimal mais fonctionnel : connexion par identifiant, affichage des soldes, formulaire d'ordre, historique. 228 tests, typecheck (`vue-tsc`) + lint clean, **build OK**.
+
+**Pourquoi.** Première vue consommant l'API. Choix Vue 3 + Vite (vs Nuxt de la SPEC) validé par Armand : plus léger, build vérifiable ici.
+
+**Cheminement.** `createFetchTransport` injectable (comme les autres adaptateurs) → testable sans réseau. `.vue` typés par `vue-tsc` (et ignorés par eslint, qui ne les parse pas). Gestion d'erreur propre côté UI : le 409 « compte déjà ouvert » est ignoré explicitement à la connexion, toute autre erreur remonte (pas de catch avale-tout).
+
+**Frontière de vérification (honnête).** Ce que je garantis : le front **compile** (`vite build` ✓), **typecheck** (`vue-tsc` ✓), et la **logique du transport est testée** (2 tests : préfixe URL, sérialisation JSON, GET sans corps). Ce que je NE peux PAS vérifier ici : le **rendu visuel / l'UX réels** — ça reste à valider de tes yeux (`pnpm --filter @tide/web dev`).
+
+**Bugs & fix.** Aucun. Augmentation de `ImportMetaEnv` (`VITE_API_BASE`) ajoutée pour que `vue-tsc` passe.
+
+---
+
 ## 2026-06-21 — Client API typé `@tide/client` [Phase 2, vers le front]
 
 **Quoi.** `packages/client` : `TideClient` typé qui couvre toutes les routes (comptes, ordres, leaderboard, compétitions) via un **`ApiTransport` injecté**. Erreurs serveur mappées en `TideApiError` (message extrait du corps). 226 tests (8 unitaires + 3 d'intégration). typecheck + lint clean.

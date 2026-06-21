@@ -9,6 +9,8 @@ export default tseslint.config(
       "**/.nuxt/**",
       "**/.output/**",
       "**/coverage/**",
+      // Les .vue sont typés par vue-tsc (eslint TS ne les parse pas).
+      "**/*.vue",
     ],
   },
   js.configs.recommended,
