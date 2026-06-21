@@ -4,6 +4,24 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Backend runnable : cache de prix + createApp + entrypoint [Phase 1]
+
+**Quoi.** `PriceCache` (instantané sync + maj async), `createApp(config)` (assemble services + cache + serveur, sans effet de bord, testable) et `main.ts` (entrypoint : `fetch` réel, env, `listen`, refresh périodique). Le backend **tourne** maintenant. 174 tests, typecheck + lint clean.
+
+**Pourquoi.** Rendre le backend démarrable tout en gardant la logique testable. Le `PriceCache` résout proprement le mismatch `getPrices` **sync** (lecture fréquente) vs feed **async** (réseau périodique).
+
+**Cheminement.** `createApp` est pur (pas de `listen`/timer) → testable ; `main.ts` ne fait que le câblage runtime. Résilience : un feed CEX en panne **n'empêche pas le démarrage** (refresh best-effort, erreurs loggées non avalées) ; `setInterval` + `timer.unref()`.
+
+**Vérification (pas seulement des tests) :**
+- Test d'intégration : vrai `app.listen({port:0})` + `fetch` réel → `/leaderboard` répond 200.
+- **Smoke-test du binaire** `main.ts` lancé pour de vrai (PORT=3999, CEX injoignable) : log « Tide API à l'écoute sur :3999 », `GET /leaderboard` → `[]`, `POST /accounts` → 201, `GET …/balances` → `{"RLUSD":10000}`. Le feed en échec est bien rattrapé. Serveur arrêté ensuite.
+
+**Audit (sous-agent) — OK sans réserve (zéro 🔴/🟠) :** encapsulation cache OK, `getPrices` = closure paresseuse (lit l'état frais), résilience et `unref()` confirmés, isolation des types Node (apps/api seulement). 🟡 borne haute du PORT ajoutée (≤ 65535).
+
+**Bugs & fix (infra importante).** En passant `apps/api` au typecheck, découverte que **`pnpm typecheck` ne couvrait que `packages/*`** (la racine n'incluait pas `apps/`) → `apps/api` n'était jamais typé par `tsc` (seulement esbuild/eslint). Corrigé : typecheck **par-package** (`pnpm -r`), `@types/node` + `types:["node"]` isolés à `apps/api`. Quelques erreurs de typage dans les tests (PriceMap `readonly`, payloads `inject`) corrigées au passage. Les packages purs restent sans types Node (isolation préservée).
+
+---
+
 ## 2026-06-21 — Adaptateur feed de prix CEX (apps/api/feed) [Phase 0/1]
 
 **Quoi.** `fetchCexPrices(config, symbols, fetchJson)` : interroge une API CEX (type CoinGecko `/simple/price`) et retourne une `PriceMap`. `fetchJson` est **injecté** → testable sans réseau. 170 tests, typecheck + lint clean.

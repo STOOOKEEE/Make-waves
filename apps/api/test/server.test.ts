@@ -19,7 +19,7 @@ beforeEach(() => {
   app = buildServer({ paper, competition, getPrices: () => prices });
 });
 
-function order(amount: number, price: number): unknown {
+function order(amount: number, price: number): Record<string, unknown> {
   return { pair: { base: "XRP", quote: "RLUSD" }, side: "buy", amount, price };
 }
 

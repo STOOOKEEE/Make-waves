@@ -37,33 +37,39 @@ Un seul produit, deux modes partageant feed de prix / UI / leaderboard :
 make-waves/
 ├── packages/
 │   ├── core/          # domaine pur (testable sans I/O)
-│   │   └── src/
-│   │       ├── paper/        # moteur paper : ordres, equity, PnL
-│   │       └── competition/  # tournois : pool, rake, classement, payouts
-│   └── xrpl/          # intégration XRPL : builders tx taggées (SourceTag + Memos)
-├── apps/              # (à venir) api + web
+│   │   └── src/{paper, competition, leaderboard}/
+│   └── xrpl/          # intégration XRPL
+│       └── src/{tx, metrics, price}/   # builders taggés, attribution, prix
+├── apps/
+│   └── api/           # backend Node : services + HTTP (Fastify) + feed CEX
+│       └── src/{services, http, feed, app.ts, main.ts}
 ├── docs/              # SPEC, ROADMAP, DEVLOG
 └── CLAUDE.md          # ce fichier (état courant)
 ```
-*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time.*
+*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time. `apps/web` (Nuxt) pas encore créé.*
 
 ## Commandes
 
 ```bash
-pnpm install      # dépendances
-pnpm test         # tests (vitest) — 76 tests
-pnpm typecheck    # types (tsc strict)
-pnpm lint         # eslint (no-explicit-any en erreur)
+pnpm install                 # dépendances
+pnpm test                    # tests (vitest) — 174 tests
+pnpm typecheck               # types (tsc strict, par-package)
+pnpm lint                    # eslint (no-explicit-any en erreur)
+pnpm --filter @tide/api start  # démarre l'API (tsx src/main.ts, PORT=3000)
 ```
 
 ## Où on en est
 
-**Phase 0/1 — fondations métier (off-chain) posées.** 3 features livrées, testées, auditées par sous-agent et commitées sur `dev` :
-1. Scaffold monorepo + **moteur Paper** (`packages/core/paper` : `applyMarketOrder`, equity/PnL).
-2. **Builders de tx taggées** (`packages/xrpl` : `buildBuyInPayment`, `buildLiveOffer` avec `SourceTag` + `Memos`).
-3. **Moteur de compétitions** (`packages/core/competition` : pool, rake, classement, payouts).
+**Backend off-chain complet, testé (174 tests) et runnable.** 11 features livrées, chacune testée + auditée par sous-agent + commitée sur `dev` :
+- **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
+- **Intégration XRPL** (`packages/xrpl`) : builders de tx taggées (`buildBuyInPayment`/`buildLiveOffer`, SourceTag+Memos), agrégateur d'attribution (volume + comptes actifs distincts), cœur du feed de prix (spot AMM, mid, conversion drops).
+- **Backend** (`apps/api`) : `PaperService` + `CompetitionService` (in-memory), serveur **Fastify** (routes comptes/ordres/leaderboard/compétitions, mapping erreurs→HTTP), feed CEX (fetch injectable), cache de prix, entrypoint `main.ts` (smoke-testé : démarre et sert).
 
-**Suite immédiate :** feed de prix off-chain (lecture carnet/AMM + API CEX), service backend (apps/api) reliant paper + compétitions + indexeur de métriques, puis intégration Xaman côté front. Chemin critique non encore fait (nécessite Armand) : **spike d'attribution mainnet** (1 swap taggé qui fait monter le compteur orga), réserver le `SourceTag`, questions orga, spike multisig du prize pool.
+**Frontière atteinte — la suite demande l'environnement d'Armand (non vérifiable ici) :**
+- **Chemin critique mainnet** : spike d'attribution (1 swap taggé qui fait monter le compteur orga), réserver/déclarer le `SourceTag`, questions orga, spike multisig prize pool.
+- **Adaptateur xrpl Client live** (lecture carnet/AMM réelle en mainnet), **intégration Xaman** (clés XUMM = secrets), **persistance DB** (remplacer l'in-memory), **front Nuxt** (`apps/web`).
+
+Dette tracée (DEVLOG) : montants en `number` (passer en BigInt/drops au point de règlement) ; normalisation du volume pour l'agrégateur (un seul point partagé).
 
 ## Conventions
 
