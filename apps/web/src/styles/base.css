@@ -1,0 +1,216 @@
+/*
+ * Base globale — reset léger + typographie + contrôles + utilitaires de layout.
+ * Thème dark cinématique : le fond par défaut est le void, le texte est Paper.
+ */
+@import "./tokens.css";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-void);
+  color: var(--text-on-dark);
+  font-family: var(--font-display);
+  font-weight: var(--weight-regular);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+ul,
+ol,
+figure {
+  margin: 0;
+}
+
+ul,
+ol {
+  list-style: none;
+  padding: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+::selection {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-graphite);
+  border-radius: var(--radius-buttons);
+}
+::-webkit-scrollbar-track {
+  background: var(--surface-void);
+}
+
+/* ---- Rôles typographiques ---- */
+.t-display {
+  font-size: clamp(38px, 9vw, var(--text-display));
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+  font-weight: var(--weight-medium);
+}
+
+.t-heading {
+  font-size: clamp(28px, 5.5vw, var(--text-heading));
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-heading);
+  font-weight: var(--weight-medium);
+}
+
+.t-subheading {
+  font-size: var(--text-subheading);
+  line-height: var(--leading-subheading);
+  letter-spacing: var(--tracking-subheading);
+  font-weight: var(--weight-medium);
+}
+
+.t-caption {
+  font-size: var(--text-caption);
+  line-height: var(--leading-caption);
+  letter-spacing: var(--tracking-caption);
+}
+
+.t-micro {
+  font-size: var(--text-micro);
+  line-height: var(--leading-micro);
+  letter-spacing: var(--tracking-micro);
+}
+
+/* Eyebrow : libellé de section, recule dans la surface */
+.t-eyebrow {
+  font-size: var(--text-micro);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-on-dark-muted);
+  font-weight: var(--weight-medium);
+}
+
+.muted {
+  color: var(--text-on-dark-soft);
+}
+.dim {
+  color: var(--text-on-dark-muted);
+}
+
+/* ---- Layout ---- */
+.section {
+  padding: var(--section-gap) var(--spacing-20);
+}
+
+.container {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.reading {
+  max-width: var(--reading-max);
+}
+
+.surface-void {
+  background: var(--surface-void);
+}
+.surface-graphite {
+  background: var(--surface-graphite);
+}
+
+/* ---- Contrôles de formulaire (achromatiques) ---- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+
+.field > label {
+  font-size: var(--text-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-on-dark-muted);
+}
+
+input,
+select {
+  font-family: inherit;
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--text-on-dark);
+  background: var(--tint-raise);
+  border: 1px solid var(--hairline-dark);
+  border-radius: var(--radius-links);
+  padding: var(--spacing-10) var(--spacing-13);
+  outline: none;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+input::placeholder {
+  color: var(--text-on-dark-muted);
+}
+
+input:focus,
+select:focus {
+  border-color: var(--color-pewter);
+}
+
+select option {
+  color: var(--color-graphite);
+}
+
+/* ---- États ---- */
+.error {
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-caption);
+  color: var(--color-paper);
+  padding-left: var(--spacing-10);
+  border-left: 1px solid var(--color-steel);
+}
+
+.empty {
+  color: var(--text-on-dark-muted);
+  font-size: var(--text-caption);
+  letter-spacing: var(--tracking-caption);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
