@@ -1,6 +1,9 @@
 import { createApp } from "./app";
 import { PriceFeedError } from "./feed/errors";
 import type { FetchJson } from "./feed/cex-price-feed";
+import { openDatabase } from "./store/sqlite";
+import { SqliteAccountStore } from "./store/sqlite-account-store";
+import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
 // `fetch`, variables d'environnement, écoute réseau et rafraîchissement périodique.
@@ -8,6 +11,7 @@ import type { FetchJson } from "./feed/cex-price-feed";
 
 const DEFAULT_PORT = 3000;
 const MAX_PORT = 65535;
+const DEFAULT_DB_PATH = "tide.db";
 const DEFAULT_CEX_BASE_URL = "https://api.coingecko.com/api/v3";
 const DEFAULT_VS_CURRENCY = "usd";
 const PRICE_REFRESH_MS = 30_000;
@@ -35,6 +39,8 @@ function readPort(): number {
 }
 
 async function main(): Promise<void> {
+  // Connexion SQLite partagée par les deux stores (persistance sur disque).
+  const db = openDatabase(process.env["TIDE_DB_PATH"] ?? DEFAULT_DB_PATH);
   const { app, refreshPrices } = createApp({
     feed: {
       baseUrl: process.env["CEX_BASE_URL"] ?? DEFAULT_CEX_BASE_URL,
@@ -43,6 +49,8 @@ async function main(): Promise<void> {
     },
     symbols: SYMBOLS,
     fetchJson,
+    accountStore: new SqliteAccountStore(db),
+    competitionStore: new SqliteCompetitionStore(db),
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

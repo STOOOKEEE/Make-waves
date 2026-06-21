@@ -5,6 +5,8 @@ import { PriceCache } from "./feed/price-cache";
 import { fetchCexPrices } from "./feed/cex-price-feed";
 import type { CexFeedConfig, FetchJson } from "./feed/cex-price-feed";
 import { buildServer } from "./http/server";
+import type { AccountStore } from "./store/account-store";
+import type { CompetitionStore } from "./store/competition-store";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -14,6 +16,10 @@ export interface AppConfig {
   readonly symbols: readonly string[];
   /** Récupération JSON injectée (réel `fetch` en prod, faux en test). */
   readonly fetchJson: FetchJson;
+  /** Persistance des comptes (in-memory par défaut, SQLite en prod). */
+  readonly accountStore?: AccountStore;
+  /** Persistance des compétitions (in-memory par défaut, SQLite en prod). */
+  readonly competitionStore?: CompetitionStore;
 }
 
 /** Application assemblée : serveur + cache + rafraîchisseur de prix. */
@@ -30,8 +36,8 @@ export interface App {
  * effet de bord (pas d'écoute réseau, pas de timer) → testable.
  */
 export function createApp(config: AppConfig): App {
-  const paper = new PaperService(config.startingEquity);
-  const competition = new CompetitionService();
+  const paper = new PaperService(config.startingEquity, config.accountStore);
+  const competition = new CompetitionService(config.competitionStore);
   const cache = new PriceCache();
 
   const app = buildServer({

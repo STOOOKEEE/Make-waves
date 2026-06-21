@@ -17,6 +17,12 @@ coverage/
 .env.*
 !.env.example
 
+# Base SQLite locale (runtime)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Logs
 *.log
 npm-debug.log*

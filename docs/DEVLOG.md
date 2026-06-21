@@ -4,6 +4,24 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Câblage SQLite dans l'app runnable (persistance au redémarrage) [Phase 1]
+
+**Quoi.** Les stores SQLite sont désormais **utilisés par le serveur** : `createApp` accepte des stores optionnels, `main.ts` ouvre une **connexion SQLite partagée** (fichier `tide.db`, via `TIDE_DB_PATH`) et y branche les deux stores. Les constructeurs `Sqlite*Store` acceptent une connexion partagée (`string | DatabaseSync`). 215 tests, typecheck + lint clean.
+
+**Pourquoi.** Sans ce câblage, la persistance existait mais le serveur tournait en mémoire. Maintenant les données **survivent au redémarrage** (essentiel pour un concours de traction 90 j).
+
+**Cheminement.** Une seule connexion `DatabaseSync` partagée par les deux stores (pas deux connexions concurrentes sur le même fichier → pas de verrou). `createApp` reste pur (stores injectés), `main.ts` fait le câblage runtime. Fichiers `*.db` ignorés par git.
+
+**Vérification (empirique, end-to-end) :**
+- 2 tests : deux instances de store sur la même connexion voient les mêmes données ; une nouvelle app sur la même base retrouve les comptes (simule un redémarrage).
+- **Smoke-test réel de persistance disque** : serveur démarré (fichier), `POST /accounts` + `POST order` → soldes `{RLUSD:9950, XRP:100}`. Process **hard-killé**. Redémarrage sur le **même fichier** → `alice` retrouve ses soldes ET son historique d'ordres. Compte inconnu → 404. C'est la preuve que la persistance disque marche (les writes SQLite sont committés synchronement, donc résistants au kill).
+
+**Note de jugement.** Pas d'audit sous-agent séparé pour ce câblage : la vérification décisive (le vrai cycle redémarrage) est empirique et plus forte qu'une relecture, et les stores sous-jacents étaient déjà audités. Amélioration future possible : handler SIGTERM → `db.close()` (non requis, les données persistent déjà au kill).
+
+**Bugs & fix.** Aucun.
+
+---
+
 ## 2026-06-21 — Persistance DB complète : services derrière une abstraction Store [Phase 1]
 
 **Quoi.** Refactor des deux services derrière une abstraction `Store`, avec deux implémentations chacune : `AccountStore`/`CompetitionStore` → `InMemory*` (défaut) + `Sqlite*` (`node:sqlite`, zéro dépendance native). `PaperService` et `CompetitionService` ne contiennent plus que la logique métier ; la persistance est injectée. Helper `openDatabase` factorisé (le store d'attribution migré dessus aussi). 213 tests, typecheck + lint clean.

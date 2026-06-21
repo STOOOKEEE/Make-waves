@@ -30,8 +30,9 @@ function rowToFill(row: unknown): Fill {
 export class SqliteAccountStore implements AccountStore {
   private readonly db: DatabaseSync;
 
-  constructor(path = ":memory:") {
-    this.db = openDatabase(path);
+  /** `database` : un chemin (ou `:memory:`) à ouvrir, ou une connexion partagée. */
+  constructor(database: string | DatabaseSync = ":memory:") {
+    this.db = typeof database === "string" ? openDatabase(database) : database;
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS accounts (user_id TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS balances (
