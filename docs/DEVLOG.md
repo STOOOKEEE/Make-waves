@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Adaptateur feed de prix CEX (apps/api/feed) [Phase 0/1]
+
+**Quoi.** `fetchCexPrices(config, symbols, fetchJson)` : interroge une API CEX (type CoinGecko `/simple/price`) et retourne une `PriceMap`. `fetchJson` est **injecté** → testable sans réseau. 170 tests, typecheck + lint clean.
+
+**Pourquoi.** Première source de prix off-chain réelle (XRP + majors), destinée à câbler le `getPrices` du serveur HTTP (aujourd'hui un fake). Bridge entre le cœur de prix pur (déjà livré) et le monde réel.
+
+**Cheminement.** Le `fetchJson` injecté découple du réseau (test = faux, prod = wrapper de `fetch`). Parsing **défensif** de la réponse upstream non fiable : objet validé, entrée par id présente, prix `number` fini > 0, sinon `PriceFeedError`. Mappé en **502** côté HTTP (échec amont, pas faute client). Encodage défensif des composants d'URL.
+
+**Audit (sous-agent) — OK à commit, zéro bloquant :**
+- Parsing d'entrée hostile **solide** : aucune réponse malformée ne produit une PriceMap fausse ni un crash hors `PriceFeedError`. `as Record<string, unknown>` confirmé sûr (narrowing post-guard, pas `as any`).
+- Injection d'URL : risque jugé théorique (ids = config de confiance, symboles inconnus filtrés avant l'URL) ; durci quand même via `encodeURIComponent`.
+- 🟡 Test ajouté : devise absente de l'entrée (cas prod le plus probable).
+
+**Bugs & fix.** Aucun.
+
+---
+
 ## 2026-06-21 — Couche HTTP : serveur Fastify injectable (apps/api) [Phase 1]
 
 **Quoi.** `buildServer(deps)` (Fastify v5) expose les services en HTTP : comptes (`POST /accounts`, `GET …/balances`, `…/orders`), ordres (`POST …/orders`), `GET /leaderboard`, compétitions (`POST /competitions`, `…/join`, `…/close`, `GET …/participants`). + `parse.ts` (validation runtime au bord, sans `any`) et `errors.ts` (mapping erreur typée → code HTTP). 161 tests dont les routes via `inject()`. typecheck + lint clean.

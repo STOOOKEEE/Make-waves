@@ -26,6 +26,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   CompetitionExistsError: 409,
   CompetitionClosedError: 409,
   InsufficientBalanceError: 409,
+  // 502 — échec d'un service amont (feed de prix)
+  PriceFeedError: 502,
 };
 
 /** Code HTTP pour une erreur ; 500 par défaut (cause inconnue). */
