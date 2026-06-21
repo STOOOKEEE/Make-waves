@@ -36,26 +36,28 @@ Un seul produit, deux modes partageant feed de prix / UI / leaderboard :
 ```
 make-waves/
 ├── packages/
-│   ├── core/          # domaine pur (testable sans I/O)
-│   │   └── src/{paper, competition, leaderboard}/
-│   └── xrpl/          # intégration XRPL
-│       └── src/{tx, metrics, price}/   # builders taggés, attribution, prix
+│   ├── core/          # domaine pur (paper, competition, leaderboard)
+│   ├── xrpl/          # intégration XRPL (tx taggées, metrics, price, amm-reader)
+│   └── client/        # client API typé (@tide/client)
 ├── apps/
-│   └── api/           # backend Node : services + HTTP (Fastify) + feed CEX
-│       └── src/{services, http, feed, app.ts, main.ts}
+│   ├── api/           # backend Node : services + HTTP (Fastify) + feed + store SQLite
+│   │   └── src/{services, http, feed, store, app.ts, main.ts}
+│   └── web/           # front Vue 3 + Vite (composables + vues terminal/leaderboard/compét)
 ├── docs/              # SPEC, ROADMAP, DEVLOG
 └── CLAUDE.md          # ce fichier (état courant)
 ```
-*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time. `apps/web` (Nuxt) pas encore créé.*
+*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time.*
 
 ## Commandes
 
 ```bash
-pnpm install                 # dépendances
-pnpm test                    # tests (vitest) — 215 tests
-pnpm typecheck               # types (tsc strict, par-package)
-pnpm lint                    # eslint (no-explicit-any en erreur)
-pnpm --filter @tide/api start  # démarre l'API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
+pnpm install                   # dépendances
+pnpm test                      # tests (vitest) — 237 tests
+pnpm typecheck                 # types (tsc/vue-tsc strict, par-package)
+pnpm lint                      # eslint (no-explicit-any en erreur)
+pnpm --filter @tide/api start  # API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
+pnpm --filter @tide/web dev    # front (Vite ; pointe VITE_API_BASE sur l'API)
+pnpm --filter @tide/web build  # build du front
 ```
 
 ## Où on en est
@@ -63,11 +65,15 @@ pnpm --filter @tide/api start  # démarre l'API (PORT=3000, persistance TIDE_DB_
 **Backend off-chain complet, testé (174 tests) et runnable.** 11 features livrées, chacune testée + auditée par sous-agent + commitée sur `dev` :
 - **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
 - **Intégration XRPL** (`packages/xrpl`) : builders de tx taggées (`buildBuyInPayment`/`buildLiveOffer`, SourceTag+Memos), agrégateur d'attribution (volume + comptes actifs distincts), cœur du feed de prix (spot AMM, mid, conversion drops).
-- **Backend** (`apps/api`) : `PaperService` + `CompetitionService`, serveur **Fastify** (routes comptes/ordres/leaderboard/compétitions, mapping erreurs→HTTP), feed CEX (fetch injectable), cache de prix, **persistance SQLite complète** (abstraction Store + impls in-memory/SQLite, **survie au redémarrage vérifiée**), lecteur AMM on-chain, entrypoint `main.ts`.
+- **Backend** (`apps/api`) : services + **Fastify** + feed CEX + cache + **persistance SQLite** (survie au redémarrage vérifiée) + lecteur AMM, entrypoint runnable.
+- **Client** (`packages/client`) : `TideClient` typé, transport injecté, testé contre le vrai serveur.
+- **Front MVP** (`apps/web`) : Vue 3 + Vite, composables testés + vues terminal/leaderboard/compétitions. Build OK, **rendu visuel à valider par Armand**.
 
-**Frontière atteinte — la suite demande l'environnement d'Armand (non vérifiable ici) :**
+**MVP vertical complet et démontrable** (backend ↔ client ↔ front). 237 tests, ~17 audits sous-agents, sur `dev`, jamais push.
+
+**Frontière restante — demande l'environnement d'Armand (non vérifiable ici) :**
 - **Chemin critique mainnet** : spike d'attribution (1 swap taggé qui fait monter le compteur orga), réserver/déclarer le `SourceTag`, questions orga, spike multisig prize pool.
-- **Adaptateur xrpl Client live** (connexion mainnet réelle), **order book reader**, **intégration Xaman** (clés XUMM = secrets), **front Nuxt** (`apps/web`).
+- **Adaptateur xrpl Client live** (connexion mainnet), **order book reader**, **intégration Xaman** (clés XUMM = secrets). Tout ça : code « non vérifié » tant que pas testé sur ton mainnet/tes clés.
 
 Dette tracée (DEVLOG) : montants en `number` (passer en BigInt/drops au point de règlement) ; normalisation du volume pour l'agrégateur (un seul point partagé).
 
