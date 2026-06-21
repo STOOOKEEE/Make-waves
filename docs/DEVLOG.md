@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Décision produit : levier/short évalués et écartés (spot-only assumé) [Stratégie]
+
+**Quoi.** Évaluation honnête du doute « le spot sans levier c'est branlant, on peut pas short ». Conclusion : **le spot non-custodial tient debout pour Make Waves** ; le perp custodial est faisable mais déconseillé. Analyse complète dans [`docs/PERP-CEX-FEASIBILITY.md`](PERP-CEX-FEASIBILITY.md).
+
+**Pourquoi.** Conviction du fondateur sur la valeur produit — il faut trancher avant d'investir plus.
+
+**Cheminement (alternatives évaluées) :**
+- **Spot sans levier « branlant » ?** Non, à une condition : **classer sur le risk-adjusted (Calmar/Sharpe + drawdown), pas sur le PnL brut** (sinon = casino qui récompense la chance). La métrique de classement EST le curriculum. Le levier n'ajoute pas de skill, il ajoute de la toxicité pour des débutants. Les memecoins XRPL volatils fournissent l'action sans levier.
+- **Short ?** Vrai manque : en spot pur on ne vend que ce qu'on détient (pas de profit sur la baisse, seulement passer cash). Vérifié : lending natif **XLS-66 en vote, PAS mainnet**, et de toute façon non-collatéralisé institutionnel → ne donne pas de short retail. Smart contracts toujours hors mainnet.
+- **Perp « comme un CEX » (custodial off-chain) ?** Techniquement faisable (mini-BitMEX) MAIS : trades off-chain → **aucun `SourceTag`** → tue 3 prix sur 4 du hackathon ; XRPL devient un rail interchangeable (donc pas un projet XRPL) ; custodial + honeypot ; **régulé** (sérieux pour un projet étudiant) ; on est la maison (risque de contrepartie) ; risk/liquidation engine = cœur dangereux, ni coupable ni sûr en 90j. **Déconseillé.**
+
+**Décision / fork (en attente de la conviction d'Armand).** Soit (1) **Make Waves = spot non-custodial** assumé et rendu bon (scoring risk-adjusted + memecoins) ; soit (2) **produit perp = autre chaîne, autre moment, en DEX** (pas ce hackathon). Pas de troisième voie (le perp-CEX sur XRP = pire des deux mondes).
+
+**Bugs & fix.** Correction d'une affirmation antérieure : j'avais dit « pas de lending du tout » — en réalité XLS-66 arrive (mais en vote, non-collatéralisé, donc sans effet sur le short retail). Sources : [known-amendments](https://xrpl.org/resources/known-amendments), [crypto.news lending XRPL](https://crypto.news/xrpl-lending-protocol-xrp-on-chain-credit/).
+
+---
+
 ## 2026-06-21 — Outillage du spike d'attribution mainnet (hand-off Armand) [Phase 0, chemin critique]
 
 **Quoi.** `docs/SPIKE.md` (runbook précis du spike) + script `pnpm --filter @tide/api spike:tx` qui construit une **tx taggée prête à signer** (`Payment` buy-in + `OfferCreate` swap) via les builders `@tide/xrpl` déjà testés.
