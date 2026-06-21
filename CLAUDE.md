@@ -52,10 +52,10 @@ make-waves/
 
 ```bash
 pnpm install                 # dépendances
-pnpm test                    # tests (vitest) — 174 tests
+pnpm test                    # tests (vitest) — 215 tests
 pnpm typecheck               # types (tsc strict, par-package)
 pnpm lint                    # eslint (no-explicit-any en erreur)
-pnpm --filter @tide/api start  # démarre l'API (tsx src/main.ts, PORT=3000)
+pnpm --filter @tide/api start  # démarre l'API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
 ```
 
 ## Où on en est
@@ -63,11 +63,11 @@ pnpm --filter @tide/api start  # démarre l'API (tsx src/main.ts, PORT=3000)
 **Backend off-chain complet, testé (174 tests) et runnable.** 11 features livrées, chacune testée + auditée par sous-agent + commitée sur `dev` :
 - **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
 - **Intégration XRPL** (`packages/xrpl`) : builders de tx taggées (`buildBuyInPayment`/`buildLiveOffer`, SourceTag+Memos), agrégateur d'attribution (volume + comptes actifs distincts), cœur du feed de prix (spot AMM, mid, conversion drops).
-- **Backend** (`apps/api`) : `PaperService` + `CompetitionService` (in-memory), serveur **Fastify** (routes comptes/ordres/leaderboard/compétitions, mapping erreurs→HTTP), feed CEX (fetch injectable), cache de prix, entrypoint `main.ts` (smoke-testé : démarre et sert).
+- **Backend** (`apps/api`) : `PaperService` + `CompetitionService`, serveur **Fastify** (routes comptes/ordres/leaderboard/compétitions, mapping erreurs→HTTP), feed CEX (fetch injectable), cache de prix, **persistance SQLite complète** (abstraction Store + impls in-memory/SQLite, **survie au redémarrage vérifiée**), lecteur AMM on-chain, entrypoint `main.ts`.
 
 **Frontière atteinte — la suite demande l'environnement d'Armand (non vérifiable ici) :**
 - **Chemin critique mainnet** : spike d'attribution (1 swap taggé qui fait monter le compteur orga), réserver/déclarer le `SourceTag`, questions orga, spike multisig prize pool.
-- **Adaptateur xrpl Client live** (lecture carnet/AMM réelle en mainnet), **intégration Xaman** (clés XUMM = secrets), **persistance DB** (remplacer l'in-memory), **front Nuxt** (`apps/web`).
+- **Adaptateur xrpl Client live** (connexion mainnet réelle), **order book reader**, **intégration Xaman** (clés XUMM = secrets), **front Nuxt** (`apps/web`).
 
 Dette tracée (DEVLOG) : montants en `number` (passer en BigInt/drops au point de règlement) ; normalisation du volume pour l'agrégateur (un seul point partagé).
 
