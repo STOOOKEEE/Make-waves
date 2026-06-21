@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Lecteur de prix AMM on-chain (xrpl/price) [Phase 1/2]
+
+**Quoi.** `readAmmSpotPrice(client, asset, asset2)` : lit le prix spot d'un pool AMM via `amm_info`, avec un **client injecté** (sous-ensemble testable sans réseau). Retourne le prix d'`asset` en `asset2` depuis les réserves. 189 tests, typecheck + lint clean.
+
+**Pourquoi.** Première source de prix **on-chain** (l'AMM est une liquidité native XRPL), complément du feed CEX. Le carnet d'ordres (`book_offers`) est volontairement reporté : sa sémantique `quality` (drops vs unités) est délicate et à valider en mainnet.
+
+**Cheminement.** Formes de réponse **vérifiées contre les types xrpl.js 4.6.0** (`result.amm.amount`/`amount2`). Interfaces minimales (pas d'import de types xrpl fragiles) + client injecté → testable par fixtures.
+
+**Bugs & fix — 🔴 BLOQUANT rattrapé par l'audit (sous-agent, avec vérif doc XRPL) :**
+- Première version mappait `amount`→asset et `amount2`→asset2 **par position**. Or la doc XRPL est explicite : `amm_info` renvoie les réserves dans un **ordre canonique interne du protocole, PAS l'ordre de la requête** (« This could be `asset` _or_ `asset2` from the request »). → pour la moitié des paires, le prix aurait été **inversé**. Mon test initial passait à tort (la fixture encodait l'hypothèse fausse).
+- **Fix** : apparier chaque réserve à sa **devise** (`reserveMatchesCurrency`), jamais à sa position. Test ajouté du cas **ordre inversé** (aurait attrapé le bug), + pool absent → `InvalidPriceError`, asset introuvable → `InvalidPriceError`, paire token/token.
+- 🟠 corrigés aussi : garde-fou pool absent (erreur typée au lieu d'un `TypeError` nu) ; commentaire corrigé (un vrai `Client` xrpl.js n'est PAS directement assignable → **adaptateur requis** au point d'injection mainnet, tracé).
+
+**À valider en mainnet (chemin critique).** Confirmer le sens du prix sur une paire dont le prix attendu est connu (le mapping par devise est correct en théorie, mais l'intégration réelle doit le prouver).
+
+---
+
 ## 2026-06-21 — Persistance SQLite des événements d'attribution (apps/api/store) [Phase 1]
 
 **Quoi.** `SqliteAttributionStore` : persiste les transactions d'attribution observées (`ObservedTx`) via le module **builtin `node:sqlite`** (zéro dépendance native). `record()` insère ; `metrics()`/`windowedMetrics()` relisent et agrègent via la logique `@tide/xrpl` déjà auditée. 182 tests (dont 8 ici), typecheck + lint clean.
