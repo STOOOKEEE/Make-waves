@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Persistance DB complète : services derrière une abstraction Store [Phase 1]
+
+**Quoi.** Refactor des deux services derrière une abstraction `Store`, avec deux implémentations chacune : `AccountStore`/`CompetitionStore` → `InMemory*` (défaut) + `Sqlite*` (`node:sqlite`, zéro dépendance native). `PaperService` et `CompetitionService` ne contiennent plus que la logique métier ; la persistance est injectée. Helper `openDatabase` factorisé (le store d'attribution migré dessus aussi). 213 tests, typecheck + lint clean.
+
+**Pourquoi.** La roadmap prévoyait de remplacer l'in-memory par une DB (survie au redémarrage, essentiel pour un concours de traction 90 j). L'abstraction permet de basculer in-memory ↔ SQLite sans toucher aux services, et de **prouver l'équivalence** des deux par des tests paramétrés.
+
+**Cheminement.** API publique des services **inchangée** (store injecté avec défaut in-memory) → les anciens tests passent tels quels (non-régression). Schémas SQLite avec requêtes **préparées paramétrées** (anti-injection), `applyOrder` **transactionnel** (BEGIN/COMMIT/ROLLBACK) pour l'atomicité soldes+ordre. Poids de répartition sérialisés en JSON. Tests **paramétrés** : les mêmes assertions tournent contre InMemory ET SQLite (encapsulation, atomicité, ordre, anti-double-paiement, multi-devises).
+
+**Audits (2 sous-agents) — OK à commit :**
+- *Comptes* : zéro 🔴/🟠. Atomicité **vérifiée empiriquement** (vrai ROLLBACK après erreur en milieu de transaction → état restauré), équivalence in-memory/SQLite confirmée, garantie d'atomicité de `placeOrder` préservée (validation+solde AVANT mutation), non-régression prouvée.
+- *Compétitions* : 1 🟠 corrigé — `JSON.parse` pouvait lever un `SyntaxError` brut (corruption disque) au lieu d'`InvalidCompetitionError` → enveloppé dans try/catch (« transformer, pas avaler »). Anti-double-paiement préservé (`markClosed` après calcul), `closed` INTEGER bien relu en boolean, équivalence confirmée.
+- 🟡 laissés (MVP) : FK SQLite (off par défaut dans node:sqlite ; invariants garantis côté service), requête `has()` redondante, fermeture des stores `:memory:` en test.
+
+**Bugs & fix.** Cf. le 🟠 JSON ci-dessus. Aucun bug de comportement (équivalence et non-régression prouvées par tests).
+
+---
+
 ## 2026-06-21 — Lecteur de prix AMM on-chain (xrpl/price) [Phase 1/2]
 
 **Quoi.** `readAmmSpotPrice(client, asset, asset2)` : lit le prix spot d'un pool AMM via `amm_info`, avec un **client injecté** (sous-ensemble testable sans réseau). Retourne le prix d'`asset` en `asset2` depuis les réserves. 189 tests, typecheck + lint clean.

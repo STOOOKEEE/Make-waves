@@ -19,28 +19,30 @@ import {
   InvalidStartingEquityError,
   InvalidUserError,
 } from "./errors";
-
-interface PaperAccount {
-  balances: Balances;
-  readonly orders: Fill[];
-}
+import { InMemoryAccountStore } from "../store/account-store";
+import type { AccountStore } from "../store/account-store";
 
 /**
- * Service de paper trading en mémoire : gère les comptes virtuels, applique les
- * ordres (via le moteur pur `@tide/core`) et produit le classement. L'état vit
- * ici pour l'instant ; la persistance (DB) sera un adaptateur ultérieur.
+ * Service de paper trading : gère les comptes virtuels, applique les ordres (via
+ * le moteur pur `@tide/core`) et produit le classement. La persistance est
+ * déléguée à un `AccountStore` injecté (en mémoire par défaut, SQLite en option)
+ * → le service ne contient que la logique métier.
  */
 export class PaperService {
-  private readonly accounts = new Map<string, PaperAccount>();
   private readonly startingEquity: number;
+  private readonly store: AccountStore;
 
-  constructor(startingEquity: number = PAPER_STARTING_EQUITY) {
+  constructor(
+    startingEquity: number = PAPER_STARTING_EQUITY,
+    store: AccountStore = new InMemoryAccountStore(),
+  ) {
     if (!Number.isFinite(startingEquity) || startingEquity <= 0) {
       throw new InvalidStartingEquityError(
         `Capital de départ invalide: ${String(startingEquity)}`,
       );
     }
     this.startingEquity = startingEquity;
+    this.store = store;
   }
 
   /** Ouvre un compte avec le capital de départ en devise de référence. */
@@ -48,37 +50,37 @@ export class PaperService {
     if (userId.trim() === "") {
       throw new InvalidUserError("userId vide");
     }
-    if (this.accounts.has(userId)) {
+    if (this.store.has(userId)) {
       throw new AccountExistsError(`Compte déjà ouvert: ${userId}`);
     }
-    this.accounts.set(userId, {
-      balances: { [QUOTE_CURRENCY]: this.startingEquity },
-      orders: [],
-    });
+    this.store.open(userId, { [QUOTE_CURRENCY]: this.startingEquity });
   }
 
-  /** Applique un ordre marché et l'enregistre. Retourne le fill. */
+  /** Applique un ordre marché et l'enregistre atomiquement. Retourne le fill. */
   placeOrder(userId: string, order: MarketOrderInput): Fill {
-    const account = this.requireAccount(userId);
-    const result = applyMarketOrder(account.balances, order);
-    account.balances = result.balances;
-    account.orders.push(result.fill);
+    const balances = this.requireBalances(userId);
+    const result = applyMarketOrder(balances, order);
+    this.store.applyOrder(userId, result.balances, result.fill);
     return result.fill;
   }
 
-  /** Soldes courants du compte (copie : l'état interne reste encapsulé). */
+  /** Soldes courants du compte. */
   balancesOf(userId: string): Balances {
-    return { ...this.requireAccount(userId).balances };
+    return this.requireBalances(userId);
   }
 
-  /** Historique des ordres exécutés (copie : l'état interne reste encapsulé). */
+  /** Historique des ordres exécutés du compte. */
   ordersOf(userId: string): readonly Fill[] {
-    return [...this.requireAccount(userId).orders];
+    const orders = this.store.getOrders(userId);
+    if (orders === undefined) {
+      throw new AccountNotFoundError(`Compte introuvable: ${userId}`);
+    }
+    return orders;
   }
 
   /** Equity du compte en devise de référence. */
   equityOf(userId: string, prices: PriceMap): number {
-    return equity(this.requireAccount(userId).balances, prices, QUOTE_CURRENCY);
+    return equity(this.requireBalances(userId), prices, QUOTE_CURRENCY);
   }
 
   /** PnL du compte vs capital de départ. */
@@ -88,23 +90,19 @@ export class PaperService {
 
   /** Classement de tous les comptes (réutilise le leaderboard du domaine). */
   leaderboard(prices: PriceMap): LeaderboardEntry[] {
-    const snapshots = [...this.accounts.entries()].map(([userId, account]) => ({
-      userId,
-      balances: account.balances,
-    }));
     return buildLeaderboard(
-      snapshots,
+      this.store.snapshots(),
       prices,
       QUOTE_CURRENCY,
       this.startingEquity,
     );
   }
 
-  private requireAccount(userId: string): PaperAccount {
-    const account = this.accounts.get(userId);
-    if (account === undefined) {
+  private requireBalances(userId: string): Balances {
+    const balances = this.store.getBalances(userId);
+    if (balances === undefined) {
       throw new AccountNotFoundError(`Compte introuvable: ${userId}`);
     }
-    return account;
+    return balances;
   }
 }
