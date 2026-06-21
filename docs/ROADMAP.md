@@ -29,9 +29,9 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 **Definition of done :** je peux montrer une tx mainnet avec notre `SourceTag` et pointer le compteur orga qui s'incrémente.
 
 **[BC] Dé-risquage & socle**
-- [ ] Spike d'attribution : swap `OfferCreate` taggé en mainnet (chemin critique #1).
-- [ ] Idem `Payment` taggé + `Memos` (le futur buy-in).
-- [ ] Réserver/déclarer le `SourceTag`, le figer en constante partagée (chemin critique #3).
+- [~] Spike d'attribution : swap `OfferCreate` taggé en mainnet (chemin critique #1). *(outillage prêt : `pnpm --filter @tide/api spike:tx` + `docs/SPIKE.md` ; reste à exécuter par Armand sur son wallet mainnet)*
+- [~] Idem `Payment` taggé + `Memos` (le futur buy-in). *(même script, sortie vérifiée)*
+- [ ] Réserver/déclarer le `SourceTag`, le figer en constante partagée (chemin critique #3). *(à faire avec l'orga ; le code accepte déjà un SourceTag non nul)*
 - [ ] Spike multisig prize pool : `SignerListSet` + encaissement + payout 2 gagnants (chemin critique #4).
 - [x] Init repo code (monorepo pnpm), TS strict, lint, `.env` hors repo, structure modulaire. *(fait)*
 - [ ] Brancher le feed de prix off-chain : lecture carnet + spot AMM (`xrpl.js`) + API CEX (CoinGecko/Binance), avec cache et double source.

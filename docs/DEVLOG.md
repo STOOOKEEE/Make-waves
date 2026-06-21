@@ -4,6 +4,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Outillage du spike d'attribution mainnet (hand-off Armand) [Phase 0, chemin critique]
+
+**Quoi.** `docs/SPIKE.md` (runbook précis du spike) + script `pnpm --filter @tide/api spike:tx` qui construit une **tx taggée prête à signer** (`Payment` buy-in + `OfferCreate` swap) via les builders `@tide/xrpl` déjà testés.
+
+**Pourquoi.** Décision : Armand fait le **spike mainnet en premier** (dé-risque tout le live). Mon rôle : le rendre exécutable en 2 minutes. Le script ne touche à **aucune clé** (il imprime juste le JSON de la tx) ; Armand signe/soumet via Xaman avec son wallet mainnet et vérifie que le compteur de l'orga monte.
+
+**Cheminement.** Réutilise `buildBuyInPayment`/`buildLiveOffer` (audités). Paramètres via env (`TIDE_ACCOUNT`/`TIDE_DESTINATION`/`TIDE_SOURCE_TAG`). Sortie vérifiée : JSON de tx valide, `SourceTag` posé, Memos hex corrects (`tide/join`, `spike`).
+
+**Frontière / hand-off.** L'intégration **live** (adaptateur xrpl `Client` réel, payloads Xaman avec clés XUMM, indexeur alimentant `SqliteAttributionStore` déjà prêt) sera écrite **après** que le spike a confirmé l'attribution — et testée par Armand sur son mainnet. Je ne livre pas de code live aveugle (règle « ne jamais affirmer fonctionnel sans vérifier »).
+
+**Bugs & fix.** Aucun (sortie du script vérifiée).
+
+---
+
 ## 2026-06-21 — Front MVP : composables testés + vues terminal/leaderboard/compétitions [Phase 1, UI]
 
 **Quoi.** Logique du front extraite en **composables testables** (`usePaper`, `useLeaderboard`, `useCompetitions`), et 3 vues minces (`TerminalView`, `LeaderboardView`, `CompetitionsView`) + nav à onglets dans `App.vue`. 237 tests (9 composables ajoutés), typecheck `vue-tsc` + lint clean, **build OK**. Le loop produit complet est démontrable.
