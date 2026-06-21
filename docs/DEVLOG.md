@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Couche application : `CompetitionService` in-memory (apps/api) [Phase 1]
+
+**Quoi.** `CompetitionService` : cycle de vie des tournois en mémoire (créer, rejoindre, clôturer). `close()` classe les participants par equity via un `EquityProvider` injecté, calcule payouts + reliquat (moteur `@tide/core`), et marque la compétition clôturée. 148 tests, typecheck + lint clean.
+
+**Pourquoi.** Complète le « moteur de compétitions » de la roadmap côté **état/lifecycle** (le pur calcul était déjà livré). C'est ce qui orchestre buy-in → tournoi → distribution.
+
+**Cheminement.** `EquityProvider` (`(userId) => number`) **découple** la clôture de `PaperService` (le caller câble `(u) => paper.equityOf(u, prices)`) → testable sans monter tout le paper. Anti-double-paiement par conception : `state.closed = true` est positionné **après** tous les calculs ; toute exception (provider qui lève, equity NaN) laisse la compétition **ouverte et réessayable**. L'ancrage on-chain (buy-in `Payment` taggé) reste produit séparément par `@tide/xrpl`.
+
+**Audit (sous-agent) — OK à commit, zéro bloquant :**
+- Anti-double-paiement et cohérence d'état **validés empiriquement** par l'audit (sondes) : double-clôture bloquée (`CompetitionClosedError`), état réessayable si `equityOf` lève, `EquityProvider` NaN rattrapé par `assertValidEquity` avant `closed=true`, `participants()` ne fuit pas le `Set` interne.
+- 🟡 Tests ajoutés (protègent les garanties paiement) : clôture vide, provider NaN → ouvert/réessayable, `equityOf` qui lève → réessayable, anti-fuite de référence.
+- 🟡 Laissé (MVP) : double-compute de `computePayouts` (via `undistributedAmount`) — redondant mais déterministe/cohérent, pas de risque.
+
+**Bugs & fix.** Aucun (l'audit confirme la logique d'état correcte).
+
+---
+
 ## 2026-06-21 — Couche application : `PaperService` in-memory (apps/api) [Phase 1]
 
 **Quoi.** Création de `apps/api` (consomme `@tide/core` via workspace). `PaperService` : gère les comptes de paper trading **en mémoire** (ouvrir, placer un ordre, soldes, equity/PnL, leaderboard) en orchestrant les moteurs purs. 132 tests, typecheck + lint clean.

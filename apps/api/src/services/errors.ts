@@ -31,3 +31,35 @@ export class InvalidStartingEquityError extends Error {
     this.name = "InvalidStartingEquityError";
   }
 }
+
+/** Compétition déjà créée avec cet identifiant. */
+export class CompetitionExistsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitionExistsError";
+  }
+}
+
+/** Aucune compétition pour cet identifiant. */
+export class CompetitionNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitionNotFoundError";
+  }
+}
+
+/** L'utilisateur a déjà rejoint cette compétition. */
+export class AlreadyJoinedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlreadyJoinedError";
+  }
+}
+
+/** Opération impossible : la compétition est clôturée. */
+export class CompetitionClosedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitionClosedError";
+  }
+}
