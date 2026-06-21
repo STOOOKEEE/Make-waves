@@ -32,6 +32,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@tide/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@tide/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -41,6 +44,12 @@ importers:
       fastify:
         specifier: ^5.2.0
         version: 5.8.5
+
+  packages/client:
+    dependencies:
+      '@tide/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core: {}
 

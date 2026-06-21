@@ -4,6 +4,24 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-21 — Client API typé `@tide/client` [Phase 2, vers le front]
+
+**Quoi.** `packages/client` : `TideClient` typé qui couvre toutes les routes (comptes, ordres, leaderboard, compétitions) via un **`ApiTransport` injecté**. Erreurs serveur mappées en `TideApiError` (message extrait du corps). 226 tests (8 unitaires + 3 d'intégration). typecheck + lint clean.
+
+**Pourquoi.** Brique la plus **vérifiable** du front : le pont typé entre l'UI (Nuxt, à venir) et l'API. Le construire et le tester d'abord garantit le contrat avant d'écrire la moindre vue.
+
+**Cheminement.** Transport injecté (comme le feed CEX / le lecteur AMM) → testable sans réseau. Encodage des segments de chemin (`encodeURIComponent`). Les réponses (de notre propre API typée) sont castées vers le type attendu (`as T`, pas `as any`) — choix assumé et commenté (contrat de confiance).
+
+**Vérification (forte, intégration réelle) :**
+- 8 tests unitaires : construction correcte des requêtes (méthode/chemin/corps), encodage, mapping d'erreur.
+- 3 tests d'**intégration contre le vrai serveur** (transport branché sur `inject()`) : flux complet comptes+ordres+leaderboard, flux compétitions create/join/participants/close, mapping d'une erreur serveur → `TideApiError`. **Prouve que client et serveur s'accordent sur le contrat.**
+
+**Note de jugement.** Pas d'audit sous-agent séparé : le test d'intégration contre le serveur réel est la vérification décisive pour une couche contrat, plus forte qu'une relecture ; la surface est petite et idiomatique.
+
+**Bugs & fix.** Test d'intégration initial faux (pas le code) : `/leaderboard` levait « Prix manquant pour XRP » car le cache de prix n'était pas rafraîchi → corrigé (feed avec prix + `refreshPrices` avant les requêtes). Comportement serveur correct.
+
+---
+
 ## 2026-06-21 — Câblage SQLite dans l'app runnable (persistance au redémarrage) [Phase 1]
 
 **Quoi.** Les stores SQLite sont désormais **utilisés par le serveur** : `createApp` accepte des stores optionnels, `main.ts` ouvre une **connexion SQLite partagée** (fichier `tide.db`, via `TIDE_DB_PATH`) et y branche les deux stores. Les constructeurs `Sqlite*Store` acceptent une connexion partagée (`string | DatabaseSync`). 215 tests, typecheck + lint clean.
