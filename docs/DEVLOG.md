@@ -4,6 +4,23 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F8 : intégration Xaman (signature non-custodiale) [Phase 0/2, chemin critique]
+
+**Quoi.** `apps/api/src/xaman/sign-request.ts` : `createSignRequest` + `createBuyInSignRequest`/`createLiveOfferSignRequest` créent un payload de signature XUMM (uuid + URL + QR) à partir d'une tx **non signée**, via une API XUMM **injectée**. 6 tests, typecheck + lint clean.
+
+**Pourquoi.** Le mode Live est non-custodial : l'utilisateur signe dans Xaman, Tide ne voit jamais sa clé. F8 relie nos builders de tx taggées (F6/buy-in, offer) à Xaman.
+
+**Cheminement / sécurité.** Les clés API/secret XUMM vivent dans l'instance SDK **injectée** (au runtime depuis l'env), **jamais lues ni manipulées** ici → adaptateur testable sans réseau ni secret. La tx transmise est non signée (juste le `txjson`). Les helpers sont `async` : une entrée invalide lève via le builder **avant** tout appel réseau (prouvé par test).
+
+**Audit (sous-agent) — OK, non-custodial CONFORME (aucun secret/clé touché ou loggé, tx non signée, SDK injecté). 1 finding traité :**
+- 🟠 `createSignRequest` accédait à `created.next.always`/`refs.qr_png` **sans garde runtime** → une réponse XUMM partielle non-null crashait en `TypeError` (au lieu de `XamanError`). Fix : garde runtime (uuid/next.always/refs.qr_png) → `XamanError` homogène + test « réponse partielle ».
+
+**Frontière de vérification (honnête).** Adaptateur + tests livrés ; **NON câblé** au runtime (pas d'instance XUMM réelle, `xumm-sdk` pas en dépendance) — l'intégration live (clés XUMM = secrets) et le déclenchement depuis le front restent à faire/valider par Armand. Code « non vérifié » tant que pas testé sur ses clés.
+
+**Bugs & fix.** Aucun (le finding est un durcissement défensif).
+
+---
+
 ## 2026-06-22 — F7 : soumission de tx + classification du résultat [Phase 2]
 
 **Quoi.** `packages/xrpl/src/client/submit.ts` : `classifyEngineResult` (préfixe `engine_result` → catégorie), `parseSubmitResult` (parse défensif), `XrplClient.submit(txBlob)`. 6 + 21 tests, typecheck + lint clean.
