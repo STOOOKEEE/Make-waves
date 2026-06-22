@@ -4,6 +4,12 @@ import { CompetitionService } from "./services/competition-service";
 import { PriceCache } from "./feed/price-cache";
 import { fetchCexPrices } from "./feed/cex-price-feed";
 import type { CexFeedConfig, FetchJson } from "./feed/cex-price-feed";
+import { composePriceMap } from "./feed/compose-price";
+import type {
+  ComposeOptions,
+  FeedLogger,
+  OnchainPriceProvider,
+} from "./feed/compose-price";
 import { buildServer } from "./http/server";
 import type { AccountStore } from "./store/account-store";
 import type { CompetitionStore } from "./store/competition-store";
@@ -20,7 +26,21 @@ export interface AppConfig {
   readonly accountStore?: AccountStore;
   /** Persistance des compétitions (in-memory par défaut, SQLite en prod). */
   readonly competitionStore?: CompetitionStore;
+  /** Source de prix on-chain optionnelle (compose avec le CEX si fournie). */
+  readonly onchainPrices?: OnchainPriceProvider;
+  /** Paramètres de composition CEX/on-chain (défaut si omis). */
+  readonly compose?: ComposeOptions;
+  /** Journal du feed (replis de prix) — sinon silencieux. */
+  readonly feedLogger?: FeedLogger;
 }
+
+/** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
+const DEFAULT_COMPOSE: ComposeOptions = { maxDivergence: 0.05, prefer: "cex" };
+
+/** Logger par défaut : un repli de prix ne doit jamais être avalé silencieusement. */
+const DEFAULT_FEED_LOGGER: FeedLogger = {
+  warn: (message) => console.warn(`[feed] ${message}`),
+};
 
 /** Application assemblée : serveur + cache + rafraîchisseur de prix. */
 export interface App {
@@ -47,7 +67,20 @@ export function createApp(config: AppConfig): App {
   });
 
   const refreshPrices = async (): Promise<void> => {
-    const prices = await fetchCexPrices(config.feed, config.symbols, config.fetchJson);
+    const cexPrices = await fetchCexPrices(
+      config.feed,
+      config.symbols,
+      config.fetchJson,
+    );
+    // Sans source on-chain, la composition renvoie le CEX restreint à `symbols`
+    // (non-régression : `fetchCexPrices` produit déjà exactement ces symboles).
+    const prices = await composePriceMap(
+      cexPrices,
+      config.symbols,
+      config.compose ?? DEFAULT_COMPOSE,
+      config.onchainPrices,
+      config.feedLogger ?? DEFAULT_FEED_LOGGER,
+    );
     cache.set(prices);
   };
 

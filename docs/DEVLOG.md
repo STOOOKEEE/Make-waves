@@ -4,6 +4,27 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F3 : feed de prix double source (CEX + on-chain) [Phase 0/1]
+
+**Quoi.** `apps/api/src/feed/compose-price.ts` : `composePrice` (pur : combine prix CEX + on-chain avec garde de divergence) et `composePriceMap` (orchestration par symbole + repli). `onchain-price.ts` : `AmmOnchainPriceProvider` (spot AMM via `XrplClient`, symbole→paire). Câblé dans `createApp` (source on-chain + options optionnelles). 14 + 4 tests, typecheck + lint clean.
+
+**Pourquoi.** La roadmap demandait un feed à double source (carnet/AMM on-chain + API CEX) avec cache et garde-fou. Le CEX (profond, peu manipulable) reste la référence de valorisation ; l'on-chain ajoute le prix exécutable et un cross-check anti-manipulation.
+
+**Cheminement.** Garde de divergence `|cex−onchain|/min` : au-delà du seuil (5 % défaut), on **lève** plutôt que publier un prix on-chain suspect, et `composePriceMap` retombe sur le CEX (journalisé). Une seule source dispo → on l'utilise ; aucune → symbole omis (jamais de prix faux/0). Sans source on-chain, `composePriceMap` renvoie le CEX restreint aux symboles → **non-régression** prouvée (`app.test` inchangé).
+
+**Audit (sous-agent) — OK, non bloquant ; findings traités :**
+- 🟠 `feedLogger` optionnel → replis non journalisés si non câblé (viole « jamais avaler un repli ») → **logger console par défaut** dans `createApp`.
+- 🟠 Trou de test : `prefer onchain` + divergence → repli CEX (cas le plus subtil) → test ajouté (+ concordance prefer onchain, + non-fuite de symbole).
+- 🟡 Le provider on-chain faisait confiance aveugle au lecteur → valide désormais le prix (`NaN`/0/négatif/∞ → `undefined` = pas de source, message de repli juste).
+
+**Dette tracée (F-1).** La `PriceMap` produite est toujours un prix de **valorisation** (jamais garanti exécutable) : `prefer: "onchain"` n'est qu'une préférence en cas de concordance, et un repli CEX peut donner un prix non exécutable sur le DEX. Le mode Live devra lire le prix exécutable directement (carnet/AMM au moment du swap), pas via ce feed de valorisation.
+
+**Frontière de vérification (honnête).** `composePrice`/`composePriceMap`/provider testés avec faux lecteur. **NON vérifié** : la lecture on-chain réelle (dépend de F1 `adaptXrplClient` sur mainnet + un pool AMM XRP/RLUSD réel) — à brancher et valider par Armand.
+
+**Bugs & fix.** Aucun (la garde de divergence et la non-régression sont confirmées par l'audit).
+
+---
+
 ## 2026-06-22 — F2 : lecteur de carnet d'ordres (book_offers) [Phase 2]
 
 **Quoi.** `packages/xrpl/src/price/book-reader.ts` : `readBestAsk`/`readBestBid`/`readBookQuote` (bid, ask, mid, spread d'une paire au DEX natif), client `book_offers` injecté. `XrplClient.bookQuote` câblé (helper `request` factorisé : connexion + parse + wrap réseau, partagé avec `ammSpotPrice`). Parsing défensif `parseBookOffersResult`. 7 + 14 tests, typecheck + lint clean.
