@@ -11,3 +11,4 @@ export * from "./metrics/aggregate";
 export * from "./price/quantity";
 export * from "./price/spot";
 export * from "./price/amm-reader";
+export * from "./client";

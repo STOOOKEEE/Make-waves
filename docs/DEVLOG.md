@@ -4,6 +4,26 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F1 : adaptateur client XRPL live [Phase 0/2, chemin critique]
+
+**Quoi.** `packages/xrpl/src/client/` : la couche réseau qui manquait. Interface `XrplConnection` (connect/disconnect/isConnected/request) **injectée** → toute la couche est testable sans réseau ; `adaptXrplClient(Client)` adapte un vrai `Client` xrpl.js ; classe `XrplClient` (cycle de connexion typé + `ammSpotPrice` qui réutilise le lecteur AMM pur audité) ; parsing défensif `parseAmmInfoResult`. 12 tests, typecheck + lint clean.
+
+**Pourquoi.** Le DEVLOG actait la frontière « code pur fait, adaptateur réseau à écrire ». C'est la fondation de tout l'on-chain (lecture AMM/carnet, indexeur, soumission) : sans elle, rien ne touche le mainnet. Construite injectable d'abord (faux client en test) pour ne pas livrer du code réseau aveugle.
+
+**Cheminement.** Une seule frontière avec xrpl.js (cast `unknown` localisé dans `adaptXrplClient`, jamais `as any`), car sa surcharge `request` est générique. Tout le reste vit sur `XrplConnection` (testable). `ammSpotPrice` ne réimplémente rien : parse défensif → `readAmmSpotPrice` (math auditée). Erreurs typées (`XrplConnectionError` réseau vs `XrplRequestError` donnée incohérente) : aucun prix faux silencieux (tout cas incohérent lève).
+
+**Audit (sous-agent) — findings traités avant commit :**
+- 🟠 `amm: null` était traité comme réponse **malformée** au lieu de **pool absent** → tolère `null` comme « pas de pool » (cas géré).
+- 🟠 Une panne réseau de la **requête** post-connexion (ws coupé, timeout, rippled tooBusy — le scénario mainnet le plus fréquent) remontait **brute**, hors du contrat d'erreurs → enveloppée en `XrplConnectionError` (la cause est réseau ; les `XrplRequestError` de parsing remontent telles quelles).
+- 🟡 Idempotence connect **sûre en concurrence** : promesse de connexion in-flight partagée (N lectures simultanées d'un feed ne connectent qu'une fois).
+- 🟡 Tests de bord ajoutés : `result: null` → `XrplRequestError` ; `amm: null` → `InvalidPriceError` ; réserve string non-numérique → `InvalidAmountError` ; panne réseau requête → `XrplConnectionError` ; connexions concurrentes → 1 seule.
+
+**Frontière de vérification (honnête).** Garanti : 12 tests sur `XrplConnection` injectable + typecheck. **NON vérifié ici** : `adaptXrplClient` sur un vrai `Client` mainnet (non testable sans réseau) — petit, typé, à valider lors du branchement mainnet par Armand.
+
+**Bugs & fix.** Aucun (les findings ci-dessus sont des durcissements, pas des bugs de logique).
+
+---
+
 ## 2026-06-21 — Décision produit : levier/short évalués et écartés (spot-only assumé) [Stratégie]
 
 **Quoi.** Évaluation honnête du doute « le spot sans levier c'est branlant, on peut pas short ». Conclusion : **le spot non-custodial tient debout pour Make Waves** ; le perp custodial est faisable mais déconseillé. Analyse complète dans [`docs/PERP-CEX-FEASIBILITY.md`](PERP-CEX-FEASIBILITY.md).
