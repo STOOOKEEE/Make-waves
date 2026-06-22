@@ -1,5 +1,6 @@
 import type { Amount } from "xrpl";
 import type { AmmInfoResult } from "../price/amm-reader";
+import type { BookOffer, BookOffersResult } from "../price/book-reader";
 import { XrplRequestError } from "./errors";
 
 /** Garde structurelle d'un `Amount` XRPL : string (drops) ou objet IOU. */
@@ -46,4 +47,55 @@ export function parseAmmInfoResult(result: unknown): AmmInfoResult {
     throw new XrplRequestError("amm_info: réserves (amount/amount2) malformées");
   }
   return { result: { amm: { amount, amount2 } } };
+}
+
+/** Variante optionnelle d'un montant funded : présent → doit être un Amount. */
+function optionalAmount(value: unknown, context: string): Amount | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isAmount(value)) {
+    throw new XrplRequestError(`${context}: montant funded malformé`);
+  }
+  return value;
+}
+
+function parseBookOffer(value: unknown, index: number): BookOffer {
+  const record = asRecord(value, `book_offers.offers[${String(index)}]`);
+  const takerGets = record["TakerGets"];
+  const takerPays = record["TakerPays"];
+  if (!isAmount(takerGets) || !isAmount(takerPays)) {
+    throw new XrplRequestError(
+      `book_offers.offers[${String(index)}]: TakerGets/TakerPays malformés`,
+    );
+  }
+  const getsFunded = optionalAmount(
+    record["taker_gets_funded"],
+    `book_offers.offers[${String(index)}].taker_gets_funded`,
+  );
+  const paysFunded = optionalAmount(
+    record["taker_pays_funded"],
+    `book_offers.offers[${String(index)}].taker_pays_funded`,
+  );
+  return {
+    TakerGets: takerGets,
+    TakerPays: takerPays,
+    ...(getsFunded !== undefined ? { taker_gets_funded: getsFunded } : {}),
+    ...(paysFunded !== undefined ? { taker_pays_funded: paysFunded } : {}),
+  };
+}
+
+/**
+ * Valide défensivement un `result` de `book_offers` brut et le ramène à la forme
+ * typée `BookOffersResult`. Un carnet vide (`offers: []`) est un cas géré (le
+ * lecteur lèvera `InvalidPriceError` côté lecture) ; une liste absente ou une
+ * offre malformée lèvent `XrplRequestError`.
+ */
+export function parseBookOffersResult(result: unknown): BookOffersResult {
+  const record = asRecord(result, "book_offers");
+  const offers = record["offers"];
+  if (!Array.isArray(offers)) {
+    throw new XrplRequestError("book_offers: champ offers absent ou non-tableau");
+  }
+  return { result: { offers: offers.map(parseBookOffer) } };
 }

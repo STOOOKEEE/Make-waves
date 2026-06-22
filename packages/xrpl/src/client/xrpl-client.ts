@@ -1,7 +1,13 @@
 import type { AmmInfoClient, XrplCurrency } from "../price/amm-reader";
 import { readAmmSpotPrice } from "../price/amm-reader";
-import type { XrplConnection, XrplResponseEnvelope } from "./connection";
-import { parseAmmInfoResult } from "./parse";
+import type { BookOffersClient, BookQuote } from "../price/book-reader";
+import { readBookQuote } from "../price/book-reader";
+import type {
+  XrplConnection,
+  XrplRequestEnvelope,
+  XrplResponseEnvelope,
+} from "./connection";
+import { parseAmmInfoResult, parseBookOffersResult } from "./parse";
 import { XrplConnectionError } from "./errors";
 
 /**
@@ -71,29 +77,47 @@ export class XrplClient {
   }
 
   /**
-   * Prix spot d'un pool AMM (`asset` exprimé en `asset2`). Se connecte au besoin,
-   * lit `amm_info`, parse défensivement la réponse puis délègue le calcul au
+   * Exécute une requête après connexion et parse défensivement le `result`.
+   * Une panne réseau (ws coupé, timeout, rippled tooBusy) → `XrplConnectionError`
+   * (cause réseau) ; les `XrplRequestError` du parseur (donnée incohérente)
+   * remontent telles quelles. Point unique de gestion d'erreur réseau des lectures.
+   */
+  private async request<T>(
+    request: XrplRequestEnvelope,
+    parse: (result: unknown) => T,
+  ): Promise<T> {
+    await this.connect();
+    let response: XrplResponseEnvelope;
+    try {
+      response = await this.connection.request(request);
+    } catch (error) {
+      throw new XrplConnectionError("Requête réseau XRPL échouée", {
+        cause: error,
+      });
+    }
+    return parse(response.result);
+  }
+
+  /**
+   * Prix spot d'un pool AMM (`asset` exprimé en `asset2`). Délègue le calcul au
    * lecteur pur audité. Lève `XrplRequestError`/`InvalidPriceError` si la donnée
    * est incohérente — jamais de prix faux silencieux.
    */
   async ammSpotPrice(asset: XrplCurrency, asset2: XrplCurrency): Promise<number> {
-    await this.connect();
     const ammClient: AmmInfoClient = {
-      request: async (request) => {
-        let response: XrplResponseEnvelope;
-        try {
-          response = await this.connection.request(request);
-        } catch (error) {
-          // Panne réseau post-connexion (ws coupé, timeout, rippled tooBusy) :
-          // la cause est réseau → erreur typée, pas une donnée incohérente.
-          throw new XrplConnectionError("Requête réseau XRPL échouée", {
-            cause: error,
-          });
-        }
-        // Les XrplRequestError de parsing (donnée malformée) remontent telles quelles.
-        return parseAmmInfoResult(response.result);
-      },
+      request: (request) => this.request(request, parseAmmInfoResult),
     };
     return readAmmSpotPrice(ammClient, asset, asset2);
+  }
+
+  /**
+   * Cotation d'une paire au carnet d'ordres natif : bid, ask, mid, spread.
+   * Lève `InvalidPriceError` si un côté est vide ou si le carnet est croisé.
+   */
+  async bookQuote(base: XrplCurrency, quote: XrplCurrency): Promise<BookQuote> {
+    const bookClient: BookOffersClient = {
+      request: (request) => this.request(request, parseBookOffersResult),
+    };
+    return readBookQuote(bookClient, base, quote);
   }
 }

@@ -4,6 +4,22 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F2 : lecteur de carnet d'ordres (book_offers) [Phase 2]
+
+**Quoi.** `packages/xrpl/src/price/book-reader.ts` : `readBestAsk`/`readBestBid`/`readBookQuote` (bid, ask, mid, spread d'une paire au DEX natif), client `book_offers` injecté. `XrplClient.bookQuote` câblé (helper `request` factorisé : connexion + parse + wrap réseau, partagé avec `ammSpotPrice`). Parsing défensif `parseBookOffersResult`. 7 + 14 tests, typecheck + lint clean.
+
+**Pourquoi.** Le carnet est la 2e source de prix (avec l'AMM) et la base du best-execution (F5 : router carnet vs pool). Brique réseau testable, comme F1.
+
+**Cheminement.** Prix calculé depuis `TakerGets`/`TakerPays` via `ammSpotPrice` (réutilise `amountToQuantity`, qui gère les drops XRP) **plutôt que le champ `quality`** du protocole, dont l'échelle dépend de la présence de XRP d'un côté (piège de conversion classique évité). Bid = book inverse, exprimé en quote/base comme l'ask → mid/spread cohérents. Carnet croisé (ask < bid) → `InvalidPriceError` (jamais de prix faux).
+
+**Audit (sous-agent) — bid/ask jugés CORRECTS (le risque grave craint était sain), 1 finding traité :**
+- 🟠 **Funded partiel** : `offerAmounts` prenait `gets_funded`/`pays_funded` indépendamment → si un seul côté était présent, on mélangeait un montant réduit et un montant plein = **prix faux silencieux**. rippled les émet toujours ensemble, mais le code ne le garantissait pas → garde **tout-ou-rien** au point de calcul (`InvalidPriceError` si un seul côté funded) + test.
+- 🟡 **Dette tracée (F2-4)** : ask et bid sont lus en 2 requêtes (ledger courant non figé) → un croisement transitoire sous forte activité peut lever `InvalidPriceError`. C'est une **protection**, pas un bug (le feed retente) ; lecture atomique sur `ledger_index` figé = amélioration future. Documenté dans le code.
+
+**Bugs & fix.** Aucun bug de formule (sens des prix confirmé numériquement) ; le fix funded est un garde-fou de robustesse.
+
+---
+
 ## 2026-06-22 — F1 : adaptateur client XRPL live [Phase 0/2, chemin critique]
 
 **Quoi.** `packages/xrpl/src/client/` : la couche réseau qui manquait. Interface `XrplConnection` (connect/disconnect/isConnected/request) **injectée** → toute la couche est testable sans réseau ; `adaptXrplClient(Client)` adapte un vrai `Client` xrpl.js ; classe `XrplClient` (cycle de connexion typé + `ammSpotPrice` qui réutilise le lecteur AMM pur audité) ; parsing défensif `parseAmmInfoResult`. 12 tests, typecheck + lint clean.

@@ -200,3 +200,44 @@ describe("XrplClient lifecycle", () => {
     expect(client.isConnected()).toBe(true);
   });
 });
+
+describe("XrplClient.bookQuote", () => {
+  it("lit le carnet (bid/ask) via book_offers", async () => {
+    const askBook: XrplResponseEnvelope = {
+      result: {
+        offers: [
+          { TakerGets: "1000000000", TakerPays: { currency: "USD", issuer: ISSUER, value: "500" } },
+        ],
+      },
+    };
+    const bidBook: XrplResponseEnvelope = {
+      result: {
+        offers: [
+          { TakerGets: { currency: "USD", issuer: ISSUER, value: "490" }, TakerPays: "1000000000" },
+        ],
+      },
+    };
+    const conn = new FakeConnection((request) => {
+      const gets = request["taker_gets"] as { currency: string };
+      return gets.currency === "XRP" ? askBook : bidBook;
+    });
+
+    const quote = await new XrplClient(conn).bookQuote(
+      { currency: "XRP" },
+      { currency: "USD", issuer: ISSUER },
+    );
+    expect(quote.ask).toBe(0.5);
+    expect(quote.bid).toBe(0.49);
+    expect(quote.mid).toBe(0.495);
+  });
+
+  it("lève XrplRequestError si offers n'est pas un tableau", async () => {
+    const conn = new FakeConnection(() => ({ result: { offers: "nope" } }));
+    await expect(
+      new XrplClient(conn).bookQuote(
+        { currency: "XRP" },
+        { currency: "USD", issuer: ISSUER },
+      ),
+    ).rejects.toBeInstanceOf(XrplRequestError);
+  });
+});
