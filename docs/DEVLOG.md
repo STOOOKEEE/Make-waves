@@ -4,6 +4,32 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F4 : indexeur d'attribution on-chain (métrique reine) [Phase 1]
+
+**Quoi.** `packages/xrpl/metrics/observe.ts` (`extractTaggedTxs` : parse défensif `account_tx` → tx taggées **réussies**), `apps/api/indexer/` (`normalizeVolume` = point unique de normalisation du volume ; `AttributionIndexer` = orchestrateur avec fenêtre figée + multi-comptes + dédup), `XrplClient.accountTx`, store idempotent. 10 + 7 + 5 + 17 tests, typecheck + lint clean.
+
+**Pourquoi.** 3 prix sur 4 du hackathon SONT cette métrique on-chain (volume + comptes actifs taggés). C'est ce qui fait gagner ou perdre : une métrique fausse (sur- ou sous-comptée) est éliminatoire.
+
+**Cheminement.** Point unique de normalisation du volume (résout la dette tracée depuis l'agrégateur) : drops/IOU × prix du feed, `Payment`→Amount, `OfferCreate`→TakerGets. Repli conservateur (prix manquant → volume 0 **journalisé**, jamais inventé).
+
+**Audit (sous-agent) — verdict 🔴 BLOQUANT, 3 défauts qui faussaient la métrique sur mainnet réel (masqués par des fixtures idéalisées), TOUS corrigés avant commit :**
+- 🔴 **Tx échouées comptées** : `account_tx` renvoie aussi les tx `tec*`/non validées, qui portent notre SourceTag mais n'ont aucun effet → sur-comptage. Fix : ne retenir que `validated === true` ET `meta.TransactionResult === "tesSUCCESS"` ; une tx échouée est ignorée (pas un trou), une tx réussie au statut illisible est comptée `skippedTagged` (trou signalé).
+- 🔴 **Fenêtre haute mouvante** : pagination sans `ledger_index_max` → le serveur vise le dernier ledger validé, qui bouge entre les pages (miss/recompte). Fix : borne haute **figée** sur la 1re page, réutilisée sur toutes les pages et tous les comptes, curseur avancé à cette borne.
+- 🔴 **Double-comptage au redémarrage** : curseur en mémoire + store sans clé unique → réindexer toute l'histoire à chaque boot multipliait le volume. Fix : **store idempotent** (`tx_hash UNIQUE` + `INSERT OR IGNORE`), `hash` remonté par l'extracteur. Le redémarrage ne double-compte plus.
+- 🟠 **Périmètre mono-compte** : les swaps `OfferCreate` se signent côté JOUEUR, pas sur le prize pool → `account_tx(pool)` ne les voit jamais. Fix : indexeur **multi-comptes** (`accounts[]` : pool + comptes joueurs Live connus).
+- 🟠 Gardes pagination : marker répété → stop ; `ledgerIndexMax < curseur+1` → warn (nœud à historique partiel).
+
+**Limites d'attribution tracées (à connaître avant tout chiffre présenté) :**
+- **Volume conservateur** : prix manquant → 0 (sous-comptage assumé, journalisé). Le `PriceMap` est clé par `currency` SANS issuer → un IOU homonyme (même code, autre issuer) serait valorisé au prix du vrai actif (sur-comptage). À corriger par une clé `currency+issuer` / whitelist d'issuers attribuables avant d'ouvrir le Live à des paires arbitraires.
+- **Partial payments** : volume basé sur `Amount`, pas `delivered_amount` (OK tant que Tide n'émet que ses propres Payment full).
+- **Curseur non persisté** : au redémarrage l'indexeur rescanne depuis `startLedger` (le store idempotent évite le double-comptage, mais c'est plus lent) → persister le curseur = optimisation future.
+- **Couverture swap** : ne mesure le volume de trading que pour les comptes listés ; l'exhaustivité viendra d'un flux de ledgers filtré par SourceTag (v2).
+- **`getPrices` vide au boot** → volumes en repli 0 : ne lancer l'indexeur qu'avec un prix XRP/ref valide.
+
+**Bugs & fix.** Cf. les 3 🔴 ci-dessus (corrigés). Les tests reproduisent désormais le réel (statut tx, fenêtre figée, dédup par hash) au lieu de fixtures idéalisées.
+
+---
+
 ## 2026-06-22 — F3 : feed de prix double source (CEX + on-chain) [Phase 0/1]
 
 **Quoi.** `apps/api/src/feed/compose-price.ts` : `composePrice` (pur : combine prix CEX + on-chain avec garde de divergence) et `composePriceMap` (orchestration par symbole + repli). `onchain-price.ts` : `AmmOnchainPriceProvider` (spot AMM via `XrplClient`, symbole→paire). Câblé dans `createApp` (source on-chain + options optionnelles). 14 + 4 tests, typecheck + lint clean.

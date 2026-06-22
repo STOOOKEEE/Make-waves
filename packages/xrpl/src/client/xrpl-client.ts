@@ -1,3 +1,4 @@
+import { assertValidAddress } from "../tx/address";
 import type { AmmInfoClient, XrplCurrency } from "../price/amm-reader";
 import { readAmmSpotPrice } from "../price/amm-reader";
 import type { BookOffersClient, BookQuote } from "../price/book-reader";
@@ -7,8 +8,29 @@ import type {
   XrplRequestEnvelope,
   XrplResponseEnvelope,
 } from "./connection";
-import { parseAmmInfoResult, parseBookOffersResult } from "./parse";
+import type { AccountTxPage } from "./parse";
+import {
+  parseAccountTxResult,
+  parseAmmInfoResult,
+  parseBookOffersResult,
+} from "./parse";
 import { XrplConnectionError } from "./errors";
+
+/** Options de lecture `account_tx`. */
+export interface AccountTxOptions {
+  /** Ne lire qu'à partir de ce ledger (curseur de progression de l'indexeur). */
+  readonly ledgerIndexMin?: number;
+  /**
+   * Borne haute de ledger. À FIGER pendant une session de pagination : sans elle,
+   * le serveur vise le dernier ledger validé, qui bouge entre les pages (fenêtre
+   * mouvante → risque de miss/recompte). L'indexeur la fige sur la 1re page.
+   */
+  readonly ledgerIndexMax?: number;
+  /** Nombre max d'entrées par page. */
+  readonly limit?: number;
+  /** Marker de pagination (renvoyé par une page précédente). */
+  readonly marker?: unknown;
+}
 
 /**
  * Client XRPL de haut niveau de Tide. Détient une `XrplConnection` (injectée :
@@ -119,5 +141,31 @@ export class XrplClient {
       request: (request) => this.request(request, parseBookOffersResult),
     };
     return readBookQuote(bookClient, base, quote);
+  }
+
+  /**
+   * Transactions d'un compte (`account_tx`), en ordre chronologique (forward).
+   * Renvoie les entrées brutes + la borne haute de ledger (curseur). L'extraction
+   * des tx taggées est faite par `extractTaggedTxs` (pur). Valide l'adresse.
+   */
+  async accountTx(
+    account: string,
+    options: AccountTxOptions = {},
+  ): Promise<AccountTxPage> {
+    assertValidAddress(account, "account");
+    const request: XrplRequestEnvelope = {
+      command: "account_tx",
+      account,
+      forward: true,
+      ...(options.ledgerIndexMin !== undefined
+        ? { ledger_index_min: options.ledgerIndexMin }
+        : {}),
+      ...(options.ledgerIndexMax !== undefined
+        ? { ledger_index_max: options.ledgerIndexMax }
+        : {}),
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options.marker !== undefined ? { marker: options.marker } : {}),
+    };
+    return this.request(request, parseAccountTxResult);
   }
 }

@@ -99,3 +99,31 @@ export function parseBookOffersResult(result: unknown): BookOffersResult {
   }
   return { result: { offers: offers.map(parseBookOffer) } };
 }
+
+/** Page de réponse `account_tx` réduite à ce que l'indexeur consomme. */
+export interface AccountTxPage {
+  /** Entrées brutes (parsées défensivement plus loin par l'extracteur). */
+  readonly transactions: readonly unknown[];
+  /** Plus haut ledger couvert par la requête → curseur de progression. */
+  readonly ledgerIndexMax: number;
+  /** Présent s'il reste des pages : à renvoyer pour paginer (sinon `undefined`). */
+  readonly marker?: unknown;
+}
+
+/**
+ * Valide défensivement un `result` d'`account_tx`. On NE parse PAS ici le détail
+ * des transactions (c'est le rôle de `extractTaggedTxs`, pur) ; on extrait juste
+ * la liste brute, la borne haute de ledger (curseur) et le `marker` (pagination).
+ */
+export function parseAccountTxResult(result: unknown): AccountTxPage {
+  const record = asRecord(result, "account_tx");
+  const transactions = record["transactions"];
+  if (!Array.isArray(transactions)) {
+    throw new XrplRequestError("account_tx: transactions absent ou non-tableau");
+  }
+  const ledgerIndexMax = record["ledger_index_max"];
+  if (typeof ledgerIndexMax !== "number") {
+    throw new XrplRequestError("account_tx: ledger_index_max absent ou non-numérique");
+  }
+  return { transactions, ledgerIndexMax, marker: record["marker"] };
+}

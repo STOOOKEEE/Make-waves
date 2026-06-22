@@ -1,7 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { XrplClient } from "../src/client/xrpl-client";
 import { XrplConnectionError, XrplRequestError } from "../src/client/errors";
-import { InvalidAmountError, InvalidPriceError } from "../src/errors";
+import {
+  InvalidAddressError,
+  InvalidAmountError,
+  InvalidPriceError,
+} from "../src/errors";
 import type {
   XrplConnection,
   XrplRequestEnvelope,
@@ -239,5 +243,42 @@ describe("XrplClient.bookQuote", () => {
         { currency: "USD", issuer: ISSUER },
       ),
     ).rejects.toBeInstanceOf(XrplRequestError);
+  });
+});
+
+describe("XrplClient.accountTx", () => {
+  it("renvoie transactions + ledgerIndexMax + marker", async () => {
+    const conn = new FakeConnection(() => ({
+      result: {
+        transactions: [{ ledger_index: 10 }, { ledger_index: 11 }],
+        ledger_index_max: 60,
+        marker: "next",
+      },
+    }));
+    const page = await new XrplClient(conn).accountTx(ISSUER, { ledgerIndexMin: 5 });
+    expect(page.transactions).toHaveLength(2);
+    expect(page.ledgerIndexMax).toBe(60);
+    expect(page.marker).toBe("next");
+  });
+
+  it("rejette une adresse invalide avant tout appel réseau", async () => {
+    let called = false;
+    const conn = new FakeConnection(() => {
+      called = true;
+      return { result: {} };
+    });
+    await expect(
+      new XrplClient(conn).accountTx("not-an-address"),
+    ).rejects.toBeInstanceOf(InvalidAddressError);
+    expect(called).toBe(false);
+  });
+
+  it("lève XrplRequestError si transactions n'est pas un tableau", async () => {
+    const conn = new FakeConnection(() => ({
+      result: { transactions: "nope", ledger_index_max: 60 },
+    }));
+    await expect(new XrplClient(conn).accountTx(ISSUER)).rejects.toBeInstanceOf(
+      XrplRequestError,
+    );
   });
 });
