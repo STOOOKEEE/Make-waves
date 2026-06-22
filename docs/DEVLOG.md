@@ -4,6 +4,27 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F9 : moteur de volume taggé, conditionnel + garde-fou [Phase 3, conditionnel]
+
+**Quoi.** `packages/xrpl/src/volume/` : `evaluateVolumeTrade` (edge net d'un round-trip de volume auto-généré) et `planVolumeTrade` (décision avec **garde-fou dur**). 10 tests, typecheck + lint clean. **Décide seulement ; n'exécute pas.**
+
+**Pourquoi.** Le « Most Volume » peut se jouer par du volume self-généré — MAIS uniquement si l'orga le compte, et **jamais à perte** (SPEC §9, garde-fou quant de la roadmap). F9 encode cette décision avec un défaut **OFF**.
+
+**Cheminement.** `evaluateVolumeTrade` modélise les coûts d'un aller-retour : spread (×1, `relativeSpread` = spread complet), frais AMM (×2 jambes), frais réseau (×2 tx), **slippage/impact de marché** (×2). `planVolumeTrade` refuse (`skip`) tant que : moteur non activé, OU orga n'a pas confirmé le self-généré, OU edge net sous la marge.
+
+**Audit (sous-agent) — verdict 🔴 BLOQUANT, corrigé avant commit :**
+- 🔴 **Garde-fou contournable** : `minNetEdge` négatif n'était pas validé → `netEdge = -5 < minNetEdge = -10` ⇒ `trade` **à perte**. Une marge négative autorisait explicitement de perdre de l'argent. Fix : `minNetEdge` **doit être fini ≥ 0** (rejeté à la source) → `netEdge ≥ minNetEdge ≥ 0` garanti, perte impossible.
+- 🟠 **Slippage ignoré** et JSDoc « conservateur » trompeuse : le slippage est toujours un coût et croît avec la taille → poser 0 fait croire +EV à tort. Fix : `slippageRate` ajouté au modèle (×2 jambes) et exposé dans `VolumeCost`.
+- 🟡 Frontière `netEdge === minNetEdge` → trade (inclusif) documentée et testée ; tests ajoutés (marge négative rejetée, slippage négatif rejeté).
+
+**Solidité confirmée (audit) :** ordre des gardes correct, défaut OFF (booléens requis, aucun appelant n'active implicitement), spread compté ×1 correct (ask−bid/mid), validation des entrées propre.
+
+**Statut.** **Conditionnel** : à n'activer que si l'orga confirme que le volume self-généré compte (chemin critique #2) ET après validation de l'edge en petite taille sur mainnet (`quant-mentor`/`strat-audit`). Reste désactivé par défaut.
+
+**Bugs & fix.** Le 🔴 ci-dessus (garde-fou rendu incontournable).
+
+---
+
 ## 2026-06-22 — F8 : intégration Xaman (signature non-custodiale) [Phase 0/2, chemin critique]
 
 **Quoi.** `apps/api/src/xaman/sign-request.ts` : `createSignRequest` + `createBuyInSignRequest`/`createLiveOfferSignRequest` créent un payload de signature XUMM (uuid + URL + QR) à partir d'une tx **non signée**, via une API XUMM **injectée**. 6 tests, typecheck + lint clean.

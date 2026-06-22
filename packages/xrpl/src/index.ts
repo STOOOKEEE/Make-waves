@@ -20,4 +20,5 @@ export * from "./price/spot";
 export * from "./price/amm-reader";
 export * from "./price/book-reader";
 export * from "./exec/route";
+export * from "./volume";
 export * from "./client";
