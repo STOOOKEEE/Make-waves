@@ -4,6 +4,25 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F5 : best execution (planification de swap) [Phase 2]
+
+**Quoi.** `packages/xrpl/src/exec/route.ts` : `planExecution` compare prix AMM et carnet, retient le meilleur, applique une borne de slippage et produit l'`OfferCreate` taggé (via `buildLiveOffer`). 10 tests, typecheck + lint clean.
+
+**Pourquoi.** Donner à l'utilisateur Live un prix attendu et une **protection de slippage** (plafond à l'achat, plancher à la vente) au moment du swap.
+
+**Cheminement / honnêteté.** Sur le DEX natif XRPL, un `OfferCreate` croise **déjà automatiquement** carnet + AMM (XLS-30) au meilleur prix : on ne « route » donc pas l'exécution nous-mêmes. `planExecution` sert au **bornage du slippage** (limites gives/wants) et à l'affichage ; `venue` est juste indicatif. Le code le documente pour ne pas survendre de fausse valeur ajoutée.
+
+**Audit (sous-agent) — cœur financier jugé CORRECT (sens buy/sell, cap/floor, venue), 2 findings de robustesse traités :**
+- 🟠 **Montant IOU malformé** : `String(number)` pouvait produire une notation scientifique (`1.23e-10`) ou un résidu binaire 17 chiffres (`0.30000000000000004`) → `OfferCreate` rejetée **après signature** (échec Live silencieux). Fix : `formatIouValue` (arrondi à 15 chiffres significatifs, décimal), et **refus bruyant** d'un exposant plutôt qu'une tx malformée signée.
+- 🟠 **Arrondi des drops en défaveur** : `Math.round` pouvait passer le plancher de vente sous la limite. Fix : arrondi **directionnel** — ce qu'on fournit (gives) → vers le bas, ce qu'on exige (wants) → vers le haut ; la borne de slippage reste un vrai plafond/plancher au drop près.
+- 🟡 Tests ajoutés : quote = XRP (drops directionnels), résidu flottant nettoyé, base IOU.
+
+**Dette tracée (chemin Live).** `formatIouValue` refuse l'exposant au lieu de l'étendre : des montants extrêmes (≈1e-7) lèveraient — à étendre si des paires à très petites valeurs arrivent. `bookPrice` est supposé toujours coté (pas de sentinelle carnet-vide) : l'appelant gère le cas.
+
+**Bugs & fix.** Aucun bug de sens (confirmé numériquement) ; les fixes ci-dessus sont des garde-fous de robustesse du montant produit.
+
+---
+
 ## 2026-06-22 — F4 : indexeur d'attribution on-chain (métrique reine) [Phase 1]
 
 **Quoi.** `packages/xrpl/metrics/observe.ts` (`extractTaggedTxs` : parse défensif `account_tx` → tx taggées **réussies**), `apps/api/indexer/` (`normalizeVolume` = point unique de normalisation du volume ; `AttributionIndexer` = orchestrateur avec fenêtre figée + multi-comptes + dédup), `XrplClient.accountTx`, store idempotent. 10 + 7 + 5 + 17 tests, typecheck + lint clean.
