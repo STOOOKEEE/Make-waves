@@ -14,7 +14,9 @@ import {
   parseAmmInfoResult,
   parseBookOffersResult,
 } from "./parse";
-import { XrplConnectionError } from "./errors";
+import type { SubmitOutcome } from "./submit";
+import { parseSubmitResult } from "./submit";
+import { XrplConnectionError, XrplRequestError } from "./errors";
 
 /** Options de lecture `account_tx`. */
 export interface AccountTxOptions {
@@ -167,5 +169,19 @@ export class XrplClient {
       ...(options.marker !== undefined ? { marker: options.marker } : {}),
     };
     return this.request(request, parseAccountTxResult);
+  }
+
+  /**
+   * Soumet une transaction signée (`tx_blob`). Le résultat est **provisoire**
+   * (avis du nœud, pas la finalité) : confirmer ensuite via le ledger validé.
+   * Ne lève PAS sur un échec applicatif (`tec*`/`tem*`…) — il est rapporté dans
+   * `SubmitOutcome.category` pour que l'appelant décide (jamais avalé). Une panne
+   * réseau, elle, est typée `XrplConnectionError`.
+   */
+  async submit(txBlob: string): Promise<SubmitOutcome> {
+    if (txBlob.trim() === "") {
+      throw new XrplRequestError("submit: tx_blob vide");
+    }
+    return this.request({ command: "submit", tx_blob: txBlob }, parseSubmitResult);
   }
 }

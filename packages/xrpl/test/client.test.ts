@@ -282,3 +282,38 @@ describe("XrplClient.accountTx", () => {
     );
   });
 });
+
+describe("XrplClient.submit", () => {
+  it("classe un succès provisoire", async () => {
+    const conn = new FakeConnection(() => ({
+      result: { engine_result: "tesSUCCESS", accepted: true, applied: true },
+    }));
+    const outcome = await new XrplClient(conn).submit("DEADBEEF");
+    expect(outcome.category).toBe("success");
+    expect(outcome.provisional).toBe(true);
+  });
+
+  it("rapporte un échec applicatif sans lever (tec)", async () => {
+    const conn = new FakeConnection(() => ({
+      result: { engine_result: "tecUNFUNDED_PAYMENT" },
+    }));
+    const outcome = await new XrplClient(conn).submit("DEADBEEF");
+    expect(outcome.category).toBe("failed");
+  });
+
+  it("rejette un tx_blob vide", async () => {
+    const conn = new FakeConnection(() => ({ result: {} }));
+    await expect(new XrplClient(conn).submit("   ")).rejects.toBeInstanceOf(
+      XrplRequestError,
+    );
+  });
+
+  it("type une panne réseau en XrplConnectionError", async () => {
+    const conn = new FakeConnection(() => {
+      throw new Error("ws down");
+    });
+    await expect(new XrplClient(conn).submit("DEADBEEF")).rejects.toBeInstanceOf(
+      XrplConnectionError,
+    );
+  });
+});

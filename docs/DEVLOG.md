@@ -4,6 +4,25 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F7 : soumission de tx + classification du résultat [Phase 2]
+
+**Quoi.** `packages/xrpl/src/client/submit.ts` : `classifyEngineResult` (préfixe `engine_result` → catégorie), `parseSubmitResult` (parse défensif), `XrplClient.submit(txBlob)`. 6 + 21 tests, typecheck + lint clean.
+
+**Pourquoi.** Soumettre une tx signée et interpréter le résultat **sans avaler l'échec** ni le confondre avec un succès — base de la gestion d'erreurs Live (échec/partial/timeout).
+
+**Cheminement.** Cartographie conforme à la sémantique XRPL (`tes`/`tec`/`ter`/`tem`/`tef`/`tel`), préfixe inconnu → `unknown` (jamais pris pour un succès). Caractère **provisoire** matérialisé dans le type (`provisional: true`) : un appelant ne peut pas traiter `success` comme une finalité sans le voir. Échec applicatif (`tec`/`tem`) **rapporté** (catégorie), pas levé ; panne réseau → `XrplConnectionError`.
+
+**Audit (sous-agent) — OK, aucun bloquant ; risque « échec pris pour succès » : aucun trouvé. Améliorations appliquées :**
+- 🟡 `tec` (inclus au ledger, **sequence consommé**, frais prélevés) vs `tef` (jamais inclus) étaient fusionnés sous `failed` → ajout de `includedInLedger` (dérivé) + JSDoc : distinction **critique pour un futur retry** (après `tec` il faut un nouveau sequence).
+- 🟡 Remontée de `engineResultCode`, `validatedLedgerIndex` (référence pour confirmer la finalité), `queued` (provisoire ≠ rejet).
+- 🟡 Tests ajoutés : gardes `=== true` (accepted/applied non-booléens → false), panne réseau directe sur `submit` → `XrplConnectionError`, `includedInLedger` tec vs tef.
+
+**Sécurité (audit).** Rien de sensible loggé ; le `tx_blob` signé n'apparaît dans aucun message d'erreur.
+
+**Bugs & fix.** Aucun (la cartographie était correcte ; les ajouts sont des enrichissements pour le retry/finalité).
+
+---
+
 ## 2026-06-22 — F6 : prize pool multisig + distribution des payouts [Phase 0/2, chemin critique]
 
 **Quoi.** `packages/xrpl/src/tx/` : `buildSignerListSet` (transforme le prize pool en multisig), `allocateLargestRemainder` (conversion drops/unités par **plus grand reste**), `buildPayoutPayments` (un `Payment` taggé `tide/payout` par gagnant). + durcissement de `assertValidAmount` (value IOU stricte). 6 + 8 + 7 + tests amount, typecheck + lint clean.
