@@ -185,6 +185,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — Front : refonte UI style « Analogue » + hero light-tunnel animé [Phase 1, UI]
+
+**Quoi.** Refonte visuelle complète du front (`apps/web`) dans le langage **Analogue** (cinématique, achromatique strict, thème dark) : design system (tokens, base CSS, substituts libres Inter/VT323), **landing** avec hero **tunnel de lumière animé en canvas** (rayons radiaux, bloom, parallaxe au curseur) + titre révélé mot par mot, refonte des 3 vues (terminal, leaderboard, compétitions), nav pill flottante frostée, routeur par hash (zéro dépendance). Commit `9585712` (mergé dans `main` via PR #1).
+
+**Pourquoi.** Le MVP front précédent était fonctionnel mais brut (HTML quasi nu) ; Armand voulait « un vrai site » à partir d'une référence de design précise.
+
+**Cheminement.** Le 1er essai (hero en `radial-gradient` CSS flou) faisait « AI-generated » → refait en **canvas animé** (centaines de stries radiales, allumage `easeOut`, scintillement), seule la référence visuelle (light-burst bleu-blanc) porte la couleur. Achromatie stricte tenue **même pour le trading** (PnL/sens par signe/caret/nuances de gris, jamais de vert/rouge).
+
+**Vérification (honnête).** typecheck (`vue-tsc`), lint, build OK, 237 tests (logique des composables). **Rendu visuel validé empiriquement** par captures headless (Chrome `--screenshot`/`--print-to-pdf`, `--force-prefers-reduced-motion` pour figer l'anim) — le bloom plein écran colle à la référence. Bug corrigé au passage : canvas noir en `prefers-reduced-motion` (resize effaçait sans repeindre).
+
+**Bugs & fix.** Cf. repaint reduced-motion ci-dessus.
+
+---
+
 ## 2026-06-21 — Décision produit : levier/short évalués et écartés (spot-only assumé) [Stratégie]
 
 **Quoi.** Évaluation honnête du doute « le spot sans levier c'est branlant, on peut pas short ». Conclusion : **le spot non-custodial tient debout pour Make Waves** ; le perp custodial est faisable mais déconseillé. Analyse complète dans [`docs/PERP-CEX-FEASIBILITY.md`](PERP-CEX-FEASIBILITY.md).

@@ -52,7 +52,7 @@ make-waves/
 
 ```bash
 pnpm install                   # dépendances
-pnpm test                      # tests (vitest) — 237 tests
+pnpm test                      # tests (vitest) — 367 tests
 pnpm typecheck                 # types (tsc/vue-tsc strict, par-package)
 pnpm lint                      # eslint (no-explicit-any en erreur)
 pnpm --filter @tide/api start  # API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
@@ -62,20 +62,19 @@ pnpm --filter @tide/web build  # build du front
 
 ## Où on en est
 
-**Backend off-chain complet, testé (174 tests) et runnable.** 11 features livrées, chacune testée + auditée par sous-agent + commitée sur `dev` :
+**MVP vertical complet (off-chain) + couche d'intégration on-chain écrite et testée par adaptateurs injectés.** 367 tests, ~25 audits sous-agents. `dev` poussé sur `origin`, `main` = MVP off-chain + front (PR #1 mergée).
+
 - **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
-- **Intégration XRPL** (`packages/xrpl`) : builders de tx taggées (`buildBuyInPayment`/`buildLiveOffer`, SourceTag+Memos), agrégateur d'attribution (volume + comptes actifs distincts), cœur du feed de prix (spot AMM, mid, conversion drops).
-- **Backend** (`apps/api`) : services + **Fastify** + feed CEX + cache + **persistance SQLite** (survie au redémarrage vérifiée) + lecteur AMM, entrypoint runnable.
-- **Client** (`packages/client`) : `TideClient` typé, transport injecté, testé contre le vrai serveur.
-- **Front MVP** (`apps/web`) : Vue 3 + Vite, composables testés + vues terminal/leaderboard/compétitions. Build OK, **rendu visuel à valider par Armand**.
+- **Backend off-chain** (`apps/api`) : services + **Fastify** + feed CEX + cache + **persistance SQLite** (survie au redémarrage) + lecteur AMM, runnable. Client `@tide/client` typé.
+- **Front** (`apps/web`) : Vue 3 + Vite, refonte **style Analogue** (hero light-tunnel animé en canvas, achromatie stricte). Build OK.
+- **Intégration XRPL on-chain** (`packages/xrpl` + `apps/api`), F1→F9, chacune auditée :
+  - **F1** `XrplClient` (connexion injectable + `ammSpotPrice`) · **F2** lecteur de carnet `book_offers` · **F3** feed double source CEX+on-chain (garde de divergence) · **F4** **indexeur d'attribution** (tx taggées réussies, fenêtre figée, store idempotent — la métrique reine) · **F5** best execution + bornage slippage · **F6** **multisig** (`SignerListSet`) + **payouts** plus grand reste · **F7** soumission tx + classification `engine_result` · **F8** **Xaman** (payload non-custodial, SDK injecté) · **F9** moteur de volume conditionnel + garde-fou anti wash-trading (OFF par défaut).
 
-**MVP vertical complet et démontrable** (backend ↔ client ↔ front). 237 tests, ~17 audits sous-agents, sur `dev`, jamais push.
+**Frontière restante — demande l'environnement d'Armand (non vérifiable ici, NON câblé runtime) :**
+- **Chemin critique mainnet** : exécuter le spike d'attribution (1 swap taggé → compteur orga), réserver/déclarer le `SourceTag`, trancher les questions orga (active account, volume self-généré → conditionne F9), spike multisig prize pool.
+- **Câblage runtime** : `adaptXrplClient(new Client(mainnet))`, instancier le SDK XUMM avec les **vraies clés** (secrets), brancher l'indexeur (`AttributionIndexer`) et le feed on-chain dans `main.ts`, déclencher Xaman depuis le front. Tout ça : code « non vérifié » tant que pas testé sur ton mainnet/tes clés.
 
-**Frontière restante — demande l'environnement d'Armand (non vérifiable ici) :**
-- **Chemin critique mainnet** : spike d'attribution (1 swap taggé qui fait monter le compteur orga), réserver/déclarer le `SourceTag`, questions orga, spike multisig prize pool.
-- **Adaptateur xrpl Client live** (connexion mainnet), **order book reader**, **intégration Xaman** (clés XUMM = secrets). Tout ça : code « non vérifié » tant que pas testé sur ton mainnet/tes clés.
-
-Dette tracée (DEVLOG) : montants en `number` (passer en BigInt/drops au point de règlement) ; normalisation du volume pour l'agrégateur (un seul point partagé).
+Dette tracée (DEVLOG) : montants en `number` → BigInt/drops au règlement (garde `MAX_SAFE_INTEGER` posée) ; prix on-chain clé par `currency` sans issuer (homonymes) ; curseur indexeur non persisté (rescan au boot, store idempotent).
 
 ## Conventions
 
