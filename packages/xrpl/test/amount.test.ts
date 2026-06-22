@@ -61,6 +61,25 @@ describe("assertValidAmount — token émis (objet)", () => {
       InvalidAddressError,
     );
   });
+
+  it("accepte une value décimale valide", () => {
+    const amount: IssuedCurrencyAmount = { currency: "USD", issuer: ISSUER, value: "50.5" };
+    expect(() => assertValidAmount(amount, "amount")).not.toThrow();
+  });
+
+  it("rejette une value en notation scientifique (rippled la refuse)", () => {
+    const amount: IssuedCurrencyAmount = { currency: "USD", issuer: ISSUER, value: "1e+21" };
+    expect(() => assertValidAmount(amount, "amount")).toThrow(InvalidAmountError);
+  });
+
+  it("rejette une value à plus de 15 chiffres significatifs (troncature)", () => {
+    const amount: IssuedCurrencyAmount = {
+      currency: "USD",
+      issuer: ISSUER,
+      value: "12345678901234567", // 17 chiffres significatifs
+    };
+    expect(() => assertValidAmount(amount, "amount")).toThrow(InvalidAmountError);
+  });
 });
 
 describe("amountsEqual", () => {

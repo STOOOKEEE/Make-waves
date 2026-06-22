@@ -4,6 +4,28 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-22 — F6 : prize pool multisig + distribution des payouts [Phase 0/2, chemin critique]
+
+**Quoi.** `packages/xrpl/src/tx/` : `buildSignerListSet` (transforme le prize pool en multisig), `allocateLargestRemainder` (conversion drops/unités par **plus grand reste**), `buildPayoutPayments` (un `Payment` taggé `tide/payout` par gagnant). + durcissement de `assertValidAmount` (value IOU stricte). 6 + 8 + 7 + tests amount, typecheck + lint clean.
+
+**Pourquoi.** Le prize pool est custodial le temps du tournoi (cf. SPEC : multisig, pas d'Escrow). F6 fournit la mécanique : configurer le multisig, puis distribuer les gains on-chain sans dérive de montant. Résout la dette tracée « Σ versé = distribuable arrondi » (méthode du plus grand reste).
+
+**Cheminement.** `allocateLargestRemainder` : plancherise chaque part, distribue le reliquat aux plus grandes fractions (départage stable) → conservation exacte. `buildSignerListSet` garde le **quorum atteignable** (Σ poids ≥ quorum) : sinon les fonds seraient bloqués à jamais. Payouts : mapping index→bénéficiaire **avant** filtrage des gains nuls (pas de décalage/double-paiement), chaque montant validé.
+
+**Audit (sous-agent) — OK MVP, solide sur le chemin réaliste (XRP/pools modestes) ; findings traités :**
+- 🟠 **Value IOU exponentielle/tronquée** sur gros pools (`1e+21`, ou >15 chiffres → rejet réseau ou troncature silencieuse). Fix : `assertValidAmount` impose désormais une value IOU **décimale stricte** (regex sans exposant + ≤ 15 chiffres significatifs) → échoue **bruyamment** au lieu de produire une tx malformée. Protège aussi F5.
+- 🟡 **Garde `MAX_SAFE_INTEGER`** ajoutée dans `allocateLargestRemainder` : au-delà de 2^53, un `number` ne représente plus les unités exactement → on lève (à reprendre avec la migration `number`→BigInt).
+- 🟡 **Code mort retiré** : la branche `remainder < 0` était prouvée inatteignable (`round(total) ≥ Σfloors` toujours).
+- 🟡 Tests ajoutés : value IOU exponentielle/>15 chiffres rejetée, pool trop grand rejeté, jamais de notation scientifique produite, conservation sur magnitudes mélangées.
+
+**Solidité confirmée par l'audit (sans finding) :** conservation nominale, pas de double-paiement ni mauvaise destination, multisig quorum-atteignable, memo+SourceTag sur chaque payout, gain nul → pas de Payment.
+
+**Dette (tracée, non urgente).** Non-conservation flottante 1 fois sur ~200k sur magnitudes extrêmes (1 drop) → disparaît avec `number`→BigInt au point de règlement. Troncature IOU >1e15 unités bornée par la garde MAX_SAFE.
+
+**Bugs & fix.** Aucun bug de conservation/destination sur le chemin réaliste ; les fixes sont des garde-fous (value IOU, grands montants).
+
+---
+
 ## 2026-06-22 — F5 : best execution (planification de swap) [Phase 2]
 
 **Quoi.** `packages/xrpl/src/exec/route.ts` : `planExecution` compare prix AMM et carnet, retient le meilleur, applique une borne de slippage et produit l'`OfferCreate` taggé (via `buildLiveOffer`). 10 tests, typecheck + lint clean.

@@ -51,3 +51,11 @@ export class InvalidPriceError extends Error {
     this.name = "InvalidPriceError";
   }
 }
+
+/** Configuration de SignerList invalide (quorum, poids, signataires). */
+export class InvalidSignerListError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidSignerListError";
+  }
+}
