@@ -33,3 +33,11 @@ pnpm-debug.log*
 ._*
 .idea/
 .vscode/
+
+# Caches Python (scripts de skills)
+__pycache__/
+*.pyc
+
+# Outils Claude Code (local, hors dépôt)
+.claude/
+skills-lock.json
