@@ -1,8 +1,15 @@
 <script setup lang="ts">
 /* Segmented control des écrans app (pill blanche = actif). Utilise les classes
- * globales .seg de base.css. v-model = option active. */
+ * globales .seg de base.css. v-model = `value` de l'option active.
+ * L'option sépare `value` (stable, sert à la logique) de `label` (traduit, à
+ * l'affichage) pour survivre au changement de langue. */
 
-defineProps<{ options: string[]; modelValue: string }>();
+export interface SegOption {
+  value: string;
+  label: string;
+}
+
+defineProps<{ options: readonly SegOption[]; modelValue: string }>();
 const emit = defineEmits<{ "update:modelValue": [value: string] }>();
 </script>
 
@@ -10,11 +17,11 @@ const emit = defineEmits<{ "update:modelValue": [value: string] }>();
   <div class="seg">
     <button
       v-for="opt in options"
-      :key="opt"
-      :class="{ on: opt === modelValue }"
-      @click="emit('update:modelValue', opt)"
+      :key="opt.value"
+      :class="{ on: opt.value === modelValue }"
+      @click="emit('update:modelValue', opt.value)"
     >
-      {{ opt }}
+      {{ opt.label }}
     </button>
   </div>
 </template>

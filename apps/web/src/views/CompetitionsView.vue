@@ -4,17 +4,87 @@
  * grille filtrable. Porté depuis design_site/competitions.html.
  */
 import { computed, ref } from "vue";
-import { COMPETITIONS, getComp } from "../data/competitions";
+import { localizedCompetitions, getComp } from "../data/competitions";
 import type { CompetitionMock, CompetitionStatus } from "../data/competitions";
 import { useCountdown } from "../composables/useCountdown";
+import { useI18n } from "../i18n/useI18n";
 import StatusBadge from "../components/StatusBadge.vue";
 import SegControl from "../components/SegControl.vue";
 
 const emit = defineEmits<{ navigate: [path: string] }>();
 
-// Compétition vedette + reste de la grille (hors vedette).
-const featured = getComp("season-04");
-const grid = COMPETITIONS.filter((c) => !c.featured);
+const { t, locale } = useI18n({
+  en: {
+    pageTitle: "Competitions",
+    pageSubtitle:
+      "Seasons, flash tournaments and sponsored challenges. Pick your arena.",
+    featBadge: "Live · featured",
+    featTitle1: "Season 04 —",
+    featTitle2: "Grand Championship",
+    featDesc:
+      "TIDE's flagship competition. 6 weeks, $100,000 in virtual capital, the best return takes the pot. Open to all, no entry fee.",
+    featPlayersLabel: "Players",
+    featFormatLabel: "Format",
+    featRankLabel: "Your rank",
+    featFormatValue: "Net return",
+    ctaKeepTrading: "Keep trading →",
+    ctaViewDetails: "View details",
+    potLabel: "Prize pool",
+    cdDays: "Days",
+    cdHours: "Hours",
+    cdMins: "Min",
+    cdSecs: "Sec",
+    cardEntryLabel: "Entry",
+    registered: "{n} registered",
+    countOne: "{n} competition",
+    countMany: "{n} competitions",
+    ctaLive: "Join",
+    ctaSoon: "Pre-register",
+    ctaEnded: "View results",
+    filterAll: "All",
+    filterLive: "Live",
+    filterSoon: "Soon",
+    filterEnded: "Ended",
+  },
+  fr: {
+    pageTitle: "Compétitions",
+    pageSubtitle:
+      "Saisons, tournois éclair et défis sponsorisés. Choisis ton arène.",
+    featBadge: "En cours · vedette",
+    featTitle1: "Saison 04 —",
+    featTitle2: "Grand Championnat",
+    featDesc:
+      "La compétition phare de TIDE. 6 semaines, $100 000 de capital virtuel, le meilleur rendement rafle la cagnotte. Ouvert à tous, sans frais d'entrée.",
+    featPlayersLabel: "Participants",
+    featFormatLabel: "Format",
+    featRankLabel: "Ton rang",
+    featFormatValue: "Rendement net",
+    ctaKeepTrading: "Continuer à trader →",
+    ctaViewDetails: "Voir les détails",
+    potLabel: "Cagnotte",
+    cdDays: "Jours",
+    cdHours: "Heures",
+    cdMins: "Min",
+    cdSecs: "Sec",
+    cardEntryLabel: "Entrée",
+    registered: "{n} inscrits",
+    countOne: "{n} compétition",
+    countMany: "{n} compétitions",
+    ctaLive: "Rejoindre",
+    ctaSoon: "Pré-inscription",
+    ctaEnded: "Voir les résultats",
+    filterAll: "Toutes",
+    filterLive: "En cours",
+    filterSoon: "À venir",
+    filterEnded: "Terminées",
+  },
+});
+
+// Compétition vedette + reste de la grille (hors vedette) — réactif à la langue.
+const featured = computed(() => getComp("season-04", locale.value));
+const grid = computed(() =>
+  localizedCompetitions(locale.value).filter((c) => !c.featured),
+);
 
 // Compte à rebours de la cagnotte vedette.
 const { dd, hh, mm, ss } = useCountdown({
@@ -24,33 +94,35 @@ const { dd, hh, mm, ss } = useCountdown({
   secs: 52,
 });
 
-// Filtre segmenté → statut. "Toutes" = tout, sinon filtre par statut.
-const FILTERS = ["Toutes", "En cours", "À venir", "Terminées"] as const;
-type FilterLabel = (typeof FILTERS)[number];
-const FILTER_STATUS: Record<FilterLabel, CompetitionStatus | "all"> = {
-  Toutes: "all",
-  "En cours": "live",
-  "À venir": "soon",
-  Terminées: "ended",
-};
-const filter = ref<FilterLabel>("Toutes");
+// Filtre segmenté → statut. Valeurs stables ; libellés traduits.
+const FILTERS = computed(() => [
+  { value: "all", label: t("filterAll") },
+  { value: "live", label: t("filterLive") },
+  { value: "soon", label: t("filterSoon") },
+  { value: "ended", label: t("filterEnded") },
+]);
+const filter = ref("all");
 
 const filtered = computed<CompetitionMock[]>(() => {
-  const status = FILTER_STATUS[filter.value];
-  return status === "all" ? grid : grid.filter((c) => c.status === status);
+  const g = grid.value;
+  return filter.value === "all"
+    ? g
+    : g.filter((c) => c.status === filter.value);
 });
 
 const countLabel = computed(() => {
   const n = filtered.value.length;
-  return `${n} compétition${n > 1 ? "s" : ""}`;
+  return t(n > 1 ? "countMany" : "countOne", { n });
 });
 
-// CTA selon le statut (classe + libellé).
-const CTA: Record<CompetitionStatus, { c: string; l: string }> = {
-  live: { c: "join", l: "Rejoindre" },
-  soon: { c: "soon", l: "Pré-inscription" },
-  ended: { c: "ended", l: "Voir les résultats" },
-};
+// CTA selon le statut (classe + libellé traduit).
+const CTA = computed<Record<CompetitionStatus, { c: string; l: string }>>(
+  () => ({
+    live: { c: "join", l: t("ctaLive") },
+    soon: { c: "soon", l: t("ctaSoon") },
+    ended: { c: "ended", l: t("ctaEnded") },
+  }),
+);
 
 function openComp(id: string): void {
   emit("navigate", `/competition/${id}`);
@@ -61,10 +133,8 @@ function openComp(id: string): void {
   <div class="page">
     <div class="page-head">
       <div>
-        <h1>Compétitions</h1>
-        <p>
-          Saisons, tournois éclair et défis sponsorisés. Choisis ton arène.
-        </p>
+        <h1>{{ t("pageTitle") }}</h1>
+        <p>{{ t("pageSubtitle") }}</p>
       </div>
     </div>
 
@@ -76,24 +146,20 @@ function openComp(id: string): void {
     >
       <div class="glow"></div>
       <div>
-        <div class="badge"><i></i> En cours · vedette</div>
-        <h2>Saison 04 —<br />Grand Championnat</h2>
-        <p>
-          La compétition phare de TIDE. 6 semaines, $100 000 de capital virtuel,
-          le meilleur rendement rafle la cagnotte. Ouvert à tous, sans frais
-          d'entrée.
-        </p>
+        <div class="badge"><i></i> {{ t("featBadge") }}</div>
+        <h2>{{ t("featTitle1") }}<br />{{ t("featTitle2") }}</h2>
+        <p>{{ t("featDesc") }}</p>
         <div class="row">
           <div>
-            <div class="l">Participants</div>
+            <div class="l">{{ t("featPlayersLabel") }}</div>
             <div class="v">12 480</div>
           </div>
           <div>
-            <div class="l">Format</div>
-            <div class="v">Rendement net</div>
+            <div class="l">{{ t("featFormatLabel") }}</div>
+            <div class="v">{{ t("featFormatValue") }}</div>
           </div>
           <div>
-            <div class="l">Ton rang</div>
+            <div class="l">{{ t("featRankLabel") }}</div>
             <div class="v up">#18</div>
           </div>
         </div>
@@ -102,22 +168,22 @@ function openComp(id: string): void {
             class="btn btn-white"
             @click.stop="emit('navigate', '/dashboard')"
           >
-            Continuer à trader →
+            {{ t("ctaKeepTrading") }}
           </button>
           <button class="btn btn-line" @click.stop="openComp(featured.id)">
-            Voir les détails
+            {{ t("ctaViewDetails") }}
           </button>
         </div>
       </div>
       <div class="feat-side">
         <div class="potbox">
-          <div class="l">Cagnotte</div>
+          <div class="l">{{ t("potLabel") }}</div>
           <div class="pot">$50,000</div>
           <div class="cd">
-            <div><div class="v">{{ dd }}</div><div class="l2">Jours</div></div>
-            <div><div class="v">{{ hh }}</div><div class="l2">Heures</div></div>
-            <div><div class="v">{{ mm }}</div><div class="l2">Min</div></div>
-            <div><div class="v">{{ ss }}</div><div class="l2">Sec</div></div>
+            <div><div class="v">{{ dd }}</div><div class="l2">{{ t("cdDays") }}</div></div>
+            <div><div class="v">{{ hh }}</div><div class="l2">{{ t("cdHours") }}</div></div>
+            <div><div class="v">{{ mm }}</div><div class="l2">{{ t("cdMins") }}</div></div>
+            <div><div class="v">{{ ss }}</div><div class="l2">{{ t("cdSecs") }}</div></div>
           </div>
           <div class="lab">USDC + NFT · top 50</div>
         </div>
@@ -125,7 +191,7 @@ function openComp(id: string): void {
     </div>
 
     <div class="controls">
-      <SegControl v-model="filter" :options="[...FILTERS]" />
+      <SegControl v-model="filter" :options="FILTERS" />
       <div class="lab">{{ countLabel }}</div>
     </div>
 
@@ -145,18 +211,18 @@ function openComp(id: string): void {
         <div class="desc">{{ c.desc }}</div>
         <div class="meta">
           <div>
-            <div class="l">Cagnotte</div>
+            <div class="l">{{ t("potLabel") }}</div>
             <div class="v gold">{{ c.pot }}</div>
           </div>
           <div>
-            <div class="l">Entrée</div>
+            <div class="l">{{ t("cardEntryLabel") }}</div>
             <div class="v" style="font-size: 14px">{{ c.fee }}</div>
           </div>
         </div>
         <template v-if="c.cap">
           <div class="bar"><i :style="{ width: c.pct + '%' }"></i></div>
           <div class="barl">
-            <span>{{ c.players }} inscrits</span>
+            <span>{{ t("registered", { n: c.players }) }}</span>
             <span>{{ c.pct }}% · {{ c.cap }} max</span>
           </div>
         </template>

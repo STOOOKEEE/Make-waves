@@ -3,6 +3,8 @@
  * EMPREINTE D'ARCHITECTURE (génome de 12 modules en code-barres), une mini
  * sparkline déterministe et le rendement. Composant réutilisable de la meute. */
 
+import { useI18n } from "../../i18n/useI18n";
+
 const props = defineProps<{
   rank: number;
   name: string;
@@ -13,6 +15,17 @@ const props = defineProps<{
   sharpe: number;
   seed: number;
 }>();
+
+const { t } = useI18n({
+  en: {
+    by: "by {author}",
+    genomeAria: "architecture fingerprint of {name}",
+  },
+  fr: {
+    by: "par {author}",
+    genomeAria: "empreinte d'architecture de {name}",
+  },
+});
 
 /* tailles de groupes du génome : perception 4 · raisonnement 4 · risque 2 · exécution 2 */
 const GROUPS = [4, 4, 2, 2];
@@ -63,9 +76,9 @@ function spark(): string {
       <span class="ssharpe mono">SHARPE {{ sharpe }}</span>
     </div>
     <div class="sname">{{ name }}</div>
-    <div class="sauthor mono">par {{ author }}</div>
+    <div class="sauthor mono">{{ t('by', { author }) }}</div>
 
-    <div class="genome" :aria-label="`empreinte d'architecture de ${name}`">
+    <div class="genome" :aria-label="t('genomeAria', { name })">
       <span
         v-for="(slot, i) in groupSlots()"
         :key="i"

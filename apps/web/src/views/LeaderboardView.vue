@@ -11,13 +11,66 @@ import { computed, onMounted, ref } from "vue";
 import type { TideClient } from "@tide/client";
 import { useCountdown } from "../composables/useCountdown";
 import { useLeaderboard } from "../composables/useLeaderboard";
+import { useI18n } from "../i18n/useI18n";
 import SegControl from "../components/SegControl.vue";
 
 const props = defineProps<{ client: TideClient }>();
 
+const { t } = useI18n({
+  en: {
+    leaderboard: "Leaderboard",
+    subtitle: "Season 04 · return is everything. 12,480 traders competing.",
+    scopeSeason: "Season 04",
+    scopeAllTime: "All-time",
+    scopeFriends: "Friends",
+    seasonPot: "Season prize pool",
+    potCaption: "USDC + season NFT · top 50",
+    days: "Days",
+    hours: "Hours",
+    min: "Min",
+    sec: "Sec",
+    rankPrefix: "RANK",
+    searchPlaceholder: "Search a trader or wallet…",
+    countLabel: "Showing 1–{n} of 12,480",
+    colRank: "Rank",
+    colTrader: "Trader",
+    colReturn: "Return",
+    colReward: "Reward",
+    you: "you",
+    ranksUpToday: "↑ {n} ranks today",
+  },
+  fr: {
+    leaderboard: "Classement",
+    subtitle: "Saison 04 · le rendement décide de tout. 12 480 traders en lice.",
+    scopeSeason: "Saison 04",
+    scopeAllTime: "All-time",
+    scopeFriends: "Amis",
+    seasonPot: "Cagnotte de la saison",
+    potCaption: "USDC + NFT de saison · top 50",
+    days: "Jours",
+    hours: "Heures",
+    min: "Min",
+    sec: "Sec",
+    rankPrefix: "RANG",
+    searchPlaceholder: "Rechercher un trader ou un wallet…",
+    countLabel: "Affichage 1–{n} sur 12 480",
+    colRank: "Rang",
+    colTrader: "Trader",
+    colReturn: "Rendement",
+    colReward: "Récompense",
+    you: "toi",
+    ranksUpToday: "↑ {n} rangs aujourd'hui",
+  },
+});
+
 // Segmented control (purement visuel, aucun fetch au changement).
-const scope = ref("Saison 04");
-const scopeOptions = ["Saison 04", "All-time", "Amis"];
+// `scope` garde une valeur stable (indépendante de la langue) ; le label est traduit.
+const scope = ref("season");
+const scopeOptions = computed(() => [
+  { value: "season", label: t("scopeSeason") },
+  { value: "allTime", label: t("scopeAllTime") },
+  { value: "friends", label: t("scopeFriends") },
+]);
 
 // Compte à rebours de la saison (remplace le tick « secondes seules » du source).
 const { dd, hh, mm, ss } = useCountdown({ days: 4, hours: 11, mins: 38, secs: 52 });
@@ -170,17 +223,15 @@ const rows = computed<BoardRow[]>(() =>
 );
 
 // Libellé de comptage : « Affichage 1–N sur 12 480 » (N = lignes hors ta ligne).
-const countLabel = computed(
-  () => `Affichage 1–${rows.value.length} sur 12 480`,
-);
+const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
 </script>
 
 <template>
   <div class="page">
     <div class="page-head">
       <div>
-        <h1>Classement</h1>
-        <p>Saison 04 · le rendement décide de tout. 12 480 traders en lice.</p>
+        <h1>{{ t('leaderboard') }}</h1>
+        <p>{{ t('subtitle') }}</p>
       </div>
       <SegControl v-model="scope" :options="scopeOptions" />
     </div>
@@ -189,21 +240,21 @@ const countLabel = computed(
     <div class="toprow">
       <div v-reveal class="card season">
         <div>
-          <span class="lab">Cagnotte de la saison</span>
+          <span class="lab">{{ t('seasonPot') }}</span>
           <div class="pot">$50,000</div>
-          <div class="potc">USDC + NFT de saison · top 50</div>
+          <div class="potc">{{ t('potCaption') }}</div>
         </div>
         <div class="cd">
-          <div><div class="v">{{ dd }}</div><div class="l">Jours</div></div>
-          <div><div class="v">{{ hh }}</div><div class="l">Heures</div></div>
-          <div><div class="v">{{ mm }}</div><div class="l">Min</div></div>
-          <div><div class="v">{{ ss }}</div><div class="l">Sec</div></div>
+          <div><div class="v">{{ dd }}</div><div class="l">{{ t('days') }}</div></div>
+          <div><div class="v">{{ hh }}</div><div class="l">{{ t('hours') }}</div></div>
+          <div><div class="v">{{ mm }}</div><div class="l">{{ t('min') }}</div></div>
+          <div><div class="v">{{ ss }}</div><div class="l">{{ t('sec') }}</div></div>
         </div>
       </div>
       <div v-reveal class="card podium">
         <div class="pod p2">
           <div class="av" style="background: #bff6ce">DM</div>
-          <div class="rk">RANG 02</div>
+          <div class="rk">{{ t('rankPrefix') }} 02</div>
           <div class="nm">degen_maxi</div>
           <div class="ad">0x19…ab88</div>
           <div class="ret">+118.3%</div>
@@ -212,7 +263,7 @@ const countLabel = computed(
         <div class="pod p1">
           <div class="crown">👑</div>
           <div class="av" style="background: #ffd66b">QV</div>
-          <div class="rk">RANG 01</div>
+          <div class="rk">{{ t('rankPrefix') }} 01</div>
           <div class="nm">quant_viper</div>
           <div class="ad">0x7a…34f1</div>
           <div class="ret">+142.8%</div>
@@ -220,7 +271,7 @@ const countLabel = computed(
         </div>
         <div class="pod p3">
           <div class="av" style="background: #ffb9ac">SH</div>
-          <div class="rk">RANG 03</div>
+          <div class="rk">{{ t('rankPrefix') }} 03</div>
           <div class="nm">satoshi_heir</div>
           <div class="ad">0xc4…7d20</div>
           <div class="ret">+97.6%</div>
@@ -232,7 +283,7 @@ const countLabel = computed(
     <div class="controls">
       <div class="srch">
         <span class="soft">⌕</span>
-        <input v-model="search" placeholder="Rechercher un trader ou un wallet…" />
+        <input v-model="search" :placeholder="t('searchPlaceholder')" />
       </div>
       <div class="lab">{{ countLabel }}</div>
     </div>
@@ -240,13 +291,13 @@ const countLabel = computed(
     <!-- table -->
     <div v-reveal class="card board">
       <div class="lhead">
-        <div>Rang</div>
-        <div>Trader</div>
-        <div>Rendement</div>
+        <div>{{ t('colRank') }}</div>
+        <div>{{ t('colTrader') }}</div>
+        <div>{{ t('colReturn') }}</div>
         <div class="h-hide">PnL</div>
         <div class="h-hide">Trades</div>
         <div class="h-hide">Win</div>
-        <div>Récompense</div>
+        <div>{{ t('colReward') }}</div>
       </div>
       <div>
         <div
@@ -276,8 +327,8 @@ const countLabel = computed(
           <div class="who">
             <span class="av" style="background: #fff">P</span>
             <span>
-              <b>toi — 0xPilote.eth</b>
-              <span>↑ 6 rangs aujourd'hui</span>
+              <b>{{ t('you') }} — 0xPilote.eth</b>
+              <span>{{ t('ranksUpToday', { n: 6 }) }}</span>
             </span>
           </div>
           <div class="ret">+28.9%</div>

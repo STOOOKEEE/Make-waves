@@ -1,10 +1,17 @@
-const NUMBER_FORMAT = new Intl.NumberFormat("fr-FR", {
-  maximumFractionDigits: 4,
-});
+import { locale, type Locale } from "../i18n/locale";
 
-/** Montant lisible (séparateurs fr, 4 décimales max). */
+const FORMATTERS: Record<Locale, Intl.NumberFormat> = {
+  fr: new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 4 }),
+  en: new Intl.NumberFormat("en-US", { maximumFractionDigits: 4 }),
+};
+
+function formatter(): Intl.NumberFormat {
+  return FORMATTERS[locale.value];
+}
+
+/** Montant lisible (séparateurs selon la langue, 4 décimales max). */
 export function formatAmount(value: number): string {
-  return NUMBER_FORMAT.format(value);
+  return formatter().format(value);
 }
 
 /**
@@ -13,5 +20,5 @@ export function formatAmount(value: number): string {
  */
 export function formatSigned(value: number): string {
   const sign = value >= 0 ? "+" : "−";
-  return `${sign}${NUMBER_FORMAT.format(Math.abs(value))}`;
+  return `${sign}${formatter().format(Math.abs(value))}`;
 }

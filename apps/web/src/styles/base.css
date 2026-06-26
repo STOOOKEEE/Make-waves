@@ -106,9 +106,10 @@ button {
   display: grid;
   place-items: center;
 }
-.brand .mk svg {
-  width: 14px;
-  height: 14px;
+.brand .mk img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
 }
 .tabs {
   display: flex;

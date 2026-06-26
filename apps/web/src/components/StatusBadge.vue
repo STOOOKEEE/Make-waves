@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import type { CompetitionStatus } from "../data/competitions";
+import { useI18n } from "../i18n/useI18n";
 
 /* Badge d'état de compétition : live (menthe + point clignotant), soon (bleu),
  * ended (gris). Sémantique uniquement. */
 
 const props = defineProps<{ status: CompetitionStatus }>();
 
-const label: Record<CompetitionStatus, string> = {
-  live: "En cours",
-  soon: "À venir",
-  ended: "Terminée",
-};
+const { t } = useI18n({
+  en: { live: "Live", soon: "Soon", ended: "Ended" },
+  fr: { live: "En cours", soon: "À venir", ended: "Terminée" },
+});
 </script>
 
 <template>
   <span class="status" :class="status">
-    <i v-if="status === 'live'"></i>{{ label[props.status] }}
+    <i v-if="status === 'live'"></i>{{ t(props.status) }}
   </span>
 </template>
 

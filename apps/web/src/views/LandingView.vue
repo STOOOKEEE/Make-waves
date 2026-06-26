@@ -2,7 +2,149 @@
 // Landing page — page d'accueil SPÉCIALE : elle n'utilise PAS l'app-bar global,
 // elle rend sa propre barre supérieure (.bar) et ses propres tokens de couleurs
 // (différents des tokens globaux). Le .grain global est déjà rendu par App.vue.
-import { onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue'
+import { useI18n } from '../i18n/useI18n'
+import LangToggle from '../components/LangToggle.vue'
+import BrandMark from '../components/BrandMark.vue'
+
+const { t, locale, intlLocale } = useI18n({
+  en: {
+    soundOff: 'SOUND [OFF]',
+    heroDesc: 'TIDE IS A WEB3 PAPER-TRADING ARENA WHERE THE BEST TRADERS COMPETE FOR REAL REWARDS.',
+    seasonLive: 'SEASON 04 · LIVE',
+    tradersCount: '12 480 TRADERS',
+    join: 'Join',
+    heroTag: '[ CHAMPIONSHIP — SEASON 04 ]',
+    formatLabel: 'Format',
+    tagPaper: 'Paper Trading',
+    tagCompetition: 'Competition',
+    tagRewards: 'On-chain Rewards',
+    demoWallet: 'Demo wallet',
+    s04Return: 'S04 return · rank #18 · starting capital $100,000',
+    topTradersLive: 'Top traders — live',
+    meName: 'you — 0xPilote.eth',
+    meRanks: '↑ 6 ranks today',
+    segArena: 'Arena',
+    segLeaderboard: 'Leaderboard',
+    segRewards: 'Rewards',
+    marqCompetition: 'Competition',
+    marqZeroRisk: 'Zero Risk',
+    marqRealGlory: 'Real Glory',
+    manifestoLabel: 'The manifesto',
+    manifestoP1: 'You get $100,000 in virtual capital. You trade real crypto markets in real time. ',
+    manifestoHighlight: 'No deposit, no painful liquidations, no KYC.',
+    manifestoP2: ' Just your read on the market — against 340,000 others. The best cash out on-chain.',
+    statPaidOut: 'paid out this season',
+    statWallets: 'wallets created',
+    statMarkets: 'markets available',
+    statFeeFree: 'fee-free trading',
+    stepsHeadL1: 'From zero to',
+    stepsHeadL2: 'the grid — 60s',
+    stepsLead: 'Connect, get your capital, and the race begins. No endless onboarding.',
+    step1Title: 'Connect your wallet',
+    step1Body: 'MetaMask, Phantom or WalletConnect. No deposit, no KYC. Your identity stays yours.',
+    step2Title: 'Get $100,000',
+    step2Body: 'Demo capital credited instantly. Open positions on 200+ pairs with real data.',
+    step3Title: 'Climb & cash out',
+    step3Body: 'Beat the market and your rivals. At the close, rewards drop automatically on-chain.',
+    seasonPot: 'Season pot',
+    potCaption: 'USDC + season NFT · split across the top 50',
+    cdDays: 'Days',
+    cdHours: 'Hours',
+    cdMin: 'Min',
+    cdSec: 'Sec',
+    prize1: '1st place',
+    prize2: '2nd place',
+    prize3: '3rd place',
+    prize4: 'Top 4 — 50',
+    ctaHeadL1: 'Take',
+    ctaHeadL2: 'your spot',
+    ctaP: '340,000 traders sharpen their edge without risking a satoshi. The grid is filling up.',
+    connectWallet: 'Connect wallet →',
+    footerTagline: 'The paper-trading arena where the best crypto pilots go head to head — and cash out on-chain.',
+    colProduct: 'Product',
+    colResources: 'Resources',
+    colCommunity: 'Community',
+    linkCompetitions: 'Competitions',
+    linkLeaderboard: 'Leaderboard',
+    linkRewards: 'Rewards',
+    linkMarkets: 'Markets',
+    linkDocumentation: 'Documentation',
+    linkRules: 'Rules',
+    linkApi: 'API',
+    linkStatus: 'Status',
+    copyright: '© 2026 TIDE LABS — BUILT ON-CHAIN',
+    disclaimer: 'PAPER TRADING INVOLVES NO REAL CAPITAL',
+  },
+  fr: {
+    soundOff: 'SON [OFF]',
+    heroDesc: "TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.",
+    seasonLive: 'SAISON 04 · LIVE',
+    tradersCount: '12 480 TRADERS',
+    join: 'Rejoindre',
+    heroTag: '[ CHAMPIONNAT — SAISON 04 ]',
+    formatLabel: 'Format',
+    tagPaper: 'Paper Trading',
+    tagCompetition: 'Compétition',
+    tagRewards: 'Récompenses On-chain',
+    demoWallet: 'Portefeuille de démo',
+    s04Return: 'Rendement S04 · rang #18 · capital initial $100,000',
+    topTradersLive: 'Top traders — live',
+    meName: 'toi — 0xPilote.eth',
+    meRanks: "↑ 6 rangs aujourd'hui",
+    segArena: 'Arène',
+    segLeaderboard: 'Classement',
+    segRewards: 'Récompenses',
+    marqCompetition: 'Compétition',
+    marqZeroRisk: 'Zéro Risque',
+    marqRealGlory: 'Gloire Réelle',
+    manifestoLabel: 'Le manifeste',
+    manifestoP1: 'Tu reçois $100 000 virtuels. Tu trades les vrais marchés crypto en temps réel. ',
+    manifestoHighlight: 'Pas de dépôt, pas de liquidation qui fait mal, pas de KYC.',
+    manifestoP2: ' Juste ta lecture du marché — opposée à celle de 340 000 autres. Les meilleurs encaissent on-chain.',
+    statPaidOut: 'distribués cette saison',
+    statWallets: 'portefeuilles créés',
+    statMarkets: 'marchés disponibles',
+    statFeeFree: 'trading sans frais',
+    stepsHeadL1: 'De zéro à',
+    stepsHeadL2: 'la grille — 60s',
+    stepsLead: "Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.",
+    step1Title: 'Connecte ton wallet',
+    step1Body: 'MetaMask, Phantom ou WalletConnect. Aucun dépôt, aucun KYC. Ton identité reste la tienne.',
+    step2Title: 'Reçois $100 000',
+    step2Body: 'Capital de démo crédité instantanément. Ouvre tes positions sur 200+ paires en données réelles.',
+    step3Title: 'Grimpe & encaisse',
+    step3Body: 'Bats le marché et tes rivaux. À la clôture, les récompenses tombent automatiquement on-chain.',
+    seasonPot: 'Cagnotte de la saison',
+    potCaption: 'USDC + NFT de saison · répartis sur le top 50',
+    cdDays: 'Jours',
+    cdHours: 'Heures',
+    cdMin: 'Min',
+    cdSec: 'Sec',
+    prize1: '1ère place',
+    prize2: '2e place',
+    prize3: '3e place',
+    prize4: 'Top 4 — 50',
+    ctaHeadL1: 'Prends',
+    ctaHeadL2: 'ta place',
+    ctaP: '340 000 traders affûtent leur edge sans risquer un satoshi. La grille se remplit.',
+    connectWallet: 'Connecter le wallet →',
+    footerTagline: "L'arène de paper trading où les meilleurs pilotes crypto se mesurent — et encaissent on-chain.",
+    colProduct: 'Produit',
+    colResources: 'Ressources',
+    colCommunity: 'Communauté',
+    linkCompetitions: 'Compétitions',
+    linkLeaderboard: 'Classement',
+    linkRewards: 'Récompenses',
+    linkMarkets: 'Marchés',
+    linkDocumentation: 'Documentation',
+    linkRules: 'Règlement',
+    linkApi: 'API',
+    linkStatus: 'Statut',
+    copyright: '© 2026 TIDE LABS — CONSTRUIT ON-CHAIN',
+    disclaimer: "LE PAPER TRADING N'IMPLIQUE AUCUN CAPITAL RÉEL",
+  },
+})
 
 // Navigation : la source pointait vers dashboard.html → on émet vers /dashboard.
 const emit = defineEmits<{ navigate: [path: string] }>()
@@ -21,7 +163,7 @@ const t2 = ref<string>('--:--')
 const active = ref<number>(0)
 const segButtons = ref<Array<HTMLButtonElement | null>>([null, null, null])
 const indicator = ref<HTMLSpanElement | null>(null)
-const segLabels = ['Arène', 'Classement', 'Récompenses'] as const
+const segLabels = computed(() => [t('segArena'), t('segLeaderboard'), t('segRewards')] as const)
 
 let clockTimer: ReturnType<typeof setInterval> | undefined
 let loadFallback: ReturnType<typeof setTimeout> | undefined
@@ -44,7 +186,7 @@ function selectSeg(i: number): void {
 function updateClocks(): void {
   try {
     const fmt = (tz: string): string =>
-      new Intl.DateTimeFormat('fr-FR', {
+      new Intl.DateTimeFormat(intlLocale.value, {
         hour: '2-digit',
         minute: '2-digit',
         timeZone: tz,
@@ -59,6 +201,9 @@ function updateClocks(): void {
 function onResize(): void {
   moveIndicator()
 }
+
+// Rafraîchit les horloges quand la langue change (le format Intl dépend de la locale).
+watch(locale, updateClocks)
 
 onMounted(() => {
   loaded.value = true
@@ -89,36 +234,38 @@ onUnmounted(() => {
     <div class="bar">
       <div class="wrap bar-in">
         <div class="brand">
-          <span class="mark"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3L3 20h18L12 3z" fill="#fff" /></svg></span>
-          <span class="x">✕</span>
-          <span class="partner">Solana</span>
+          <span class="mark"><BrandMark /></span>
+          <span class="partner">TIDE</span>
         </div>
         <div class="bar-grp">
-          <div class="snd lab"><span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span> SON [OFF]</div>
-          <div class="desc lab soft">TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.</div>
+          <div class="snd lab"><span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span> {{ t('soundOff') }}</div>
+          <div class="desc lab soft">{{ t('heroDesc') }}</div>
           <div class="loc lab">
-            <div><span class="pin"></span> SAISON 04 · LIVE <span class="t">{{ t1 }}</span></div>
-            <div><span class="pin dim"></span> <span class="soft">12 480 TRADERS</span> <span class="t soft">{{ t2 }}</span></div>
+            <div><span class="pin"></span> {{ t('seasonLive') }} <span class="t">{{ t1 }}</span></div>
+            <div><span class="pin dim"></span> <span class="soft">{{ t('tradersCount') }}</span> <span class="t soft">{{ t2 }}</span></div>
           </div>
         </div>
-        <a href="#" class="pill-cta" data-mag v-mag @click.prevent="goDashboard">Rejoindre</a>
+        <div class="bar-cta">
+          <LangToggle variant="dark" />
+          <a href="#" class="pill-cta" data-mag v-mag @click.prevent="goDashboard">{{ t('join') }}</a>
+        </div>
       </div>
     </div>
 
     <!-- HERO -->
     <header class="hero">
       <div class="wrap">
-        <div class="h-tag lab soft rv" v-reveal>[ CHAMPIONNAT — SAISON 04 ]</div>
+        <div class="h-tag lab soft rv" v-reveal>{{ t('heroTag') }}</div>
         <h1 class="giant">
           <span class="gl"><span>Onchain</span></span>
           <span class="gl"><span>Trading</span></span>
         </h1>
         <div class="divider"></div>
         <div class="tags rv" v-reveal>
-          <span class="k">Format</span>
-          <span class="tag on">Paper Trading</span>
-          <span class="tag">Compétition</span>
-          <span class="tag">Récompenses On-chain</span>
+          <span class="k">{{ t('formatLabel') }}</span>
+          <span class="tag on">{{ t('tagPaper') }}</span>
+          <span class="tag">{{ t('tagCompetition') }}</span>
+          <span class="tag">{{ t('tagRewards') }}</span>
         </div>
 
         <!-- DARK SCREEN -->
@@ -126,11 +273,11 @@ onUnmounted(() => {
           <div class="scr-grid">
             <div>
               <div class="scr-head">
-                <div class="acct">Portefeuille de démo<b>0xPilote.eth</b></div>
+                <div class="acct">{{ t('demoWallet') }}<b>0xPilote.eth</b></div>
                 <div class="scr-live"><i></i> LIVE</div>
               </div>
               <div class="scr-balrow"><div class="scr-bal">$128,940</div><div class="scr-chip">+28.94%</div></div>
-              <div class="lab soft">Rendement S04 · rang #18 · capital initial $100,000</div>
+              <div class="lab soft">{{ t('s04Return') }}</div>
               <div class="chart">
                 <svg viewBox="0 0 420 170" preserveAspectRatio="none">
                   <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFF6CE" stop-opacity=".26" /><stop offset="100%" stop-color="#BFF6CE" stop-opacity="0" /></linearGradient></defs>
@@ -140,12 +287,12 @@ onUnmounted(() => {
               </div>
             </div>
             <div class="scr-board">
-              <div class="blab">Top traders — live</div>
+              <div class="blab">{{ t('topTradersLive') }}</div>
               <div class="brow t1"><div class="rk">1</div><div class="nm">quant_viper<span>0x7a…34f1</span></div><div class="pl">+142.8%</div></div>
               <div class="brow"><div class="rk">2</div><div class="nm">degen_maxi<span>0x19…ab88</span></div><div class="pl">+118.3%</div></div>
               <div class="brow"><div class="rk">3</div><div class="nm">satoshi_heir<span>0xc4…7d20</span></div><div class="pl">+97.6%</div></div>
               <div class="brow"><div class="rk">4</div><div class="nm">liquid_zen<span>0x88…1c0e</span></div><div class="pl">+84.1%</div></div>
-              <div class="brow me"><div class="rk">18</div><div class="nm">toi — 0xPilote.eth<span>↑ 6 rangs aujourd'hui</span></div><div class="pl">+28.9%</div></div>
+              <div class="brow me"><div class="rk">18</div><div class="nm">{{ t('meName') }}<span>{{ t('meRanks') }}</span></div><div class="pl">+28.9%</div></div>
             </div>
           </div>
           <div class="seg">
@@ -165,37 +312,37 @@ onUnmounted(() => {
     <!-- MARQUEE -->
     <div class="marq">
       <div class="marq-tr">
-        <span>Paper Trading</span><i>✕</i><span class="out">Compétition</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">Zéro Risque</span><i>✕</i><span>Gloire Réelle</span><i>✕</i>
-        <span>Paper Trading</span><i>✕</i><span class="out">Compétition</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">Zéro Risque</span><i>✕</i><span>Gloire Réelle</span><i>✕</i>
+        <span>Paper Trading</span><i>✕</i><span class="out">{{ t('marqCompetition') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqZeroRisk') }}</span><i>✕</i><span>{{ t('marqRealGlory') }}</span><i>✕</i>
+        <span>Paper Trading</span><i>✕</i><span class="out">{{ t('marqCompetition') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqZeroRisk') }}</span><i>✕</i><span>{{ t('marqRealGlory') }}</span><i>✕</i>
       </div>
     </div>
 
     <!-- MANIFESTO -->
     <section class="mani" id="manifeste">
       <div class="wrap">
-        <span class="lab rv" v-reveal>Le manifeste</span>
-        <h2 class="rv" v-reveal>Tu reçois $100 000 virtuels. Tu trades les vrais marchés crypto en temps réel. <span class="d">Pas de dépôt, pas de liquidation qui fait mal, pas de KYC.</span> Juste ta lecture du marché — opposée à celle de 340 000 autres. Les meilleurs encaissent on-chain.</h2>
+        <span class="lab rv" v-reveal>{{ t('manifestoLabel') }}</span>
+        <h2 class="rv" v-reveal>{{ t('manifestoP1') }}<span class="d">{{ t('manifestoHighlight') }}</span>{{ t('manifestoP2') }}</h2>
       </div>
     </section>
 
     <!-- STATS -->
     <div class="stats">
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 2.4, pre: '$', suf: 'M', dec: 1 }">$0M</div><div class="c">distribués cette saison</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 340, suf: 'K' }">0</div><div class="c">portefeuilles créés</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 200, suf: '+' }">0</div><div class="c">marchés disponibles</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 0, suf: ' gas' }">0</div><div class="c">trading sans frais</div></div>
+      <div class="st rv" v-reveal><div class="v" v-count="{ to: 2.4, pre: '$', suf: 'M', dec: 1 }">$0M</div><div class="c">{{ t('statPaidOut') }}</div></div>
+      <div class="st rv" v-reveal><div class="v" v-count="{ to: 340, suf: 'K' }">0</div><div class="c">{{ t('statWallets') }}</div></div>
+      <div class="st rv" v-reveal><div class="v" v-count="{ to: 200, suf: '+' }">0</div><div class="c">{{ t('statMarkets') }}</div></div>
+      <div class="st rv" v-reveal><div class="v" v-count="{ to: 0, suf: ' gas' }">0</div><div class="c">{{ t('statFeeFree') }}</div></div>
     </div>
 
     <!-- STEPS -->
     <section class="steps" id="fonctionnement">
       <div class="wrap">
         <div class="s-head rv" v-reveal>
-          <h2>De zéro à<br />la grille — 60s</h2>
-          <p>Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.</p>
+          <h2>{{ t('stepsHeadL1') }}<br />{{ t('stepsHeadL2') }}</h2>
+          <p>{{ t('stepsLead') }}</p>
         </div>
-        <div class="step rv" v-reveal><div class="n">/ 01</div><h3>Connecte ton wallet</h3><p>MetaMask, Phantom ou WalletConnect. Aucun dépôt, aucun KYC. Ton identité reste la tienne.</p></div>
-        <div class="step rv" v-reveal><div class="n">/ 02</div><h3>Reçois $100 000</h3><p>Capital de démo crédité instantanément. Ouvre tes positions sur 200+ paires en données réelles.</p></div>
-        <div class="step rv" v-reveal><div class="n">/ 03</div><h3>Grimpe & encaisse</h3><p>Bats le marché et tes rivaux. À la clôture, les récompenses tombent automatiquement on-chain.</p></div>
+        <div class="step rv" v-reveal><div class="n">/ 01</div><h3>{{ t('step1Title') }}</h3><p>{{ t('step1Body') }}</p></div>
+        <div class="step rv" v-reveal><div class="n">/ 02</div><h3>{{ t('step2Title') }}</h3><p>{{ t('step2Body') }}</p></div>
+        <div class="step rv" v-reveal><div class="n">/ 03</div><h3>{{ t('step3Title') }}</h3><p>{{ t('step3Body') }}</p></div>
       </div>
     </section>
 
@@ -204,21 +351,21 @@ onUnmounted(() => {
       <div class="wrap">
         <div class="prize rv" v-reveal>
           <div>
-            <span class="lab">Cagnotte de la saison</span>
+            <span class="lab">{{ t('seasonPot') }}</span>
             <div class="pot">$50,000</div>
-            <div class="pot-c">USDC + NFT de saison · répartis sur le top 50</div>
+            <div class="pot-c">{{ t('potCaption') }}</div>
             <div class="cd">
-              <div><div class="v">04</div><div class="l">Jours</div></div>
-              <div><div class="v">11</div><div class="l">Heures</div></div>
-              <div><div class="v">38</div><div class="l">Min</div></div>
-              <div><div class="v">52</div><div class="l">Sec</div></div>
+              <div><div class="v">04</div><div class="l">{{ t('cdDays') }}</div></div>
+              <div><div class="v">11</div><div class="l">{{ t('cdHours') }}</div></div>
+              <div><div class="v">38</div><div class="l">{{ t('cdMin') }}</div></div>
+              <div><div class="v">52</div><div class="l">{{ t('cdSec') }}</div></div>
             </div>
           </div>
           <div>
-            <div class="prow"><span>1<sup>ère</sup> place</span><span class="amt">$15,000</span></div>
-            <div class="prow"><span>2<sup>e</sup> place</span><span class="amt">$8,000</span></div>
-            <div class="prow"><span>3<sup>e</sup> place</span><span class="amt">$4,000</span></div>
-            <div class="prow"><span>Top 4 — 50</span><span class="amt">$23,000</span></div>
+            <div class="prow"><span>{{ t('prize1') }}</span><span class="amt">$15,000</span></div>
+            <div class="prow"><span>{{ t('prize2') }}</span><span class="amt">$8,000</span></div>
+            <div class="prow"><span>{{ t('prize3') }}</span><span class="amt">$4,000</span></div>
+            <div class="prow"><span>{{ t('prize4') }}</span><span class="amt">$23,000</span></div>
           </div>
         </div>
       </div>
@@ -227,9 +374,9 @@ onUnmounted(() => {
     <!-- CTA -->
     <section class="cta" id="saison">
       <div class="wrap">
-        <h2 class="rv" v-reveal>Prends<br />ta place</h2>
-        <p class="rv" v-reveal>340 000 traders affûtent leur edge sans risquer un satoshi. La grille se remplit.</p>
-        <div class="rv" v-reveal><a href="#" class="big-pill" data-mag v-mag @click.prevent="goDashboard">Connecter le wallet →</a></div>
+        <h2 class="rv" v-reveal>{{ t('ctaHeadL1') }}<br />{{ t('ctaHeadL2') }}</h2>
+        <p class="rv" v-reveal>{{ t('ctaP') }}</p>
+        <div class="rv" v-reveal><a href="#" class="big-pill" data-mag v-mag @click.prevent="goDashboard">{{ t('connectWallet') }}</a></div>
       </div>
     </section>
 
@@ -238,19 +385,19 @@ onUnmounted(() => {
       <div class="wrap">
         <div class="f-top">
           <div class="f-brand">
-            <div class="brand"><span class="mark"><svg viewBox="0 0 24 24"><path d="M12 3L3 20h18L12 3z" fill="#fff" /></svg></span><span class="partner">TIDE</span></div>
-            <p>L'arène de paper trading où les meilleurs pilotes crypto se mesurent — et encaissent on-chain.</p>
+            <div class="brand"><span class="mark"><BrandMark /></span><span class="partner">TIDE</span></div>
+            <p>{{ t('footerTagline') }}</p>
           </div>
           <div class="f-cols">
-            <div class="f-col"><h4>Produit</h4><a href="#">Compétitions</a><a href="#">Classement</a><a href="#">Récompenses</a><a href="#">Marchés</a></div>
-            <div class="f-col"><h4>Ressources</h4><a href="#">Documentation</a><a href="#">Règlement</a><a href="#">API</a><a href="#">Statut</a></div>
-            <div class="f-col"><h4>Communauté</h4><a href="#">Discord</a><a href="#">X / Twitter</a><a href="#">Telegram</a><a href="#">Blog</a></div>
+            <div class="f-col"><h4>{{ t('colProduct') }}</h4><a href="#">{{ t('linkCompetitions') }}</a><a href="#">{{ t('linkLeaderboard') }}</a><a href="#">{{ t('linkRewards') }}</a><a href="#">{{ t('linkMarkets') }}</a></div>
+            <div class="f-col"><h4>{{ t('colResources') }}</h4><a href="#">{{ t('linkDocumentation') }}</a><a href="#">{{ t('linkRules') }}</a><a href="#">{{ t('linkApi') }}</a><a href="#">{{ t('linkStatus') }}</a></div>
+            <div class="f-col"><h4>{{ t('colCommunity') }}</h4><a href="#">Discord</a><a href="#">X / Twitter</a><a href="#">Telegram</a><a href="#">Blog</a></div>
           </div>
         </div>
         <div class="f-big">TIDE</div>
         <div class="f-bottom">
-          <span>© 2026 TIDE LABS — CONSTRUIT ON-CHAIN</span>
-          <span>LE PAPER TRADING N'IMPLIQUE AUCUN CAPITAL RÉEL</span>
+          <span>{{ t('copyright') }}</span>
+          <span>{{ t('disclaimer') }}</span>
         </div>
       </div>
     </footer>
@@ -294,8 +441,7 @@ onUnmounted(() => {
 .bar-in { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; }
 .brand { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
 .mark { width: 42px; height: 42px; border: 2px solid #fff; border-radius: 11px; display: grid; place-items: center; }
-.mark svg { width: 20px; height: 20px; }
-.x { opacity: .8; font-size: 15px; }
+.mark img { width: 32px; height: 32px; object-fit: contain; }
 .partner { font-weight: 700; font-size: 22px; letter-spacing: -.02em; }
 .bar-grp { display: flex; gap: 46px; align-items: flex-start; padding-top: 5px; }
 .snd { display: flex; align-items: center; gap: 9px; cursor: pointer; }
@@ -306,6 +452,7 @@ onUnmounted(() => {
 .loc .pin { width: 7px; height: 7px; border-radius: 50%; background: #fff; flex-shrink: 0; }
 .loc .pin.dim { background: var(--soft); }
 .loc .t { margin-left: auto; min-width: 96px; text-align: right; }
+.bar-cta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
 .pill-cta { flex-shrink: 0; background: #fff; color: var(--ink); font-weight: 700; font-size: 15px; border-radius: 100px; padding: 14px 26px; transition: transform .3s var(--ease); }
 @media (max-width: 1100px) { .bar-grp { display: none; } }
 

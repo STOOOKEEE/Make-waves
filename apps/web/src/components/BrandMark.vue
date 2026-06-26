@@ -1,9 +1,19 @@
 <script setup lang="ts">
-/* Marque TIDE — triangle « pic » (losange). SVG seul, à poser dans un .mk. */
+/* Marque TIDE — vague blanche (tide_wave_logo). Source unique : l'asset SVG.
+ * À poser dans un conteneur carré (.mk / .mark) qui en fixe la taille ;
+ * `object-fit: contain` préserve le ratio du logo. */
+import logo from "../assets/tide-wave-logo.svg";
 </script>
 
 <template>
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <path d="M12 3L3 20h18L12 3z" fill="#fff" />
-  </svg>
+  <img class="brandmark" :src="logo" alt="" aria-hidden="true" />
 </template>
+
+<style scoped>
+.brandmark {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+</style>

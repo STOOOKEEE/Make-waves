@@ -3,12 +3,108 @@
  * Page mock (aucun backend) : KPIs, courbe d'équité, donut de répartition,
  * tableau des avoirs, anneau de win-rate, activité récente. */
 
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import SegControl from "../components/SegControl.vue";
 import { HOLDINGS, ALLOC_PALETTE, fmtNum } from "../data/markets";
+import { useI18n } from "../i18n/useI18n";
+
+const { t } = useI18n({
+  en: {
+    title: "Portfolio",
+    subtitle: "Demo capital $100,000 · Season 04 — real-time performance.",
+    tf24H: "24H",
+    tf7J: "7D",
+    tf30J: "30D",
+    tfS04: "S04",
+    tfMax: "Max",
+    kpiTotalEquity: "Total equity",
+    kpiAvailable: "Available",
+    kpiFreeCash: "free cash",
+    kpiPnlToday: "Today's PnL",
+    kpiPnlUnrealized: "Unrealized PnL",
+    nPositions: "{n} positions",
+    kpiSeasonRank: "Season rank",
+    rankUpToday: "↑ {n} today",
+    equityCurve: "Equity curve",
+    lastNDays: "Last {n} days",
+    allocation: "Allocation",
+    byAsset: "by asset",
+    invested: "invested",
+    positionsHoldings: "Positions & holdings",
+    colAsset: "Asset",
+    colQuantity: "Quantity",
+    colAvgPrice: "Avg price",
+    colValue: "Value",
+    colPnl: "PnL",
+    colAllocation: "Allocation",
+    tradingStats: "Trading stats",
+    winDesc: "{wins} winning trades out of {total} this quarter. Avg win/loss ratio of ",
+    bestTrade: "Best trade",
+    worstTrade: "Worst trade",
+    totalTrades: "Total trades",
+    avgDuration: "Avg duration",
+    recentActivity: "Recent activity",
+    tagBuy: "BUY",
+    tagSell: "SELL",
+    actSolMeta: "12 min ago · market · 3×",
+    actArbMeta: "1h ago · limit",
+    actBtcMeta: "3h ago · market · 2×",
+    actEthMeta: "yesterday · stop",
+    actDogeMeta: "yesterday · market",
+  },
+  fr: {
+    title: "Portefeuille",
+    subtitle: "Capital de démo $100 000 · Saison 04 — performance en temps réel.",
+    tf24H: "24H",
+    tf7J: "7J",
+    tf30J: "30J",
+    tfS04: "S04",
+    tfMax: "Max",
+    kpiTotalEquity: "Équité totale",
+    kpiAvailable: "Disponible",
+    kpiFreeCash: "cash libre",
+    kpiPnlToday: "PnL aujourd'hui",
+    kpiPnlUnrealized: "PnL non réalisé",
+    nPositions: "{n} positions",
+    kpiSeasonRank: "Rang saison",
+    rankUpToday: "↑ {n} aujourd'hui",
+    equityCurve: "Courbe d'équité",
+    lastNDays: "{n} derniers jours",
+    allocation: "Répartition",
+    byAsset: "par actif",
+    invested: "investi",
+    positionsHoldings: "Positions & avoirs",
+    colAsset: "Actif",
+    colQuantity: "Quantité",
+    colAvgPrice: "Prix moyen",
+    colValue: "Valeur",
+    colPnl: "PnL",
+    colAllocation: "Allocation",
+    tradingStats: "Statistiques de trading",
+    winDesc: "{wins} trades gagnants sur {total} ce trimestre. Ratio gain/perte moyen de ",
+    bestTrade: "Meilleur trade",
+    worstTrade: "Pire trade",
+    totalTrades: "Total trades",
+    avgDuration: "Durée moy.",
+    recentActivity: "Activité récente",
+    tagBuy: "ACHAT",
+    tagSell: "VENTE",
+    actSolMeta: "il y a 12 min · marché · 3×",
+    actArbMeta: "il y a 1 h · limite",
+    actBtcMeta: "il y a 3 h · marché · 2×",
+    actEthMeta: "hier · stop",
+    actDogeMeta: "hier · marché",
+  },
+});
 
 /* ---- timeframe segmenté (défaut 30J) ---- */
-const TIMEFRAMES = ["24H", "7J", "30J", "S04", "Max"];
+const TIMEFRAMES = computed(() => [
+  { value: "24H", label: t("tf24H") },
+  { value: "7J", label: t("tf7J") },
+  { value: "30J", label: t("tf30J") },
+  { value: "S04", label: t("tfS04") },
+  { value: "Max", label: t("tfMax") },
+]);
 const timeframe = ref("30J");
 
 /* ---- courbe d'équité (porté de eqCurve()) ---- */
@@ -98,36 +194,36 @@ onMounted(() => {
   <div class="page">
     <div class="page-head">
       <div>
-        <h1>Portefeuille</h1>
-        <p>Capital de démo $100 000 · Saison 04 — performance en temps réel.</p>
+        <h1>{{ t("title") }}</h1>
+        <p>{{ t("subtitle") }}</p>
       </div>
       <SegControl v-model="timeframe" :options="TIMEFRAMES" @update:model-value="onTimeframe" />
     </div>
 
     <!-- KPIs -->
     <div class="kpis">
-      <div class="card kpi" v-reveal="60"><div class="l">Équité totale</div><div class="v">$128,940</div><div class="s up">+28.94%</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">Disponible</div><div class="v">$42,180</div><div class="s soft">cash libre</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">PnL aujourd'hui</div><div class="v up">+$3,412</div><div class="s up">+2.72%</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">PnL non réalisé</div><div class="v up">+$29,367</div><div class="s soft">3 positions</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">Rang saison</div><div class="v">#18</div><div class="s up">↑ 6 aujourd'hui</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiTotalEquity") }}</div><div class="v">$128,940</div><div class="s up">+28.94%</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiAvailable") }}</div><div class="v">$42,180</div><div class="s soft">{{ t("kpiFreeCash") }}</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiPnlToday") }}</div><div class="v up">+$3,412</div><div class="s up">+2.72%</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiPnlUnrealized") }}</div><div class="v up">+$29,367</div><div class="s soft">{{ t("nPositions", { n: 3 }) }}</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiSeasonRank") }}</div><div class="v">#18</div><div class="s up">{{ t("rankUpToday", { n: 6 }) }}</div></div>
     </div>
 
     <!-- equity + allocation -->
     <div class="grid2">
       <div class="card" v-reveal>
-        <div class="ch-head"><div><div class="t">Courbe d'équité</div><div class="big up">$128,940.18</div></div><div class="lab">30 derniers jours</div></div>
+        <div class="ch-head"><div><div class="t">{{ t("equityCurve") }}</div><div class="big up">$128,940.18</div></div><div class="lab">{{ t("lastNDays", { n: 30 }) }}</div></div>
         <div ref="eqEl" class="eqchart" v-reveal>
           <svg viewBox="0 0 760 260" preserveAspectRatio="none" v-html="eqMarkup"></svg>
         </div>
       </div>
       <div class="card alloc" v-reveal>
-        <div class="t">Répartition</div>
-        <div class="lab">par actif</div>
+        <div class="t">{{ t("allocation") }}</div>
+        <div class="lab">{{ t("byAsset") }}</div>
         <div class="donut-wrap">
           <div class="donut">
             <svg width="150" height="150" viewBox="0 0 150 150" v-html="donutMarkup"></svg>
-            <div class="mid"><b>$86.7K</b><span>investi</span></div>
+            <div class="mid"><b>$86.7K</b><span>{{ t("invested") }}</span></div>
           </div>
           <div class="leg">
             <div v-for="(h, i) in HOLDINGS" :key="h.s" class="li">
@@ -140,8 +236,8 @@ onMounted(() => {
 
     <!-- holdings -->
     <div class="card hold" v-reveal>
-      <div class="hh">Positions & avoirs</div>
-      <div class="thead"><div>Actif</div><div>Quantité</div><div>Prix moyen</div><div>Valeur</div><div>PnL</div><div>Allocation</div></div>
+      <div class="hh">{{ t("positionsHoldings") }}</div>
+      <div class="thead"><div>{{ t("colAsset") }}</div><div>{{ t("colQuantity") }}</div><div>{{ t("colAvgPrice") }}</div><div>{{ t("colValue") }}</div><div>{{ t("colPnl") }}</div><div>{{ t("colAllocation") }}</div></div>
       <div>
         <div v-for="(h, i) in HOLDINGS" :key="h.s" class="trow">
           <div class="as"><span class="ic" :style="{ background: h.col }">{{ h.s.slice(0, 3) }}</span><span><b>{{ h.s }}</b><span>{{ h.full }}</span></span></div>
@@ -159,7 +255,7 @@ onMounted(() => {
     <!-- stats + activity -->
     <div class="grid3">
       <div class="card stats-card" v-reveal>
-        <div class="t">Statistiques de trading</div>
+        <div class="t">{{ t("tradingStats") }}</div>
         <div class="winring">
           <div class="ring">
             <svg width="96" height="96" viewBox="0 0 96 96">
@@ -168,23 +264,23 @@ onMounted(() => {
             </svg>
             <div class="c"><b>69%</b><span>WIN RATE</span></div>
           </div>
-          <div class="desc">142 trades gagnants sur 206 ce trimestre. Ratio gain/perte moyen de <b style="color: #fff">2.4×</b>.</div>
+          <div class="desc">{{ t("winDesc", { wins: 142, total: 206 }) }}<b style="color: #fff">2.4×</b>.</div>
         </div>
         <div class="minis">
-          <div class="mini"><div class="l">Meilleur trade</div><div class="v up">+$18,420</div></div>
-          <div class="mini"><div class="l">Pire trade</div><div class="v down">−$4,910</div></div>
-          <div class="mini"><div class="l">Total trades</div><div class="v">206</div></div>
-          <div class="mini"><div class="l">Durée moy.</div><div class="v">4h 12m</div></div>
+          <div class="mini"><div class="l">{{ t("bestTrade") }}</div><div class="v up">+$18,420</div></div>
+          <div class="mini"><div class="l">{{ t("worstTrade") }}</div><div class="v down">−$4,910</div></div>
+          <div class="mini"><div class="l">{{ t("totalTrades") }}</div><div class="v">206</div></div>
+          <div class="mini"><div class="l">{{ t("avgDuration") }}</div><div class="v">4h 12m</div></div>
         </div>
       </div>
 
       <div class="card act" v-reveal>
-        <div class="hh">Activité récente</div>
-        <div class="arow"><span class="tag b">ACHAT</span><div class="mn"><b>SOL / USDC</b><span>il y a 12 min · marché · 3×</span></div><div class="amt">+220 SOL<span>$40,524</span></div></div>
-        <div class="arow"><span class="tag s">VENTE</span><div class="mn"><b>ARB / USDC</b><span>il y a 1 h · limite</span></div><div class="amt">−4,800 ARB<span>$5,001</span></div></div>
-        <div class="arow"><span class="tag b">ACHAT</span><div class="mn"><b>BTC / USDC</b><span>il y a 3 h · marché · 2×</span></div><div class="amt">+0.22 BTC<span>$14,830</span></div></div>
-        <div class="arow"><span class="tag s">VENTE</span><div class="mn"><b>ETH / USDC</b><span>hier · stop</span></div><div class="amt">−6 ETH<span>$19,128</span></div></div>
-        <div class="arow"><span class="tag b">ACHAT</span><div class="mn"><b>DOGE / USDC</b><span>hier · marché</span></div><div class="amt">+62k DOGE<span>$9,796</span></div></div>
+        <div class="hh">{{ t("recentActivity") }}</div>
+        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>SOL / USDC</b><span>{{ t("actSolMeta") }}</span></div><div class="amt">+220 SOL<span>$40,524</span></div></div>
+        <div class="arow"><span class="tag s">{{ t("tagSell") }}</span><div class="mn"><b>ARB / USDC</b><span>{{ t("actArbMeta") }}</span></div><div class="amt">−4,800 ARB<span>$5,001</span></div></div>
+        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>BTC / USDC</b><span>{{ t("actBtcMeta") }}</span></div><div class="amt">+0.22 BTC<span>$14,830</span></div></div>
+        <div class="arow"><span class="tag s">{{ t("tagSell") }}</span><div class="mn"><b>ETH / USDC</b><span>{{ t("actEthMeta") }}</span></div><div class="amt">−6 ETH<span>$19,128</span></div></div>
+        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>DOGE / USDC</b><span>{{ t("actDogeMeta") }}</span></div><div class="amt">+62k DOGE<span>$9,796</span></div></div>
       </div>
     </div>
   </div>

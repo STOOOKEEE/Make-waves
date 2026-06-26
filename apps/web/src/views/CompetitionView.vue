@@ -2,62 +2,179 @@
 // Vue détail d'une compétition — portée depuis design_site/competition.html.
 // Hero + règles + récompenses + classement + déroulé + modale d'inscription 3 étapes.
 // L'app-bar et le .grain sont globaux : on démarre au .page de la source.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { TideClient } from "@tide/client";
 import { getComp } from "../data/competitions";
 import StatusBadge from "../components/StatusBadge.vue";
 import { useCountdown } from "../composables/useCountdown";
 import { useCompetitions } from "../composables/useCompetitions";
+import { useI18n } from "../i18n/useI18n";
+
+const { t, locale } = useI18n({
+  en: {
+    backAll: "All competitions",
+    participants: "Participants",
+    format: "Format",
+    duration: "Duration",
+    prizePool: "Prize pool",
+    ended: "Competition ended",
+    startsIn: "Starts in",
+    endsIn: "Ends in",
+    cdDays: "Days",
+    cdHours: "Hours",
+    cdMin: "Min",
+    cdSec: "Sec",
+    joinEnded: "View results",
+    joinSoon: "Pre-register",
+    joinLive: "Join the competition",
+    rulesTitle: "Rules & format",
+    capitalDepart: "Starting capital",
+    levierMax: "Max leverage",
+    marchesAutorises: "Allowed markets",
+    formatScoring: "Scoring format",
+    fraisEntree: "Entry fee",
+    rewardsTitle: "Rewards",
+    leaderboardFinal: "Final leaderboard",
+    leaderboardLive: "Live leaderboard",
+    emptyLine1: "The leaderboard opens at kickoff.",
+    emptyLine2: "Pre-register to lock in your spot on the starting grid.",
+    timelineTitle: "Timeline",
+    modalPre: "Pre-registration",
+    modalJoin: "Registration",
+    step1: "Step 1 / 3",
+    step2: "Step 2 / 3",
+    connectWallet: "Connect your wallet",
+    connected: "✓ Connected",
+    noDeposit:
+      "No deposit required. Demo capital is credited automatically on registration.",
+    continueBtn: "Continue",
+    verifyAccept: "Verify & accept",
+    competition: "Competition",
+    capitalCredite: "Credited capital",
+    agreeRules:
+      "I have read and accept the competition rules. I understand this is trading with virtual capital, with no real financial risk.",
+    confirmRegistration: "Confirm registration",
+    successPre: "Pre-registered!",
+    successJoin: "You're in!",
+    successParaPre:
+      "Your spot is reserved for « {name} ». We'll ping you at kickoff.",
+    successParaJoin:
+      "Welcome to « {name} ». Your {capital} capital is credited. May the best strategy win.",
+    goTrade: "Go trade →",
+    viewLeaderboard: "The leaderboard",
+  },
+  fr: {
+    backAll: "Toutes les compétitions",
+    participants: "Participants",
+    format: "Format",
+    duration: "Durée",
+    prizePool: "Cagnotte",
+    ended: "Compétition terminée",
+    startsIn: "Commence dans",
+    endsIn: "Se termine dans",
+    cdDays: "Jours",
+    cdHours: "Heures",
+    cdMin: "Min",
+    cdSec: "Sec",
+    joinEnded: "Voir les résultats",
+    joinSoon: "Pré-inscription",
+    joinLive: "Rejoindre la compétition",
+    rulesTitle: "Règles & format",
+    capitalDepart: "Capital de départ",
+    levierMax: "Levier max",
+    marchesAutorises: "Marchés autorisés",
+    formatScoring: "Format de scoring",
+    fraisEntree: "Frais d'entrée",
+    rewardsTitle: "Récompenses",
+    leaderboardFinal: "Classement final",
+    leaderboardLive: "Classement live",
+    emptyLine1: "Le classement s'ouvrira au coup d'envoi.",
+    emptyLine2:
+      "Pré-inscris-toi pour réserver ta place sur la grille de départ.",
+    timelineTitle: "Déroulé",
+    modalPre: "Pré-inscription",
+    modalJoin: "Inscription",
+    step1: "Étape 1 / 3",
+    step2: "Étape 2 / 3",
+    connectWallet: "Connecte ton wallet",
+    connected: "✓ Connecté",
+    noDeposit:
+      "Aucun dépôt requis. Le capital de démo est crédité automatiquement à l'inscription.",
+    continueBtn: "Continuer",
+    verifyAccept: "Vérifie & accepte",
+    competition: "Compétition",
+    capitalCredite: "Capital crédité",
+    agreeRules:
+      "J'ai lu et j'accepte le règlement de la compétition. Je comprends qu'il s'agit de trading sur capital fictif, sans risque financier réel.",
+    confirmRegistration: "Confirmer l'inscription",
+    successPre: "Pré-inscrit !",
+    successJoin: "Tu es inscrit !",
+    successParaPre:
+      "Ta place est réservée pour « {name} ». On te préviendra au coup d'envoi.",
+    successParaJoin:
+      "Bienvenue dans « {name} ». Ton capital de {capital} est crédité. Que la meilleure stratégie gagne.",
+    goTrade: "Aller trader →",
+    viewLeaderboard: "Le classement",
+  },
+});
 
 const props = defineProps<{ client: TideClient; competitionId?: string }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 
-// Compétition affichée (mock) + indicateur de pré-inscription.
-const c = getComp(props.competitionId);
-const isPre = c.status === "soon";
+// Compétition affichée (mock, résolue dans la langue courante) + pré-inscription.
+const c = computed(() => getComp(props.competitionId, locale.value));
+const isPre = computed(() => c.value.status === "soon");
 
 // Couleurs d'avatars du classement (cycle).
 const avatarCols = ["#FFD66B", "#BFF6CE", "#FFB9AC", "#9d7bff", "#4F6AFF"];
 // Couleurs de médailles des récompenses (or, argent, bronze, +reste).
 const medals = ["#FFD66B", "#D9D4C8", "#C98800", "#2A2A30"];
 
-// Lignes de règles (clé / valeur) dérivées des données.
-const rules: Array<[string, string]> = [
-  ["Capital de départ", c.capital],
-  ["Levier max", c.leverage],
-  ["Marchés autorisés", c.markets],
-  ["Format de scoring", c.format],
-  ["Durée", c.duration],
-  ["Frais d'entrée", c.fee],
-];
+// Lignes de règles (label / valeur) : label = chrome traduit, valeur = donnée déjà traduite.
+const rules = computed<Array<[string, string]>>(() => [
+  [t("capitalDepart"), c.value.capital],
+  [t("levierMax"), c.value.leverage],
+  [t("marchesAutorises"), c.value.markets],
+  [t("formatScoring"), c.value.format],
+  [t("duration"), c.value.duration],
+  [t("fraisEntree"), c.value.fee],
+]);
 
 // Lignes du récapitulatif (modale, étape 2).
-const recap: Array<[string, string]> = [
-  ["Compétition", c.name],
-  ["Capital crédité", c.capital],
-  ["Frais d'entrée", c.fee],
-  ["Cagnotte", c.pot],
-];
+const recap = computed<Array<[string, string]>>(() => [
+  [t("competition"), c.value.name],
+  [t("capitalCredite"), c.value.capital],
+  [t("fraisEntree"), c.value.fee],
+  [t("prizePool"), c.value.pot],
+]);
 
 // Index de l'étape « en cours » de la timeline : première non terminée.
-const nextIdx = c.timeline.findIndex((t) => !t.done);
+const nextIdx = computed(() => c.value.timeline.findIndex((t) => !t.done));
 
 // Libellé du compte à rebours selon l'état.
-const cdLabel = c.startsIn ? "Commence dans" : "Se termine dans";
+const cdLabel = computed(() => (c.value.startsIn ? t("startsIn") : t("endsIn")));
 // Compte à rebours réactif (inutile si la compétition est terminée).
-const { dd, hh, mm, ss } = useCountdown({ days: c.daysLeft, hours: 11, mins: 38, secs: 52 });
+const { dd, hh, mm, ss } = useCountdown({
+  days: c.value.daysLeft,
+  hours: 11,
+  mins: 38,
+  secs: 52,
+});
 
 // Libellé + classe du bouton « rejoindre » selon l'état.
-const joinLabel =
-  c.status === "ended"
-    ? "Voir les résultats"
-    : c.status === "soon"
-      ? "Pré-inscription"
-      : "Rejoindre la compétition";
-const joinClass = c.status === "ended" ? "ended" : "";
+const joinLabel = computed(() =>
+  c.value.status === "ended"
+    ? t("joinEnded")
+    : c.value.status === "soon"
+      ? t("joinSoon")
+      : t("joinLive"),
+);
+const joinClass = computed(() => (c.value.status === "ended" ? "ended" : ""));
 
 // Titre du classement selon l'état.
-const leadTitle = c.status === "ended" ? "Classement final" : "Classement live";
+const leadTitle = computed(() =>
+  c.value.status === "ended" ? t("leaderboardFinal") : t("leaderboardLive"),
+);
 
 // ---- Modale d'inscription (3 étapes) ----
 const showModal = ref(false);
@@ -69,15 +186,19 @@ const leadCard = ref<HTMLElement | null>(null);
 const comps = useCompetitions(props.client);
 
 // Titre de la modale + textes de succès selon pré-inscription.
-const modalTitle = isPre ? "Pré-inscription" : "Inscription";
-const successHeading = isPre ? "Pré-inscrit !" : "Tu es inscrit !";
-const successParagraph = isPre
-  ? `Ta place est réservée pour « ${c.name} ». On te préviendra au coup d'envoi.`
-  : `Bienvenue dans « ${c.name} ». Ton capital de ${c.capital} est crédité. Que la meilleure stratégie gagne.`;
+const modalTitle = computed(() => (isPre.value ? t("modalPre") : t("modalJoin")));
+const successHeading = computed(() =>
+  isPre.value ? t("successPre") : t("successJoin"),
+);
+const successParagraph = computed(() =>
+  isPre.value
+    ? t("successParaPre", { name: c.value.name })
+    : t("successParaJoin", { name: c.value.name, capital: c.value.capital }),
+);
 
 // Clic « rejoindre » : si terminée → scroll vers le classement, sinon ouvre la modale.
 function onJoin(): void {
-  if (c.status === "ended") {
+  if (c.value.status === "ended") {
     leadCard.value?.scrollIntoView({ behavior: "smooth" });
     return;
   }
@@ -106,14 +227,14 @@ async function confirm(): Promise<void> {
   step.value = 2;
   // Hybride : l'appel réseau ne bloque jamais l'UX de succès (erreurs captées
   // dans comps.error par le composable).
-  await comps.join(c.id, "0xPilote.eth");
+  await comps.join(c.value.id, "0xPilote.eth");
 }
 </script>
 
 <template>
   <div class="page">
     <a href="#" class="back" @click.prevent="emit('navigate', '/competitions')"
-      >← Toutes les compétitions</a
+      >← {{ t("backAll") }}</a
     >
 
     <!-- HERO -->
@@ -128,42 +249,42 @@ async function confirm(): Promise<void> {
         <p>{{ c.long }}</p>
         <div class="row">
           <div>
-            <div class="l">Participants</div>
+            <div class="l">{{ t("participants") }}</div>
             <div class="v">{{ c.players }}</div>
           </div>
           <div>
-            <div class="l">Format</div>
+            <div class="l">{{ t("format") }}</div>
             <div class="v" style="font-size: 15px">{{ c.format }}</div>
           </div>
           <div>
-            <div class="l">Durée</div>
+            <div class="l">{{ t("duration") }}</div>
             <div class="v" style="font-size: 15px">{{ c.duration }}</div>
           </div>
         </div>
       </div>
       <div class="cside">
         <div class="potbox">
-          <div class="l">Cagnotte</div>
+          <div class="l">{{ t("prizePool") }}</div>
           <div class="pot">{{ c.pot }}</div>
           <div class="cd-label">
-            {{ c.status === "ended" ? "Compétition terminée" : cdLabel }}
+            {{ c.status === "ended" ? t("ended") : cdLabel }}
           </div>
           <div class="cd" v-if="c.status !== 'ended'">
             <div>
               <div class="v">{{ dd }}</div>
-              <div class="l2">Jours</div>
+              <div class="l2">{{ t("cdDays") }}</div>
             </div>
             <div>
               <div class="v">{{ hh }}</div>
-              <div class="l2">Heures</div>
+              <div class="l2">{{ t("cdHours") }}</div>
             </div>
             <div>
               <div class="v">{{ mm }}</div>
-              <div class="l2">Min</div>
+              <div class="l2">{{ t("cdMin") }}</div>
             </div>
             <div>
               <div class="v">{{ ss }}</div>
-              <div class="l2">Sec</div>
+              <div class="l2">{{ t("cdSec") }}</div>
             </div>
           </div>
           <button class="joinbtn" :class="joinClass" @click="onJoin">
@@ -176,7 +297,7 @@ async function confirm(): Promise<void> {
     <!-- BODY -->
     <div class="cgrid2">
       <div class="card sec rules rv" v-reveal>
-        <div class="t">Règles & format</div>
+        <div class="t">{{ t("rulesTitle") }}</div>
         <div>
           <div class="ri" v-for="r in rules" :key="r[0]">
             <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span>
@@ -184,7 +305,7 @@ async function confirm(): Promise<void> {
         </div>
       </div>
       <div class="card sec prz rv" v-reveal>
-        <div class="t">Récompenses</div>
+        <div class="t">{{ t("rewardsTitle") }}</div>
         <div>
           <div class="pr" v-for="(p, i) in c.prizes" :key="p.pos">
             <div class="pos">
@@ -223,12 +344,11 @@ async function confirm(): Promise<void> {
           </div>
         </div>
         <div v-else class="empty">
-          Le classement s'ouvrira au coup d'envoi.<br />Pré-inscris-toi pour réserver ta
-          place sur la grille de départ.
+          {{ t("emptyLine1") }}<br />{{ t("emptyLine2") }}
         </div>
       </div>
       <div class="card sec rv" v-reveal>
-        <div class="t">Déroulé</div>
+        <div class="t">{{ t("timelineTitle") }}</div>
         <div class="tl">
           <div
             class="ti"
@@ -259,14 +379,14 @@ async function confirm(): Promise<void> {
       <div class="mbody">
         <!-- étape 1 -->
         <div class="mstep" :class="{ on: step === 0 }">
-          <div class="sl">Étape 1 / 3</div>
-          <h3>Connecte ton wallet</h3>
+          <div class="sl">{{ t("step1") }}</div>
+          <h3>{{ t("connectWallet") }}</h3>
           <div class="walletbox">
             <span class="wic">P</span>
             <div>
               <b>0xPilote.eth</b><span>0x7a2f…34f1 · Solana</span>
             </div>
-            <span class="ok">✓ Connecté</span>
+            <span class="ok">{{ t("connected") }}</span>
           </div>
           <p
             style="
@@ -276,27 +396,24 @@ async function confirm(): Promise<void> {
               margin-bottom: 18px;
             "
           >
-            Aucun dépôt requis. Le capital de démo est crédité automatiquement à
-            l'inscription.
+            {{ t("noDeposit") }}
           </p>
-          <button class="mcta" @click="goStep1">Continuer</button>
+          <button class="mcta" @click="goStep1">{{ t("continueBtn") }}</button>
         </div>
         <!-- étape 2 -->
         <div class="mstep" :class="{ on: step === 1 }">
-          <div class="sl">Étape 2 / 3</div>
-          <h3>Vérifie & accepte</h3>
+          <div class="sl">{{ t("step2") }}</div>
+          <h3>{{ t("verifyAccept") }}</h3>
           <div class="recap">
             <div class="ri" v-for="r in recap" :key="r[0]">
               <span class="k">{{ r[0] }}</span><span class="v">{{ r[1] }}</span>
             </div>
           </div>
           <label class="check"
-            ><input type="checkbox" v-model="agree" /> J'ai lu et j'accepte le règlement
-            de la compétition. Je comprends qu'il s'agit de trading sur capital fictif,
-            sans risque financier réel.</label
+            ><input type="checkbox" v-model="agree" /> {{ t("agreeRules") }}</label
           >
           <button class="mcta" :disabled="!agree" @click="confirm">
-            Confirmer l'inscription
+            {{ t("confirmRegistration") }}
           </button>
         </div>
         <!-- étape 3 -->
@@ -310,13 +427,13 @@ async function confirm(): Promise<void> {
                 href="#"
                 class="p"
                 @click.prevent="emit('navigate', '/dashboard')"
-                >Aller trader →</a
+                >{{ t("goTrade") }}</a
               >
               <a
                 href="#"
                 class="s"
                 @click.prevent="emit('navigate', '/leaderboard')"
-                >Le classement</a
+                >{{ t("viewLeaderboard") }}</a
               >
             </div>
           </div>

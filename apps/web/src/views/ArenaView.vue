@@ -5,11 +5,161 @@
  * dossier scellé, feed live, « le Ring » (duel à courbes divergentes),
  * anatomie d'un agent (circuit + budget compute), la meute (spécimens). */
 
-import { onMounted, onUnmounted, ref, nextTick } from "vue";
+import { computed, onMounted, onUnmounted, ref, nextTick } from "vue";
 import { useCountdown } from "../composables/useCountdown";
+import { useI18n } from "../i18n/useI18n";
 import AgentSpecCard from "../components/arena/AgentSpecCard.vue";
 
 const emit = defineEmits<{ navigate: [path: string] }>();
+
+const { t } = useI18n({
+  en: {
+    heroKick: "AI Arena · Season 01",
+    heroKickSoft: "/ registration open",
+    megaL1: "One model.",
+    megaL2: "A thousand",
+    megaL3: "brains.",
+    heroSub: "we give you the same model, the same data, the same capital.",
+    heroSubBold: "The only variable is you.",
+    dossierTitle: "DOSSIER · EQUALITY",
+    dossierSeal: "SEALED",
+    dossierFoot: "identical for every competitor · verified on-chain",
+    dosModelK: "Model",
+    dosModelN: "frozen weights",
+    dosDataK: "Data",
+    dosDataV: "Unified feed",
+    dosDataN: "same window",
+    dosCapitalK: "Capital",
+    dosCapitalN: "demo",
+    dosComputeK: "Compute",
+    dosComputeN: "shared budget",
+    dosTuningK: "Fine-tuning",
+    dosTuningV: "Forbidden",
+    feedFlat: "holds FLAT · waiting for signal",
+    feedRegime: "regime → range detected",
+    feedFade: "fading the BTC high",
+    feedThrottle: "throttle on · 1 order/min",
+    feedStop: "stop hit · capital preserved",
+    feedSentiment: "sentiment +, opening LONG",
+    duelARegime: "regime",
+    duelAReflection: "reflection",
+    duelBExec: "raw execution",
+    ringTitle: "The Ring",
+    ringSub: "Same model, same market, same second. The only difference: their architecture.",
+    ftagWin: "WINNER",
+    ftagLose: "ELIMINATED",
+    startLabel: "common start",
+    stagePerceptionT: "Perception",
+    stagePerceptionM: "order book · momentum · regime",
+    stageReasoningT: "Reasoning",
+    stageReasoningM: "2-pass reflection · memory",
+    stageRiskT: "Risk",
+    stageRiskM: "adaptive stop · Kelly sizing",
+    stageExecT: "Execution",
+    stageExecM: "market orders · ladder",
+    anatTitle: "Anatomy of an agent",
+    anatSub: "You wire the harness around the frozen model — and you split a shared compute budget.",
+    ioData: "DATA",
+    ioOrder: "ORDER",
+    computeBudget: "Compute budget · {n} units",
+    computeSame: "same for everyone",
+    meuteTitle: "The pack",
+    meuteSub: "Agents in the running. The barcode is their architecture — each tall bar, a plugged-in module.",
+    enterKick: "Registration closes in",
+    cdDays: "D",
+    cdHours: "H",
+    cdMins: "M",
+    cdSecs: "S",
+    enterH1: "Enter the",
+    enterH2: "arena",
+    enterCta: "Enter my agent",
+    enterGhost: "View the leaderboard",
+    ledgerTitle: "RULES · SEASON 01",
+    potLabel: "Prize pool",
+    potNote: "USDC · top 20 agents",
+    ruleScoringK: "Scoring",
+    ruleScoringV: "Net return · Sharpe breaks ties",
+    ruleDurationK: "Duration",
+    ruleDurationV: "2 weeks",
+    ruleMarketK: "Market",
+    ruleMarketV: "Unified XRPL feed",
+    ruleSubsK: "Submissions",
+    ruleSubsV: "1 active agent / player",
+  },
+  fr: {
+    heroKick: "Arène IA · Saison 01",
+    heroKickSoft: "/ inscriptions ouvertes",
+    megaL1: "Un modèle.",
+    megaL2: "Mille",
+    megaL3: "cerveaux.",
+    heroSub: "on te donne le même modèle, les mêmes données, le même capital.",
+    heroSubBold: "La seule variable, c'est toi.",
+    dossierTitle: "DOSSIER · ÉGALITÉ",
+    dossierSeal: "SCELLÉ",
+    dossierFoot: "identique pour chaque concurrent · vérifié on-chain",
+    dosModelK: "Modèle",
+    dosModelN: "poids gelés",
+    dosDataK: "Données",
+    dosDataV: "Flux unifié",
+    dosDataN: "même fenêtre",
+    dosCapitalK: "Capital",
+    dosCapitalN: "démo",
+    dosComputeK: "Compute",
+    dosComputeN: "budget partagé",
+    dosTuningK: "Fine-tuning",
+    dosTuningV: "Interdit",
+    feedFlat: "reste FLAT · attend signal",
+    feedRegime: "régime → range détecté",
+    feedFade: "fade le high BTC",
+    feedThrottle: "throttle actif · 1 ordre/min",
+    feedStop: "stop touché · capital préservé",
+    feedSentiment: "sentiment +, ouvre LONG",
+    duelARegime: "régime",
+    duelAReflection: "réflexion",
+    duelBExec: "exécution brute",
+    ringTitle: "Le Ring",
+    ringSub: "Même modèle, même marché, même seconde. La seule différence : leur architecture.",
+    ftagWin: "VAINQUEUR",
+    ftagLose: "ÉLIMINÉ",
+    startLabel: "départ commun",
+    stagePerceptionT: "Perception",
+    stagePerceptionM: "carnet · momentum · régime",
+    stageReasoningT: "Raisonnement",
+    stageReasoningM: "réflexion 2 passes · mémoire",
+    stageRiskT: "Risque",
+    stageRiskM: "stop adaptatif · sizing Kelly",
+    stageExecT: "Exécution",
+    stageExecM: "ordres marché · ladder",
+    anatTitle: "Anatomie d'un agent",
+    anatSub: "Tu câbles le harnais autour du modèle gelé — et tu répartis un budget de compute commun.",
+    ioData: "DONNÉES",
+    ioOrder: "ORDRE",
+    computeBudget: "Budget de compute · {n} unités",
+    computeSame: "identique pour tous",
+    meuteTitle: "La meute",
+    meuteSub: "Agents en lice. Le code-barres, c'est leur architecture — chaque barre haute, un module branché.",
+    enterKick: "Clôture des inscriptions dans",
+    cdDays: "J",
+    cdHours: "H",
+    cdMins: "M",
+    cdSecs: "S",
+    enterH1: "Entre dans",
+    enterH2: "l'arène",
+    enterCta: "Inscrire mon agent",
+    enterGhost: "Voir le classement",
+    ledgerTitle: "RÈGLES · SAISON 01",
+    potLabel: "Cagnotte",
+    potNote: "USDC · top 20 agents",
+    ruleScoringK: "Scoring",
+    ruleScoringV: "Rendement net · Sharpe départage",
+    ruleDurationK: "Durée",
+    ruleDurationV: "2 semaines",
+    ruleMarketK: "Marché",
+    ruleMarketV: "Flux XRPL unifié",
+    ruleSubsK: "Soumissions",
+    ruleSubsV: "1 agent actif / joueur",
+  },
+});
 
 const loaded = ref(false);
 const { dd, hh, mm, ss } = useCountdown({ days: 6, hours: 4, mins: 12, secs: 30 });
@@ -28,13 +178,13 @@ onUnmounted(() => {
 });
 
 /* dossier scellé (contraintes imposées) */
-const DOSSIER = [
-  { k: "Modèle", v: "Tide-Alpha", n: "poids gelés" },
-  { k: "Données", v: "Flux unifié", n: "même fenêtre" },
-  { k: "Capital", v: "$100,000", n: "démo" },
-  { k: "Compute", v: "100 u", n: "budget partagé" },
-  { k: "Fine-tuning", v: "Interdit", n: "—" },
-];
+const DOSSIER = computed(() => [
+  { k: t("dosModelK"), v: "Tide-Alpha", n: t("dosModelN") },
+  { k: t("dosDataK"), v: t("dosDataV"), n: t("dosDataN") },
+  { k: t("dosCapitalK"), v: "$100,000", n: t("dosCapitalN") },
+  { k: t("dosComputeK"), v: "100 u", n: t("dosComputeN") },
+  { k: t("dosTuningK"), v: t("dosTuningV"), n: "—" },
+]);
 
 /* feed live des agents (ticker mono) */
 interface FeedEvent {
@@ -43,36 +193,36 @@ interface FeedEvent {
   delta: string;
   dir: "up" | "down" | "flat";
 }
-const FEED: FeedEvent[] = [
+const FEED = computed<FeedEvent[]>(() => [
   { who: "alpha_smith", act: "LONG SOL 1×", delta: "+2.1%", dir: "up" },
-  { who: "news_raptor", act: "reste FLAT · attend signal", delta: "0.0%", dir: "flat" },
-  { who: "vol_harvester", act: "régime → range détecté", delta: "+0.4%", dir: "up" },
-  { who: "meanrev_oni", act: "fade le high BTC", delta: "−0.8%", dir: "down" },
-  { who: "scalp_unit", act: "throttle actif · 1 ordre/min", delta: "+0.3%", dir: "up" },
-  { who: "zen_fader", act: "stop touché · capital préservé", delta: "−0.5%", dir: "down" },
-  { who: "news_raptor", act: "sentiment +, ouvre LONG", delta: "+1.6%", dir: "up" },
-];
+  { who: "news_raptor", act: t("feedFlat"), delta: "0.0%", dir: "flat" },
+  { who: "vol_harvester", act: t("feedRegime"), delta: "+0.4%", dir: "up" },
+  { who: "meanrev_oni", act: t("feedFade"), delta: "−0.8%", dir: "down" },
+  { who: "scalp_unit", act: t("feedThrottle"), delta: "+0.3%", dir: "up" },
+  { who: "zen_fader", act: t("feedStop"), delta: "−0.5%", dir: "down" },
+  { who: "news_raptor", act: t("feedSentiment"), delta: "+1.6%", dir: "up" },
+]);
 
 /* duel du Ring */
-const DUEL = {
-  a: { name: "alpha_smith", arch: ["régime", "réflexion", "kelly"], ret: "+142.8%", sharpe: "2.9" },
-  b: { name: "naïve_long", arch: ["exécution brute"], ret: "−8.4%", sharpe: "0.4" },
-};
+const DUEL = computed(() => ({
+  a: { name: "alpha_smith", arch: [t("duelARegime"), t("duelAReflection"), "kelly"], ret: "+142.8%", sharpe: "2.9" },
+  b: { name: "naïve_long", arch: [t("duelBExec")], ret: "−8.4%", sharpe: "0.4" },
+}));
 
 /* anatomie : étages du pipeline */
-const STAGES = [
-  { letter: "P", title: "Perception", mods: "carnet · momentum · régime" },
-  { letter: "R", title: "Raisonnement", mods: "réflexion 2 passes · mémoire" },
-  { letter: "∆", title: "Risque", mods: "stop adaptatif · sizing Kelly" },
-  { letter: "E", title: "Exécution", mods: "ordres marché · ladder" },
-];
+const STAGES = computed(() => [
+  { letter: "P", title: t("stagePerceptionT"), mods: t("stagePerceptionM") },
+  { letter: "R", title: t("stageReasoningT"), mods: t("stageReasoningM") },
+  { letter: "∆", title: t("stageRiskT"), mods: t("stageRiskM") },
+  { letter: "E", title: t("stageExecT"), mods: t("stageExecM") },
+]);
 /* répartition du budget compute (somme = 100) */
-const COMPUTE = [
-  { label: "Perception", v: 28, c: "var(--blue)" },
-  { label: "Raisonnement", v: 34, c: "#6f86ff" },
-  { label: "Risque", v: 22, c: "#97a6ff" },
-  { label: "Exécution", v: 16, c: "#c3ccff" },
-];
+const COMPUTE = computed(() => [
+  { label: t("stagePerceptionT"), v: 28, c: "var(--blue)" },
+  { label: t("stageReasoningT"), v: 34, c: "#6f86ff" },
+  { label: t("stageRiskT"), v: 22, c: "#97a6ff" },
+  { label: t("stageExecT"), v: 16, c: "#c3ccff" },
+]);
 
 /* la meute (spécimens) */
 const AGENTS = [
@@ -85,12 +235,12 @@ const AGENTS = [
 ];
 
 /* règles imposées (ledger) */
-const RULES = [
-  { k: "Scoring", v: "Rendement net · Sharpe départage" },
-  { k: "Durée", v: "2 semaines" },
-  { k: "Marché", v: "Flux XRPL unifié" },
-  { k: "Soumissions", v: "1 agent actif / joueur" },
-];
+const RULES = computed(() => [
+  { k: t("ruleScoringK"), v: t("ruleScoringV") },
+  { k: t("ruleDurationK"), v: t("ruleDurationV") },
+  { k: t("ruleMarketK"), v: t("ruleMarketV") },
+  { k: t("ruleSubsK"), v: t("ruleSubsV") },
+]);
 </script>
 
 <template>
@@ -98,29 +248,29 @@ const RULES = [
     <!-- ░░ HERO : titre asymétrique + dossier scellé ░░ -->
     <header class="hero awrap">
       <div class="hero-l">
-        <div class="kick lab rv" v-reveal>Arène IA · Saison 01 <span class="soft">/ inscriptions ouvertes</span></div>
+        <div class="kick lab rv" v-reveal>{{ t('heroKick') }} <span class="soft">{{ t('heroKickSoft') }}</span></div>
         <h1 class="mega">
-          <span class="ln"><span>Un modèle.</span></span>
-          <span class="ln"><span>Mille</span></span>
-          <span class="ln"><span><em>cerveaux.</em></span></span>
+          <span class="ln"><span>{{ t('megaL1') }}</span></span>
+          <span class="ln"><span>{{ t('megaL2') }}</span></span>
+          <span class="ln"><span><em>{{ t('megaL3') }}</em></span></span>
         </h1>
         <div class="hero-sub rv" v-reveal>
-          <span class="car">›</span> on te donne le même modèle, les mêmes données, le même capital.
-          <b>La seule variable, c'est toi.</b>
+          <span class="car">›</span> {{ t('heroSub') }}
+          <b>{{ t('heroSubBold') }}</b>
         </div>
       </div>
 
       <aside class="dossier rv" v-reveal>
         <div class="dos-h">
-          <span class="mono">DOSSIER · ÉGALITÉ</span>
-          <span class="seal">SCELLÉ</span>
+          <span class="mono">{{ t('dossierTitle') }}</span>
+          <span class="seal">{{ t('dossierSeal') }}</span>
         </div>
-        <div v-for="d in DOSSIER" :key="d.k" class="dos-row">
+        <div v-for="(d, i) in DOSSIER" :key="i" class="dos-row">
           <span class="dk">{{ d.k }}</span>
           <span class="dv mono">{{ d.v }}</span>
           <span class="dn mono">{{ d.n }}</span>
         </div>
-        <div class="dos-f lab">identique pour chaque concurrent · vérifié on-chain</div>
+        <div class="dos-f lab">{{ t('dossierFoot') }}</div>
       </aside>
     </header>
 
@@ -140,16 +290,16 @@ const RULES = [
     <!-- ░░ LE RING : duel d'agents à courbes divergentes ░░ -->
     <section class="ring awrap">
       <div class="sec-head rv" v-reveal>
-        <h2>Le Ring</h2>
-        <p>Même modèle, même marché, même seconde. La seule différence : leur architecture.</p>
+        <h2>{{ t('ringTitle') }}</h2>
+        <p>{{ t('ringSub') }}</p>
       </div>
 
       <div class="duel rv" v-reveal>
         <div class="fighter">
-          <div class="ft-top"><span class="ftag win">VAINQUEUR</span><span class="ft-sharpe mono">Sharpe {{ DUEL.a.sharpe }}</span></div>
+          <div class="ft-top"><span class="ftag win">{{ t('ftagWin') }}</span><span class="ft-sharpe mono">Sharpe {{ DUEL.a.sharpe }}</span></div>
           <div class="ft-name">{{ DUEL.a.name }}</div>
           <div class="ft-arch">
-            <span v-for="m in DUEL.a.arch" :key="m" class="amod">{{ m }}</span>
+            <span v-for="(m, i) in DUEL.a.arch" :key="i" class="amod">{{ m }}</span>
           </div>
           <div class="ft-ret up mono">{{ DUEL.a.ret }}</div>
         </div>
@@ -158,7 +308,7 @@ const RULES = [
           <span class="vs">VS</span>
           <svg viewBox="0 0 600 260" preserveAspectRatio="none">
             <line class="start" x1="44" y1="20" x2="44" y2="240" />
-            <text class="startlab" x="50" y="248">départ commun</text>
+            <text class="startlab" x="50" y="248">{{ t('startLabel') }}</text>
             <!-- agent B (perdant) -->
             <path class="dline b" d="M44,130 L110,138 L180,128 L250,150 L320,162 L390,150 L460,172 L530,182 L556,190" />
             <!-- agent A (vainqueur) -->
@@ -168,10 +318,10 @@ const RULES = [
         </div>
 
         <div class="fighter b-side">
-          <div class="ft-top"><span class="ftag lose">ÉLIMINÉ</span><span class="ft-sharpe mono">Sharpe {{ DUEL.b.sharpe }}</span></div>
+          <div class="ft-top"><span class="ftag lose">{{ t('ftagLose') }}</span><span class="ft-sharpe mono">Sharpe {{ DUEL.b.sharpe }}</span></div>
           <div class="ft-name">{{ DUEL.b.name }}</div>
           <div class="ft-arch">
-            <span v-for="m in DUEL.b.arch" :key="m" class="amod muted">{{ m }}</span>
+            <span v-for="(m, i) in DUEL.b.arch" :key="i" class="amod muted">{{ m }}</span>
           </div>
           <div class="ft-ret down mono">{{ DUEL.b.ret }}</div>
         </div>
@@ -181,15 +331,15 @@ const RULES = [
     <!-- ░░ ANATOMIE : circuit + budget compute ░░ -->
     <section class="anat awrap">
       <div class="sec-head rv" v-reveal>
-        <h2>Anatomie d'un agent</h2>
-        <p>Tu câbles le harnais autour du modèle gelé — et tu répartis un budget de compute commun.</p>
+        <h2>{{ t('anatTitle') }}</h2>
+        <p>{{ t('anatSub') }}</p>
       </div>
 
       <div class="circuit rv" v-reveal>
         <div class="wire-row">
-          <span class="io mono">DONNÉES</span>
+          <span class="io mono">{{ t('ioData') }}</span>
           <span class="wire"><i class="dot"></i></span>
-          <template v-for="(s, i) in STAGES" :key="s.title">
+          <template v-for="(s, i) in STAGES" :key="i">
             <div class="node">
               <div class="node-ic">{{ s.letter }}</div>
               <div class="node-t">{{ s.title }}</div>
@@ -197,18 +347,18 @@ const RULES = [
             </div>
             <span class="wire"><i class="dot" :style="{ animationDelay: i * 0.4 + 's' }"></i></span>
           </template>
-          <span class="io out mono">ORDRE</span>
+          <span class="io out mono">{{ t('ioOrder') }}</span>
         </div>
 
         <div class="compute">
-          <div class="comp-h"><span class="lab">Budget de compute · 100 unités</span><span class="lab soft">identique pour tous</span></div>
+          <div class="comp-h"><span class="lab">{{ t('computeBudget', { n: 100 }) }}</span><span class="lab soft">{{ t('computeSame') }}</span></div>
           <div class="comp-bar">
-            <span v-for="c in COMPUTE" :key="c.label" class="seg" :style="{ width: c.v + '%', background: c.c }">
+            <span v-for="(c, i) in COMPUTE" :key="i" class="seg" :style="{ width: c.v + '%', background: c.c }">
               <span class="seg-v mono">{{ c.v }}</span>
             </span>
           </div>
           <div class="comp-leg">
-            <span v-for="c in COMPUTE" :key="c.label" class="cl"><i :style="{ background: c.c }"></i>{{ c.label }}</span>
+            <span v-for="(c, i) in COMPUTE" :key="i" class="cl"><i :style="{ background: c.c }"></i>{{ c.label }}</span>
           </div>
         </div>
       </div>
@@ -217,8 +367,8 @@ const RULES = [
     <!-- ░░ LA MEUTE : grille de spécimens ░░ -->
     <section class="meute awrap">
       <div class="sec-head rv" v-reveal>
-        <h2>La meute</h2>
-        <p>Agents en lice. Le code-barres, c'est leur architecture — chaque barre haute, un module branché.</p>
+        <h2>{{ t('meuteTitle') }}</h2>
+        <p>{{ t('meuteSub') }}</p>
       </div>
       <div class="spec-grid">
         <div v-for="(a, i) in AGENTS" :key="a.name" class="rv" v-reveal="i * 60">
@@ -231,28 +381,28 @@ const RULES = [
     <section class="enter awrap">
       <div class="enter-grid">
         <div class="enter-l">
-          <div class="kick lab rv" v-reveal>Clôture des inscriptions dans</div>
+          <div class="kick lab rv" v-reveal>{{ t('enterKick') }}</div>
           <div class="cdrow rv" v-reveal>
-            <div class="cdb"><b class="mono">{{ dd }}</b><span>J</span></div>
-            <div class="cdb"><b class="mono">{{ hh }}</b><span>H</span></div>
-            <div class="cdb"><b class="mono">{{ mm }}</b><span>M</span></div>
-            <div class="cdb"><b class="mono">{{ ss }}</b><span>S</span></div>
+            <div class="cdb"><b class="mono">{{ dd }}</b><span>{{ t('cdDays') }}</span></div>
+            <div class="cdb"><b class="mono">{{ hh }}</b><span>{{ t('cdHours') }}</span></div>
+            <div class="cdb"><b class="mono">{{ mm }}</b><span>{{ t('cdMins') }}</span></div>
+            <div class="cdb"><b class="mono">{{ ss }}</b><span>{{ t('cdSecs') }}</span></div>
           </div>
-          <h2 class="enter-h rv" v-reveal>Entre dans<br />l'arène</h2>
+          <h2 class="enter-h rv" v-reveal>{{ t('enterH1') }}<br />{{ t('enterH2') }}</h2>
           <div class="enter-acts rv" v-reveal>
-            <a href="#/competitions" class="big-pill" v-mag @click.prevent="emit('navigate', '/competitions')">Inscrire mon agent →</a>
-            <a href="#/leaderboard" class="ghost" @click.prevent="emit('navigate', '/leaderboard')">Voir le classement</a>
+            <a href="#/competitions" class="big-pill" v-mag @click.prevent="emit('navigate', '/competitions')">{{ t('enterCta') }} →</a>
+            <a href="#/leaderboard" class="ghost" @click.prevent="emit('navigate', '/leaderboard')">{{ t('enterGhost') }}</a>
           </div>
         </div>
         <div class="ledger rv" v-reveal>
-          <div class="led-h mono">RÈGLES · SAISON 01</div>
-          <div v-for="r in RULES" :key="r.k" class="led-row">
+          <div class="led-h mono">{{ t('ledgerTitle') }}</div>
+          <div v-for="(r, i) in RULES" :key="i" class="led-row">
             <span class="lk mono">{{ r.k }}</span><span class="lv">{{ r.v }}</span>
           </div>
           <div class="led-pot">
-            <span class="lab soft">Cagnotte</span>
+            <span class="lab soft">{{ t('potLabel') }}</span>
             <span class="pot mono">$25,000</span>
-            <span class="lab soft">USDC · top 20 agents</span>
+            <span class="lab soft">{{ t('potNote') }}</span>
           </div>
         </div>
       </div>

@@ -6,8 +6,88 @@ import type { TideClient } from "@tide/client";
 import type { MarketOrderInput } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
+import { useI18n } from "../i18n/useI18n";
 
 const props = defineProps<{ client: TideClient }>();
+
+const { t } = useI18n({
+  en: {
+    markets: "Markets",
+    searchPlaceholder: "Search…",
+    high24h: "24h High",
+    low24h: "24h Low",
+    volume24h: "24h Volume",
+    funding8h: "8h Funding",
+    candles: "Candles",
+    line: "Line",
+    tf1D: "1D",
+    tf1W: "1W",
+    positionsTab: "Positions",
+    openOrders: "Open orders",
+    history: "History",
+    market: "Market",
+    side: "Side",
+    size: "Size",
+    entryToMarket: "Entry → Market",
+    close: "Close",
+    closed: "Closed",
+    buy: "Buy",
+    sell: "Sell",
+    orderLimit: "Limit",
+    limitPrice: "Limit price",
+    amount: "Amount",
+    available: "Avail.",
+    leverage: "Leverage",
+    estQty: "Est. quantity",
+    exposure: "Exposure ({lev}×)",
+    estFees: "Est. fees",
+    estLiq: "Est. liquidation",
+    buyAsset: "Buy {asset}",
+    sellAsset: "Sell {asset}",
+    orderSent: "✓ Paper order sent",
+    orderBook: "Order book",
+    price: "Price",
+    total: "Total",
+  },
+  fr: {
+    markets: "Marchés",
+    searchPlaceholder: "Rechercher…",
+    high24h: "Haut 24h",
+    low24h: "Bas 24h",
+    volume24h: "Volume 24h",
+    funding8h: "Funding 8h",
+    candles: "Chandeliers",
+    line: "Ligne",
+    tf1D: "1J",
+    tf1W: "1S",
+    positionsTab: "Positions",
+    openOrders: "Ordres ouverts",
+    history: "Historique",
+    market: "Marché",
+    side: "Sens",
+    size: "Taille",
+    entryToMarket: "Entrée → Marché",
+    close: "Fermer",
+    closed: "Fermée",
+    buy: "Acheter",
+    sell: "Vendre",
+    orderLimit: "Limite",
+    limitPrice: "Prix limite",
+    amount: "Montant",
+    available: "Dispo.",
+    leverage: "Levier",
+    estQty: "Quantité estimée",
+    exposure: "Exposition ({lev}×)",
+    estFees: "Frais estimés",
+    estLiq: "Liquidation approx.",
+    buyAsset: "Acheter {asset}",
+    sellAsset: "Vendre {asset}",
+    orderSent: "✓ Ordre simulé envoyé",
+    orderBook: "Carnet d'ordres",
+    price: "Prix",
+    total: "Total",
+  },
+});
 
 // ---------- backend paper (best-effort, ne bloque jamais l'UX) ----------
 const paper = usePaper(props.client);
@@ -230,7 +310,7 @@ function closePos(row: PosRow): void {
 const placeOverride = ref("");
 function placeLabel(): string {
   if (placeOverride.value) return placeOverride.value;
-  return (side.value === "buy" ? "Acheter " : "Vendre ") + cur.value.s;
+  return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s });
 }
 async function placeOrderBackground(): Promise<void> {
   // Ordre paper réel en arrière-plan ; les erreurs sont avalées par le composable.
@@ -251,7 +331,7 @@ async function placeOrderBackground(): Promise<void> {
   }
 }
 function onPlace(): void {
-  placeOverride.value = "✓ Ordre simulé envoyé";
+  placeOverride.value = t("orderSent");
   setTimeout(() => {
     placeOverride.value = "";
   }, 1400);
@@ -273,8 +353,8 @@ onUnmounted(() => {
   <div class="main">
     <!-- WATCHLIST -->
     <aside class="card watch">
-      <div class="wt-head"><span class="t">Marchés</span><span class="lab">24h</span></div>
-      <div class="srch"><span class="soft">⌕</span><input placeholder="Rechercher…" /></div>
+      <div class="wt-head"><span class="t">{{ t('markets') }}</span><span class="lab">24h</span></div>
+      <div class="srch"><span class="soft">⌕</span><input :placeholder="t('searchPlaceholder')" /></div>
       <div class="wl-scroll">
         <div
           v-for="m in MARKETS"
@@ -306,20 +386,20 @@ onUnmounted(() => {
             <div class="p">${{ fmt(cur.p) }}</div>
             <div class="c" :class="cur.c >= 0 ? 'up' : 'down'">{{ cur.c >= 0 ? "+" : "" }}{{ cur.c }}% (24h)</div>
           </div>
-          <div class="scell"><div class="l">Haut 24h</div><div class="v">${{ fmt(cur.hi) }}</div></div>
-          <div class="scell"><div class="l">Bas 24h</div><div class="v">${{ fmt(cur.lo) }}</div></div>
-          <div class="scell"><div class="l">Volume 24h</div><div class="v">$2.81B</div></div>
-          <div class="scell"><div class="l">Funding 8h</div><div class="v up">+0.011%</div></div>
+          <div class="scell"><div class="l">{{ t('high24h') }}</div><div class="v">${{ fmt(cur.hi) }}</div></div>
+          <div class="scell"><div class="l">{{ t('low24h') }}</div><div class="v">${{ fmt(cur.lo) }}</div></div>
+          <div class="scell"><div class="l">{{ t('volume24h') }}</div><div class="v">$2.81B</div></div>
+          <div class="scell"><div class="l">{{ t('funding8h') }}</div><div class="v up">+0.011%</div></div>
         </div>
         <div class="chart-bar">
           <div class="tf">
-            <button>15m</button><button>1H</button><button>4H</button><button class="on">1J</button><button>1S</button>
+            <button>15m</button><button>1H</button><button>4H</button><button class="on">{{ t('tf1D') }}</button><button>{{ t('tf1W') }}</button>
           </div>
           <div class="ct-type">
-            <button class="on" title="Chandeliers">
+            <button class="on" :title="t('candles')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="3" height="12" rx="1" /><rect x="6" y="3" width="1" height="18" /><rect x="16" y="9" width="3" height="9" rx="1" /><rect x="17" y="5" width="1" height="16" /></svg>
             </button>
-            <button title="Ligne">
+            <button :title="t('line')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 17l5-6 4 3 8-9" /></svg>
             </button>
           </div>
@@ -331,13 +411,13 @@ onUnmounted(() => {
 
       <div class="card pos">
         <div class="pos-tabs">
-          <button class="on">Positions <span class="cnt">3</span></button>
-          <button>Ordres ouverts <span class="cnt">1</span></button>
-          <button>Historique</button>
+          <button class="on">{{ t('positionsTab') }} <span class="cnt">3</span></button>
+          <button>{{ t('openOrders') }} <span class="cnt">1</span></button>
+          <button>{{ t('history') }}</button>
         </div>
         <div class="ptable">
           <div class="pthead">
-            <div>Marché</div><div>Sens</div><div>Taille</div><div>Entrée → Marché</div><div>PnL</div><div></div>
+            <div>{{ t('market') }}</div><div>{{ t('side') }}</div><div>{{ t('size') }}</div><div>{{ t('entryToMarket') }}</div><div>PnL</div><div></div>
           </div>
           <div
             v-for="(row, i) in positions"
@@ -352,7 +432,7 @@ onUnmounted(() => {
             <div :class="row.pnlCls">{{ row.pnl }}</div>
             <div>
               <button class="closebtn" :disabled="row.closed" @click="closePos(row)">
-                {{ row.closed ? "Fermée" : "Fermer" }}
+                {{ row.closed ? t('closed') : t('close') }}
               </button>
             </div>
           </div>
@@ -364,20 +444,20 @@ onUnmounted(() => {
     <aside class="col">
       <div class="card ticket">
         <div class="bs">
-          <button class="buy" :class="{ on: side === 'buy' }" @click="setSide('buy')">Acheter</button>
-          <button class="sell" :class="{ on: side === 'sell' }" @click="setSide('sell')">Vendre</button>
+          <button class="buy" :class="{ on: side === 'buy' }" @click="setSide('buy')">{{ t('buy') }}</button>
+          <button class="sell" :class="{ on: side === 'sell' }" @click="setSide('sell')">{{ t('sell') }}</button>
         </div>
         <div class="otype">
-          <button :class="{ on: otypeIdx === 0 }" @click="setOtype(0)">Marché</button>
-          <button :class="{ on: otypeIdx === 1 }" @click="setOtype(1)">Limite</button>
+          <button :class="{ on: otypeIdx === 0 }" @click="setOtype(0)">{{ t('market') }}</button>
+          <button :class="{ on: otypeIdx === 1 }" @click="setOtype(1)">{{ t('orderLimit') }}</button>
           <button :class="{ on: otypeIdx === 2 }" @click="setOtype(2)">Stop</button>
         </div>
         <div v-if="otypeIdx !== 0" class="field">
-          <div class="fl"><span class="k">Prix limite</span></div>
+          <div class="fl"><span class="k">{{ t('limitPrice') }}</span></div>
           <div class="inp"><input type="text" value="184.20" /><span class="suf">USDC</span></div>
         </div>
         <div class="field">
-          <div class="fl"><span class="k">Montant</span><span class="b">Dispo. $42,180</span></div>
+          <div class="fl"><span class="k">{{ t('amount') }}</span><span class="b">{{ t('available') }} $42,180</span></div>
           <div class="inp">
             <input type="text" :value="amountDisplay()" @input="onAmountInput" /><span class="suf">USDC</span>
           </div>
@@ -388,7 +468,7 @@ onUnmounted(() => {
           </button>
         </div>
         <div class="lev">
-          <span class="k">Levier</span>
+          <span class="k">{{ t('leverage') }}</span>
           <div class="ctrl">
             <button @click="levDown">−</button>
             <span class="vv">{{ lev }}×</span>
@@ -396,17 +476,17 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="summary">
-          <div class="r"><span>Quantité estimée</span><b>{{ estQtyLabel() }}</b></div>
-          <div class="r"><span>Exposition ({{ lev }}×)</span><b>{{ exposureLabel() }}</b></div>
-          <div class="r"><span>Frais estimés</span><b>$0.00</b></div>
-          <div class="r"><span>Liquidation approx.</span><b>{{ liqLabel() }}</b></div>
+          <div class="r"><span>{{ t('estQty') }}</span><b>{{ estQtyLabel() }}</b></div>
+          <div class="r"><span>{{ t('exposure', { lev }) }}</span><b>{{ exposureLabel() }}</b></div>
+          <div class="r"><span>{{ t('estFees') }}</span><b>$0.00</b></div>
+          <div class="r"><span>{{ t('estLiq') }}</span><b>{{ liqLabel() }}</b></div>
         </div>
         <button class="placebtn" :class="{ sell: side === 'sell' }" @click="onPlace">{{ placeLabel() }}</button>
       </div>
 
       <div class="card book">
-        <div class="bh"><span class="t">Carnet d'ordres</span><span class="lab">{{ cur.s }}/USDC</span></div>
-        <div class="bk-head"><div>Prix</div><div>Taille</div><div>Total</div></div>
+        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ cur.s }}/USDC</span></div>
+        <div class="bk-head"><div>{{ t('price') }}</div><div>{{ t('size') }}</div><div>{{ t('total') }}</div></div>
         <div v-html="asksHtml"></div>
         <div class="bk-spread">{{ fmt(cur.p) }} &nbsp;·&nbsp; spread {{ (cur.p * 0.0001).toFixed(cur.p < 1 ? 4 : 2) }}</div>
         <div v-html="bidsHtml"></div>
