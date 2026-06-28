@@ -21,6 +21,18 @@ describe("assertValidAmount — drops XRP (string)", () => {
   it("rejette un signe négatif", () => {
     expect(() => assertValidAmount("-1", "amount")).toThrow(InvalidAmountError);
   });
+
+  it("accepte la réserve totale XRP (10^17 drops)", () => {
+    expect(() =>
+      assertValidAmount("100000000000000000", "amount"),
+    ).not.toThrow();
+  });
+
+  it("rejette un montant au-delà de la réserve totale (10^17 + 1)", () => {
+    expect(() =>
+      assertValidAmount("100000000000000001", "amount"),
+    ).toThrow(InvalidAmountError);
+  });
 });
 
 describe("assertValidAmount — token émis (objet)", () => {

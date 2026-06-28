@@ -11,6 +11,7 @@ import type {
   OnchainPriceProvider,
 } from "./feed/compose-price";
 import { buildServer } from "./http/server";
+import type { MetricsDeps, SignDeps } from "./http/server";
 import type { AccountStore } from "./store/account-store";
 import type { CompetitionStore } from "./store/competition-store";
 
@@ -32,6 +33,10 @@ export interface AppConfig {
   readonly compose?: ComposeOptions;
   /** Journal du feed (replis de prix) — sinon silencieux. */
   readonly feedLogger?: FeedLogger;
+  /** Signature Xaman (routes /sign/*) — absente si XUMM non configuré. */
+  readonly sign?: SignDeps;
+  /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
+  readonly metrics?: MetricsDeps;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -64,6 +69,8 @@ export function createApp(config: AppConfig): App {
     paper,
     competition,
     getPrices: () => cache.current(),
+    sign: config.sign,
+    metrics: config.metrics,
   });
 
   const refreshPrices = async (): Promise<void> => {

@@ -2,8 +2,14 @@ packages:
   - "packages/*"
   - "apps/*"
 
-# Autoriser le script de build d'esbuild (utilisé par vitest).
+# Décision explicite des scripts de build (politique supply-chain). Seul esbuild
+# (utilisé par vitest) doit compiler. Les accélérateurs natifs de `ws` (tirés par
+# xrpl/xumm-sdk) sont optionnels — ws fonctionne en JS pur — donc on refuse leur
+# build plutôt que de compiler du natif.
 allowBuilds:
+  bufferutil: false
+  es5-ext: false
   esbuild: true
+  utf-8-validate: false
 onlyBuiltDependencies:
   - esbuild

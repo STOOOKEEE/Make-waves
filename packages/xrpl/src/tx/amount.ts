@@ -5,6 +5,9 @@ import { InvalidAmountError } from "../errors";
 /** Drops XRP : suite de chiffres uniquement (entier, pas de signe ni point). */
 const DROPS_PATTERN = /^[0-9]+$/;
 
+/** Réserve totale XRP = 10^11 XRP = 10^17 drops : borne haute du protocole. */
+const MAX_XRP_DROPS = 100_000_000_000_000_000n;
+
 /** Value IOU : décimal positif SANS signe ni exposant (rippled refuse `1e+21`). */
 const IOU_VALUE_PATTERN = /^[0-9]+(\.[0-9]+)?$/;
 
@@ -31,8 +34,14 @@ export function assertValidAmount(amount: Amount, label: string): void {
         `Montant ${label} invalide (drops XRP = entier positif): ${amount}`,
       );
     }
-    if (BigInt(amount) <= 0n) {
+    const drops = BigInt(amount);
+    if (drops <= 0n) {
       throw new InvalidAmountError(`Montant ${label} doit être > 0: ${amount}`);
+    }
+    if (drops > MAX_XRP_DROPS) {
+      throw new InvalidAmountError(
+        `Montant ${label} dépasse la réserve totale XRPL (${amount} > ${String(MAX_XRP_DROPS)} drops)`,
+      );
     }
     return;
   }

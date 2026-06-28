@@ -1,4 +1,5 @@
 import type { Competition, MarketOrderInput, Side } from "@tide/core";
+import type { Amount } from "@tide/xrpl";
 
 /** Corps de requête HTTP malformé (validation au bord, avant le domaine). */
 export class BadRequestError extends Error {
@@ -52,6 +53,63 @@ export function parseOrder(body: unknown): MarketOrderInput {
     side: narrowedSide,
     amount: num(obj, "amount", "order"),
     price: num(obj, "price", "order"),
+  };
+}
+
+/**
+ * Parse un montant XRPL au bord : string non vide (drops XRP) ou objet
+ * `{ currency, issuer, value }` (token émis). On ne valide ici que la FORME ;
+ * la sémantique (drops entiers, value décimale stricte) est vérifiée par le
+ * builder via `assertValidAmount`, source unique de vérité sur les montants.
+ */
+function parseAmount(value: unknown, ctx: string): Amount {
+  if (typeof value === "string") {
+    if (value.trim() === "") {
+      throw new BadRequestError(`${ctx}: montant string vide`);
+    }
+    return value;
+  }
+  const obj = asRecord(value, ctx);
+  return {
+    currency: str(obj, "currency", ctx),
+    issuer: str(obj, "issuer", ctx),
+    value: str(obj, "value", ctx),
+  };
+}
+
+/**
+ * Corps d'une demande de signature de buy-in. Le `sourceTag` (attribution) et la
+ * destination (prize pool) ne viennent PAS du client : ils sont fixés côté serveur
+ * (sécurité — le client ne choisit ni l'attribution ni où va son argent).
+ */
+export interface BuyInRequest {
+  readonly account: string;
+  readonly amount: Amount;
+  readonly competitionId: string;
+}
+
+export function parseBuyInRequest(body: unknown): BuyInRequest {
+  const obj = asRecord(body, "buyIn");
+  return {
+    account: str(obj, "account", "buyIn"),
+    amount: parseAmount(obj["amount"], "buyIn.amount"),
+    competitionId: str(obj, "competitionId", "buyIn"),
+  };
+}
+
+/** Corps d'une demande de signature de swap Live (le `sourceTag` est serveur). */
+export interface LiveOfferRequest {
+  readonly account: string;
+  readonly gives: Amount;
+  readonly wants: Amount;
+}
+
+export function parseLiveOfferRequest(body: unknown): LiveOfferRequest {
+  const obj = asRecord(body, "liveOffer");
+  return {
+    account: str(obj, "account", "liveOffer"),
+    gives: parseAmount(obj["gives"], "liveOffer.gives"),
+    wants: parseAmount(obj["wants"], "liveOffer.wants"),
   };
 }
 

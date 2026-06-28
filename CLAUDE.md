@@ -52,7 +52,7 @@ make-waves/
 
 ```bash
 pnpm install                   # dépendances
-pnpm test                      # tests (vitest) — 367 tests
+pnpm test                      # tests (vitest) — 384 tests
 pnpm typecheck                 # types (tsc/vue-tsc strict, par-package)
 pnpm lint                      # eslint (no-explicit-any en erreur)
 pnpm --filter @tide/api start  # API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
@@ -62,17 +62,19 @@ pnpm --filter @tide/web build  # build du front
 
 ## Où on en est
 
-**MVP vertical complet (off-chain) + couche d'intégration on-chain écrite et testée par adaptateurs injectés.** 367 tests, ~25 audits sous-agents. `dev` poussé sur `origin`, `main` = MVP off-chain + front (PR #1 mergée).
+**MVP vertical complet (off-chain) + couche d'intégration on-chain écrite, testée ET câblée au runtime (activable par config, OFF par défaut).** 384 tests, ~25 audits sous-agents. `dev` poussé sur `origin`, `main` = MVP off-chain + front (PR #1 mergée).
 
 - **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
 - **Backend off-chain** (`apps/api`) : services + **Fastify** + feed CEX + cache + **persistance SQLite** (survie au redémarrage) + lecteur AMM, runnable. Client `@tide/client` typé.
 - **Front** (`apps/web`) : Vue 3 + Vite, refonte **style Analogue** (hero light-tunnel animé en canvas, achromatie stricte). Build OK.
 - **Intégration XRPL on-chain** (`packages/xrpl` + `apps/api`), F1→F9, chacune auditée :
   - **F1** `XrplClient` (connexion injectable + `ammSpotPrice`) · **F2** lecteur de carnet `book_offers` · **F3** feed double source CEX+on-chain (garde de divergence) · **F4** **indexeur d'attribution** (tx taggées réussies, fenêtre figée, store idempotent — la métrique reine) · **F5** best execution + bornage slippage · **F6** **multisig** (`SignerListSet`) + **payouts** plus grand reste · **F7** soumission tx + classification `engine_result` · **F8** **Xaman** (payload non-custodial, SDK injecté) · **F9** moteur de volume conditionnel + garde-fou anti wash-trading (OFF par défaut).
+- **F10 — câblage runtime + HTTP** (`apps/api/src/main.ts`, `config/env.ts`, `http/server.ts`, `xaman/sdk.ts`, `@tide/xrpl` `connectXrplClient`) : `main.ts` est un **assembleur** ; feed on-chain, indexeur (+ sync) et Xaman sont **activés par config env**, OFF par défaut. Routes **`POST /sign/buy-in`**, **`POST /sign/live-offer`** (sourceTag + prize pool injectés **côté serveur**), **`GET /metrics`**. `xumm-sdk` ajouté. Client `@tide/client` étendu (`metrics`/`signBuyIn`/`signLiveOffer`). **Config** : voir `.env.example` (`XRPL_WSS_URL`, `TIDE_SOURCE_TAG`, `TIDE_INDEXED_ACCOUNTS`, `TIDE_PRIZE_POOL_ADDRESS`, `XUMM_API_KEY`/`SECRET`).
 
-**Frontière restante — demande l'environnement d'Armand (non vérifiable ici, NON câblé runtime) :**
+**Frontière restante — demande l'environnement d'Armand (non vérifiable ici) :**
 - **Chemin critique mainnet** : exécuter le spike d'attribution (1 swap taggé → compteur orga), réserver/déclarer le `SourceTag`, trancher les questions orga (active account, volume self-généré → conditionne F9), spike multisig prize pool.
-- **Câblage runtime** : `adaptXrplClient(new Client(mainnet))`, instancier le SDK XUMM avec les **vraies clés** (secrets), brancher l'indexeur (`AttributionIndexer`) et le feed on-chain dans `main.ts`, déclencher Xaman depuis le front. Tout ça : code « non vérifié » tant que pas testé sur ton mainnet/tes clés.
+- **Activation runtime** (le code est câblé, il manque les **valeurs réelles** — non vérifié tant que pas testé sur ton mainnet/tes clés) : remplir le `.env` (clés XUMM secrètes, `XRPL_WSS_URL`, `SourceTag` réservé, comptes indexés) et **`ONCHAIN_POOLS`** dans `main.ts` (issuers réels, ex. RLUSD, vide par défaut).
+- **Front Xaman** : déclencher la signature depuis l'UI (`@tide/client` expose déjà `signBuyIn`/`signLiveOffer` ; composables/vues à brancher).
 
 Dette tracée (DEVLOG) : montants en `number` → BigInt/drops au règlement (garde `MAX_SAFE_INTEGER` posée) ; prix on-chain clé par `currency` sans issuer (homonymes) ; curseur indexeur non persisté (rescan au boot, store idempotent).
 

@@ -4,6 +4,41 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-23 — F10 : câblage runtime on-chain + exposition HTTP [Phase 1/2, chemin critique]
+
+**Quoi.** Assemblage des briques F1→F9 (jusqu'ici écrites/testées mais **inertes**) dans le runtime, et exposition HTTP. Concrètement :
+- **Routes HTTP** (`http/server.ts`) : `POST /sign/buy-in`, `POST /sign/live-offer` (signature Xaman) et `GET /metrics` (attribution), via deps **optionnelles injectées** (`sign`, `metrics`) + parsing au bord (`parseBuyInRequest`/`parseLiveOfferRequest`/`parseAmount`).
+- **Frontières lib externe** : `connectXrplClient(url)` dans `@tide/xrpl` (unique point qui instancie `xrpl.js` au-delà de `adaptXrplClient`) et `createXamanApi(key, secret)` dans `apps/api/src/xaman/sdk.ts` (unique point qui instancie `xumm-sdk`, **ajouté en dépendance**).
+- **Config env** (`config/env.ts`) : lecture + validation des variables (réutilise `assertValidAddress`/`assertAttributionTag`).
+- **`main.ts`** réécrit en **assembleur** : feed on-chain (`AmmOnchainPriceProvider`), indexeur (`AttributionIndexer` + sync périodique) et signature Xaman, **chacun activé par sa config**.
+- **Client typé** (`@tide/client`) étendu : `metrics()`, `signBuyIn()`, `signLiveOffer()`.
+
+384 tests, typecheck (5 packages) + lint clean.
+
+**Pourquoi.** Tout F1→F9 existait mais n'était **jamais instancié ni appelable** : le serveur ne servait que le Paper off-chain et le feed CEX. F10 rend le mode on-chain réellement activable **par configuration**, sans rien changer au mode off-chain par défaut.
+
+**Cheminement.**
+- **Sécurité (le point dur).** Le `sourceTag` (attribution) et la **destination du prize pool** sont injectés **côté serveur**, jamais dans le corps client : un utilisateur ne peut ni détourner l'attribution, ni rediriger un buy-in. Vérifié par test (le client n'envoie que `account`/`amount`/`competitionId`).
+- **Tout optionnel + gated.** Sans config → chaque `buildXxx` retourne `undefined` → mode off-chain pur **inchangé** (garanti par structure, pas par accident). Config **partielle** de Xaman (clés sans `TIDE_SOURCE_TAG`/`TIDE_PRIZE_POOL_ADDRESS`) **lève au boot** : config cassée = bruyante, jamais silencieuse.
+- **Frontières isolées.** `connectXrplClient` et `createXamanApi` sont les seuls points touchant les libs ; cast localisé via `unknown` (jamais `any`), **non testés unitairement** (réseau/clés). Toute la logique vit au-dessus, sur des interfaces testables (`XrplConnection`, `XamanPayloadApi`).
+- **Ordre de construction.** Le store d'attribution est créé **avant** `createApp` (pour exposer `/metrics`) ; l'indexeur **après** (il a besoin du cache de prix pour normaliser le volume — point unique de normalisation, cf. risque tracé F4).
+- **Client découplé.** Les types de contrat (`ApiAmount`, `SignRequest`, `AttributionMetrics`) sont **redéfinis** dans `@tide/client` (miroir de `@tide/xrpl`) pour ne pas tirer `@tide/xrpl`/`ws` dans le bundle front.
+- **pnpm.** L'ajout de `xumm-sdk` a tiré les accélérateurs natifs **optionnels** de `ws` (`bufferutil`/`utf-8-validate`/`es5-ext`). Décision de build **explicite** dans `pnpm-workspace.yaml` : on **refuse** ces builds natifs (`ws` fonctionne en JS pur), `esbuild` conservé.
+
+**Frontière de vérification (honnête).** Le code **compile et lint**, les routes sont **testées par `inject()` avec des fakes**, et le boot a été **vérifié empiriquement** (serveur réel) : OFF par défaut (`/metrics` et `/sign/*` absentes → 404), boot résilient au feed CEX down, et config **partielle** (Xaman OU indexeur sans `TIDE_SOURCE_TAG`, ou `=0`) qui **lève au démarrage**. **NON vérifié au runtime** (frontière mainnet/secrets d'Armand) : connexion réelle à un nœud mainnet, payload XUMM réel avec de vraies clés, sync de l'indexeur contre le ledger, et **`ONCHAIN_POOLS` est vide** (à remplir avec les vrais issuers, ex. RLUSD, pour activer le prix on-chain). **Reste à faire** : déclencher la signature depuis le **front** (UI Xaman) et fournir les vraies valeurs (`XRPL_WSS_URL`, `TIDE_SOURCE_TAG` réservé, comptes indexés, clés XUMM).
+
+**Audit (3 sous-agents adversariaux — sécurité / correction / qualité-tests ; aucun 🔴 bloquant).** Points centraux confirmés solides par les trois : `sourceTag` + destination du prize pool **non manipulables par le client** (aucun spread du body), **zéro secret loggé**, gating OFF-par-défaut/FAIL-si-partiel, masquage des 500. Findings traités avant clôture :
+- 🟠 **Indexeur fail-loud** : config `XRPL_WSS_URL` + `TIDE_INDEXED_ACCOUNTS` **sans** `TIDE_SOURCE_TAG` restait silencieusement OFF (asymétrie avec Xaman) → désormais **lève** au boot.
+- 🟠 **Fuite de message amont** : le handler Fastify ne masquait que les 500 ; un futur message d'erreur Xaman/feed (502) aurait fui au client → **toute la classe 5xx** renvoie un libellé générique (`"Service amont indisponible"` pour 502).
+- 🟡 **Borne haute des montants** : `assertValidAmount` (drops) n'avait pas de plafond → ajout de `MAX_XRP_DROPS` (10^17 = réserve totale), une entrée critique du chemin de signature.
+- 🟡 **`readPort`** ne traitait pas `PORT=""` comme absent (crash au lieu du défaut) → passé par `optional()`.
+- 🟡 **Couverture de tests** : ajout des cas `live-offer` (offre triviale `gives==wants`→400, corps invalide→400, refus Xaman→502) et **réponse Xaman partielle**→502 (+6 tests).
+- 🟠→**documenté** : tout volume indexé non-XRP est normalisé à **0** tant que sa devise n'est pas au feed (dette F4) → commentaire explicite liant `SYMBOLS`/`ONCHAIN_POOLS` au volume. Recommandations laissées (hors incrément) : schéma de body strict (rejet des clés inconnues), test du `joinCompetition` (code préexistant).
+
+**Bugs & fix.** Incohérence de nommage env **préexistante** : `.env.example` (`XRPL_WSS_URL`, `PRICE_API_URL`) ne correspondait pas au code (`CEX_BASE_URL`, et aucune URL XRPL n'était lue). Harmonisé : `XRPL_WSS_URL` retenu, `CEX_BASE_URL` conservé (déjà utilisé par le code qui tourne), `.env.example` réécrit avec toutes les variables (intégrations commentées = OFF par défaut). L'ancien `TIDE_SOURCE_TAG=0` aurait fait **lever au boot** (0 rejeté par `assertAttributionTag`) → laissé non défini dans l'exemple.
+
+---
+
 ## 2026-06-22 — F9 : moteur de volume taggé, conditionnel + garde-fou [Phase 3, conditionnel]
 
 **Quoi.** `packages/xrpl/src/volume/` : `evaluateVolumeTrade` (edge net d'un round-trip de volume auto-généré) et `planVolumeTrade` (décision avec **garde-fou dur**). 10 tests, typecheck + lint clean. **Décide seulement ; n'exécute pas.**

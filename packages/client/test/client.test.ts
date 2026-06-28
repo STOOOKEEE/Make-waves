@@ -78,6 +78,44 @@ describe("TideClient", () => {
     });
   });
 
+  it("metrics -> GET /metrics (200)", async () => {
+    const metrics = { totalVolume: 1234, activeAccounts: 7, txCount: 9 };
+    const { client, requests } = stub(() => ({ status: 200, body: metrics }));
+    expect(await client.metrics()).toEqual(metrics);
+    expect(requests[0]).toEqual({ path: "/metrics", method: "GET" });
+  });
+
+  it("signBuyIn -> POST /sign/buy-in (201) sans sourceTag (ajouté côté serveur)", async () => {
+    const sign = {
+      uuid: "u-1",
+      signUrl: "https://xumm.app/sign/u-1",
+      qrPng: "https://xumm.app/qr/u-1.png",
+    };
+    const { client, requests } = stub(() => ({ status: 201, body: sign }));
+    expect(await client.signBuyIn("rAcc", "10000000", "cup")).toEqual(sign);
+    expect(requests[0]).toEqual({
+      path: "/sign/buy-in",
+      method: "POST",
+      body: { account: "rAcc", amount: "10000000", competitionId: "cup" },
+    });
+  });
+
+  it("signLiveOffer -> POST /sign/live-offer (201) avec un montant IOU objet", async () => {
+    const sign = {
+      uuid: "u-2",
+      signUrl: "https://xumm.app/sign/u-2",
+      qrPng: "https://xumm.app/qr/u-2.png",
+    };
+    const { client, requests } = stub(() => ({ status: 201, body: sign }));
+    const wants = { currency: "USD", issuer: "rIss", value: "5" };
+    expect(await client.signLiveOffer("rAcc", "10000000", wants)).toEqual(sign);
+    expect(requests[0]?.body).toEqual({
+      account: "rAcc",
+      gives: "10000000",
+      wants,
+    });
+  });
+
   it("lève TideApiError avec le message extrait sur statut inattendu", async () => {
     const { client } = stub(() => ({
       status: 409,

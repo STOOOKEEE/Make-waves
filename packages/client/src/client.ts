@@ -15,6 +15,29 @@ export interface CloseResult {
   readonly undistributed: number;
 }
 
+/**
+ * Montant XRPL tel qu'il transite sur l'API : string de drops XRP, ou objet de
+ * token émis. Type de CONTRAT HTTP (miroir du `Amount` d'xrpl.js) défini ici pour
+ * que le client reste découplé de `@tide/xrpl` et de sa lib `ws` côté front.
+ */
+export type ApiAmount =
+  | string
+  | { readonly currency: string; readonly issuer: string; readonly value: string };
+
+/** Requête de signature non-custodiale à présenter à l'utilisateur (Xaman). */
+export interface SignRequest {
+  readonly uuid: string;
+  readonly signUrl: string;
+  readonly qrPng: string;
+}
+
+/** Métriques d'attribution du hackathon (miroir de `@tide/xrpl`). */
+export interface AttributionMetrics {
+  readonly totalVolume: number;
+  readonly activeAccounts: number;
+  readonly txCount: number;
+}
+
 function path(...segments: string[]): string {
   return "/" + segments.map((s) => encodeURIComponent(s)).join("/");
 }
@@ -89,6 +112,46 @@ export class TideClient {
     return this.call(
       { path: path("competitions", competitionId, "close"), method: "POST" },
       200,
+    );
+  }
+
+  // --- Métriques d'attribution (hackathon) ---
+
+  async metrics(): Promise<AttributionMetrics> {
+    return this.call({ path: "/metrics", method: "GET" }, 200);
+  }
+
+  // --- Signature non-custodiale (Xaman) ---
+  // Le sourceTag (attribution) et la destination du prize pool sont ajoutés CÔTÉ
+  // SERVEUR : le client ne les fournit jamais.
+
+  async signBuyIn(
+    account: string,
+    amount: ApiAmount,
+    competitionId: string,
+  ): Promise<SignRequest> {
+    return this.call(
+      {
+        path: "/sign/buy-in",
+        method: "POST",
+        body: { account, amount, competitionId },
+      },
+      201,
+    );
+  }
+
+  async signLiveOffer(
+    account: string,
+    gives: ApiAmount,
+    wants: ApiAmount,
+  ): Promise<SignRequest> {
+    return this.call(
+      {
+        path: "/sign/live-offer",
+        method: "POST",
+        body: { account, gives, wants },
+      },
+      201,
     );
   }
 
