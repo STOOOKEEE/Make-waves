@@ -9,6 +9,8 @@ export default tseslint.config(
       "**/.nuxt/**",
       "**/.output/**",
       "**/coverage/**",
+      // Maquette statique de référence (HTML/JS navigateur), hors build app.
+      "design_site/**",
       // Les .vue sont typés par vue-tsc (eslint TS ne les parse pas).
       "**/*.vue",
     ],
