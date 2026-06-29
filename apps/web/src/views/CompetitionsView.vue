@@ -45,9 +45,7 @@ const { t, locale } = useI18n({
     registered: "{n} registered",
     countOne: "{n} competition",
     countMany: "{n} competitions",
-    ctaLive: "Join",
-    ctaSoon: "Pre-register",
-    ctaEnded: "View results",
+    ctaDetails: "Details",
     filterAll: "All",
     filterLive: "Live",
     filterSoon: "Soon",
@@ -77,9 +75,7 @@ const { t, locale } = useI18n({
     registered: "{n} inscrits",
     countOne: "{n} compétition",
     countMany: "{n} compétitions",
-    ctaLive: "Rejoindre",
-    ctaSoon: "Pré-inscription",
-    ctaEnded: "Voir les résultats",
+    ctaDetails: "Détails",
     filterAll: "Toutes",
     filterLive: "En cours",
     filterSoon: "À venir",
@@ -127,12 +123,12 @@ const countLabel = computed(() => {
   return t(n > 1 ? "countMany" : "countOne", { n });
 });
 
-// CTA selon le statut (classe + libellé traduit).
+// CTA des cartes : elles ouvrent le détail, l'inscription réelle est sur la page détail.
 const CTA = computed<Record<CompetitionStatus, { c: string; l: string }>>(
   () => ({
-    live: { c: "join", l: t("ctaLive") },
-    soon: { c: "soon", l: t("ctaSoon") },
-    ended: { c: "ended", l: t("ctaEnded") },
+    live: { c: "join", l: t("ctaDetails") },
+    soon: { c: "soon", l: t("ctaDetails") },
+    ended: { c: "ended", l: t("ctaDetails") },
   }),
 );
 

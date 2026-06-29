@@ -14,7 +14,6 @@ import { useCountdown } from "../composables/useCountdown";
 import { useLeaderboard } from "../composables/useLeaderboard";
 import { useSession } from "../composables/useSession";
 import { useI18n } from "../i18n/useI18n";
-import SegControl from "../components/SegControl.vue";
 
 const props = defineProps<{ client: TideClient }>();
 const { userId, connected } = useSession();
@@ -22,10 +21,7 @@ const { userId, connected } = useSession();
 const { t } = useI18n({
   en: {
     leaderboard: "Leaderboard",
-    subtitle: "Season 04 · return is everything. 12,480 traders competing.",
-    scopeSeason: "Season 04",
-    scopeAllTime: "All-time",
-    scopeFriends: "Friends",
+    subtitle: "Season 04 · ranked from the accounts currently known by the backend.",
     seasonPot: "Season prize pool",
     potCaption: "RLUSD + season NFT · top 50",
     days: "Days",
@@ -34,7 +30,7 @@ const { t } = useI18n({
     sec: "Sec",
     rankPrefix: "RANK",
     searchPlaceholder: "Search a trader or wallet…",
-    countLabel: "Showing 1–{n} of 12,480",
+    countLabel: "Showing {n} rows",
     colRank: "Rank",
     colTrader: "Trader",
     colReturn: "Return",
@@ -44,10 +40,7 @@ const { t } = useI18n({
   },
   fr: {
     leaderboard: "Classement",
-    subtitle: "Saison 04 · le rendement décide de tout. 12 480 traders en lice.",
-    scopeSeason: "Saison 04",
-    scopeAllTime: "All-time",
-    scopeFriends: "Amis",
+    subtitle: "Saison 04 · classement calculé depuis les comptes connus du backend.",
     seasonPot: "Cagnotte de la saison",
     potCaption: "RLUSD + NFT de saison · top 50",
     days: "Jours",
@@ -56,7 +49,7 @@ const { t } = useI18n({
     sec: "Sec",
     rankPrefix: "RANG",
     searchPlaceholder: "Rechercher un trader ou un wallet…",
-    countLabel: "Affichage 1–{n} sur 12 480",
+    countLabel: "{n} lignes affichées",
     colRank: "Rang",
     colTrader: "Trader",
     colReturn: "Rendement",
@@ -66,19 +59,9 @@ const { t } = useI18n({
   },
 });
 
-// Segmented control (purement visuel, aucun fetch au changement).
-// `scope` garde une valeur stable (indépendante de la langue) ; le label est traduit.
-const scope = ref("season");
-const scopeOptions = computed(() => [
-  { value: "season", label: t("scopeSeason") },
-  { value: "allTime", label: t("scopeAllTime") },
-  { value: "friends", label: t("scopeFriends") },
-]);
-
 // Compte à rebours de la saison (remplace le tick « secondes seules » du source).
 const { dd, hh, mm, ss } = useCountdown({ days: 4, hours: 11, mins: 38, secs: 52 });
 
-// Recherche purement visuelle.
 const search = ref("");
 
 // Données du leaderboard (sûr si l'API est down : capté dans lb.error).
@@ -244,6 +227,32 @@ const myRow = computed<BoardRow | null>(() => {
 const rows = computed<BoardRow[]>(() =>
   lb.entries.value.length >= MIN_REAL_ENTRIES ? realRows() : mockRows(),
 );
+const filteredRows = computed<BoardRow[]>(() => {
+  const q = search.value.trim().toLowerCase();
+  if (q === "") {
+    return rows.value;
+  }
+  return rows.value.filter((row) =>
+    row.name.toLowerCase().includes(q) || row.address.toLowerCase().includes(q),
+  );
+});
+const showMyRow = computed(() => {
+  const row = myRow.value;
+  if (row === null) {
+    return false;
+  }
+  const q = search.value.trim().toLowerCase();
+  if (
+    q !== "" &&
+    !row.name.toLowerCase().includes(q) &&
+    !row.address.toLowerCase().includes(q)
+  ) {
+    return false;
+  }
+  return !filteredRows.value.some(
+    (visible) => visible.rank === row.rank && visible.name === row.name,
+  );
+});
 
 // Top 3 du classement courant (réel ou mock) pour le podium.
 const top3 = computed(() => rows.value.slice(0, 3));
@@ -254,8 +263,7 @@ const seasonPotTotal = computed(() => {
   return "$" + total.toLocaleString("en-US");
 });
 
-// Libellé de comptage : « Affichage 1–N sur 12 480 » (N = lignes hors ta ligne).
-const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
+const countLabel = computed(() => t("countLabel", { n: filteredRows.value.length }));
 </script>
 
 <template>
@@ -265,7 +273,6 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
         <h1>{{ t('leaderboard') }}</h1>
         <p>{{ t('subtitle') }}</p>
       </div>
-      <SegControl v-model="scope" :options="scopeOptions" />
     </div>
 
     <!-- saison + podium -->
@@ -333,7 +340,7 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
       </div>
       <div>
         <div
-          v-for="row in rows"
+          v-for="row in filteredRows"
           :key="row.rank + '-' + row.name"
           class="lrow"
           :class="row.rankClass"
@@ -354,7 +361,7 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
         </div>
 
         <!-- ta ligne : entrée réelle du compte de session (si présente au classement) -->
-        <div v-if="myRow" class="lrow me">
+        <div v-if="showMyRow && myRow" class="lrow me">
           <div class="rk">{{ myRow.rank }}</div>
           <div class="who">
             <span class="av" :style="{ background: myRow.color }">{{ myRow.avatar }}</span>

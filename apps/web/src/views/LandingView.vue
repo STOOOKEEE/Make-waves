@@ -19,7 +19,7 @@ const { t, locale, intlLocale } = useI18n({
     soundOn: 'SOUND [ON]',
     heroDesc: 'TIDE IS A WEB3 PAPER-TRADING ARENA WHERE THE BEST TRADERS COMPETE FOR REAL REWARDS.',
     seasonLive: 'SEASON 04 · LIVE',
-    tradersCount: '12 480 TRADERS',
+    tradersCount: 'LIVE SEASON',
     join: 'Join',
     heroTag: '[ CHAMPIONSHIP — SEASON 04 ]',
     formatLabel: 'Format',
@@ -40,7 +40,7 @@ const { t, locale, intlLocale } = useI18n({
     manifestoLabel: 'The manifesto',
     manifestoP1: 'You get $100,000 in virtual capital. You trade real crypto markets in real time. ',
     manifestoHighlight: 'No deposit, no painful liquidations, no KYC.',
-    manifestoP2: ' Just your read on the market — against 340,000 others. The best cash out on-chain.',
+    manifestoP2: ' Just your read on the market — against the current season leaderboard. The best cash out on-chain when rewards are enabled.',
     statPaidOut: 'paid out this season',
     statWallets: 'wallets created',
     statMarkets: 'markets available',
@@ -66,7 +66,7 @@ const { t, locale, intlLocale } = useI18n({
     prize4: 'Top 4 — 50',
     ctaHeadL1: 'Take',
     ctaHeadL2: 'your spot',
-    ctaP: '340,000 traders sharpen their edge without risking a satoshi. The grid is filling up.',
+    ctaP: 'Sharpen your edge in paper mode, then connect a wallet only when you need on-chain actions.',
     connectWallet: 'Connect wallet →',
     footerTagline: 'The paper-trading arena where the best crypto pilots go head to head — and cash out on-chain.',
     colProduct: 'Product',
@@ -88,7 +88,7 @@ const { t, locale, intlLocale } = useI18n({
     soundOn: 'SON [ON]',
     heroDesc: "TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.",
     seasonLive: 'SAISON 04 · LIVE',
-    tradersCount: '12 480 TRADERS',
+    tradersCount: 'SAISON LIVE',
     join: 'Rejoindre',
     heroTag: '[ CHAMPIONNAT — SAISON 04 ]',
     formatLabel: 'Format',
@@ -109,7 +109,7 @@ const { t, locale, intlLocale } = useI18n({
     manifestoLabel: 'Le manifeste',
     manifestoP1: 'Tu reçois $100 000 virtuels. Tu trades les vrais marchés crypto en temps réel. ',
     manifestoHighlight: 'Pas de dépôt, pas de liquidation qui fait mal, pas de KYC.',
-    manifestoP2: ' Juste ta lecture du marché — opposée à celle de 340 000 autres. Les meilleurs encaissent on-chain.',
+    manifestoP2: ' Juste ta lecture du marché — opposée au classement de la saison en cours. Les meilleurs encaissent on-chain quand les récompenses sont activées.',
     statPaidOut: 'distribués cette saison',
     statWallets: 'portefeuilles créés',
     statMarkets: 'marchés disponibles',
@@ -135,7 +135,7 @@ const { t, locale, intlLocale } = useI18n({
     prize4: 'Top 4 — 50',
     ctaHeadL1: 'Prends',
     ctaHeadL2: 'ta place',
-    ctaP: '340 000 traders affûtent leur edge sans risquer un satoshi. La grille se remplit.',
+    ctaP: "Affûte ton edge en paper, puis connecte un wallet seulement quand une action on-chain est nécessaire.",
     connectWallet: 'Connecter le wallet →',
     footerTagline: "L'arène de paper trading où les meilleurs pilotes crypto se mesurent — et encaissent on-chain.",
     colProduct: 'Produit',
@@ -405,14 +405,6 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- STATS -->
-    <div class="stats">
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 2.4, pre: '$', suf: 'M', dec: 1 }">$0M</div><div class="c">{{ t('statPaidOut') }}</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 340, suf: 'K' }">0</div><div class="c">{{ t('statWallets') }}</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 200, suf: '+' }">0</div><div class="c">{{ t('statMarkets') }}</div></div>
-      <div class="st rv" v-reveal><div class="v" v-count="{ to: 0, suf: ' gas' }">0</div><div class="c">{{ t('statFeeFree') }}</div></div>
-    </div>
-
     <!-- STEPS -->
     <section class="steps" id="fonctionnement">
       <div class="wrap">
@@ -469,9 +461,13 @@ onUnmounted(() => {
             <p>{{ t('footerTagline') }}</p>
           </div>
           <div class="f-cols">
-            <div class="f-col"><h4>{{ t('colProduct') }}</h4><a href="#">{{ t('linkCompetitions') }}</a><a href="#">{{ t('linkLeaderboard') }}</a><a href="#">{{ t('linkRewards') }}</a><a href="#">{{ t('linkMarkets') }}</a></div>
-            <div class="f-col"><h4>{{ t('colResources') }}</h4><a href="#">{{ t('linkDocumentation') }}</a><a href="#">{{ t('linkRules') }}</a><a href="#">{{ t('linkApi') }}</a><a href="#">{{ t('linkStatus') }}</a></div>
-            <div class="f-col"><h4>{{ t('colCommunity') }}</h4><a href="#">Discord</a><a href="#">X / Twitter</a><a href="#">Telegram</a><a href="#">Blog</a></div>
+            <div class="f-col">
+              <h4>{{ t('colProduct') }}</h4>
+              <a href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('linkCompetitions') }}</a>
+              <a href="#/leaderboard" @click.prevent="emit('navigate', '/leaderboard')">{{ t('linkLeaderboard') }}</a>
+              <a href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('linkRewards') }}</a>
+              <a href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('linkMarkets') }}</a>
+            </div>
           </div>
         </div>
         <div class="f-big">TIDE</div>

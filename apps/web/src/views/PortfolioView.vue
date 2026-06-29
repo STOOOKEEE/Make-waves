@@ -7,7 +7,6 @@
 import { computed, onMounted, ref } from "vue";
 import type { Fill } from "@tide/core";
 import type { Portfolio, TideClient } from "@tide/client";
-import SegControl from "../components/SegControl.vue";
 import { ALLOC_PALETTE, fmtNum } from "../data/markets";
 import { useSession } from "../composables/useSession";
 import { errorMessage } from "../composables/messages";
@@ -19,7 +18,7 @@ const { userId, connected } = useSession();
 const { t } = useI18n({
   en: {
     title: "Portfolio",
-    subtitle: "Demo capital $100,000 · Season 04 — real-time performance.",
+    subtitle: "Current paper account · balances, positions and activity from the backend.",
     connectPrompt: "Connect the terminal to load your real portfolio.",
     tf24H: "24H",
     tf7J: "7D",
@@ -34,8 +33,7 @@ const { t } = useI18n({
     nPositions: "{n} positions",
     kpiSeasonRank: "Season rank",
     rankUpToday: "↑ {n} today",
-    equityCurve: "Equity curve",
-    lastNDays: "Last {n} days",
+    accountSummary: "Account summary",
     allocation: "Allocation",
     byAsset: "by asset",
     invested: "invested",
@@ -46,12 +44,6 @@ const { t } = useI18n({
     colValue: "Value",
     colPnl: "PnL",
     colAllocation: "Allocation",
-    tradingStats: "Trading stats",
-    winDesc: "{wins} winning trades out of {total} this quarter. Avg win/loss ratio of ",
-    bestTrade: "Best trade",
-    worstTrade: "Worst trade",
-    totalTrades: "Total trades",
-    avgDuration: "Avg duration",
     recentActivity: "Recent activity",
     tagBuy: "BUY",
     tagSell: "SELL",
@@ -63,7 +55,7 @@ const { t } = useI18n({
   },
   fr: {
     title: "Portefeuille",
-    subtitle: "Capital de démo $100 000 · Saison 04 — performance en temps réel.",
+    subtitle: "Compte paper courant · soldes, positions et activité issus du backend.",
     connectPrompt: "Connecte le terminal pour charger ton portefeuille réel.",
     tf24H: "24H",
     tf7J: "7J",
@@ -78,8 +70,7 @@ const { t } = useI18n({
     nPositions: "{n} positions",
     kpiSeasonRank: "Rang saison",
     rankUpToday: "↑ {n} aujourd'hui",
-    equityCurve: "Courbe d'équité",
-    lastNDays: "{n} derniers jours",
+    accountSummary: "Résumé du compte",
     allocation: "Répartition",
     byAsset: "par actif",
     invested: "investi",
@@ -90,12 +81,6 @@ const { t } = useI18n({
     colValue: "Valeur",
     colPnl: "PnL",
     colAllocation: "Allocation",
-    tradingStats: "Statistiques de trading",
-    winDesc: "{wins} trades gagnants sur {total} ce trimestre. Ratio gain/perte moyen de ",
-    bestTrade: "Meilleur trade",
-    worstTrade: "Pire trade",
-    totalTrades: "Total trades",
-    avgDuration: "Durée moy.",
     recentActivity: "Activité récente",
     tagBuy: "ACHAT",
     tagSell: "VENTE",
@@ -172,75 +157,6 @@ function signed(value: number): string {
 // Ordres réels les plus récents d'abord (le store les conserve dans l'ordre).
 const recentActivity = computed(() => [...activity.value].reverse().slice(0, 6));
 
-/* ---- timeframe segmenté (défaut 30J) ---- */
-const TIMEFRAMES = computed(() => [
-  { value: "24H", label: t("tf24H") },
-  { value: "7J", label: t("tf7J") },
-  { value: "30J", label: t("tf30J") },
-  { value: "S04", label: t("tfS04") },
-  { value: "Max", label: t("tfMax") },
-]);
-const timeframe = ref("30J");
-
-/* ---- courbe d'équité (porté de eqCurve()) ---- */
-const eqEl = ref<HTMLElement | null>(null);
-const eqMarkup = ref("");
-
-/* RNG seedé (LCG) — identique à la source. */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a * 1664525 + 1013904223) >>> 0;
-    return a / 4294967296;
-  };
-}
-
-function eqCurve(): void {
-  const W = 760;
-  const H = 260;
-  const pad = 30;
-  const n = 42;
-  const r = rng(99);
-  let v = 100;
-  const pts: number[] = [];
-  for (let i = 0; i < n; i++) {
-    v += (r() - 0.4) * 3.2 + 0.55;
-    pts.push(Math.max(96, v));
-  }
-  pts[n - 1] = 128.94;
-  let mx = Math.max(...pts);
-  let mn = Math.min(...pts);
-  mx += 2;
-  mn -= 2;
-  const X = (i: number): number => pad + (i / (n - 1)) * (W - pad * 2);
-  const Y = (val: number): number => pad + ((mx - val) / (mx - mn)) * (H - pad * 2);
-  let d = "M" + X(0) + "," + Y(pts[0] ?? 0);
-  pts.forEach((p, i) => {
-    if (i) d += " L" + X(i) + "," + Y(p);
-  });
-  let g = "";
-  for (let i = 0; i <= 3; i++) {
-    const y = pad + (i * (H - pad * 2)) / 3;
-    const val = mx - ((mx - mn) * i) / 3;
-    g += `<line class="gridln" x1="0" y1="${y}" x2="${W}" y2="${y}"/><text class="axis" x="6" y="${y - 5}">$${val.toFixed(0)}K</text>`;
-  }
-  g += `<defs><linearGradient id="eg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFF6CE" stop-opacity=".26"/><stop offset="100%" stop-color="#BFF6CE" stop-opacity="0"/></linearGradient></defs>`;
-  g += `<path class="fp" fill="url(#eg)" d="${d} L${X(n - 1)},${H} L${X(0)},${H} Z"/>`;
-  g += `<path class="ln" d="${d}"/>`;
-  eqMarkup.value = g;
-}
-
-/* Au changement de timeframe : retire .in, recalcule, ré-ajoute .in à la frame
- * suivante pour relancer l'animation de tracé (mirroir de la source). */
-function onTimeframe(): void {
-  const el = eqEl.value;
-  if (el) el.classList.remove("in");
-  eqCurve();
-  requestAnimationFrame(() => {
-    if (eqEl.value) eqEl.value.classList.add("in");
-  });
-}
-
 /* ---- donut de répartition (avoirs réels valorisés) ---- */
 const donutMarkup = computed(() => {
   const rows = holdings.value;
@@ -261,7 +177,6 @@ const donutMarkup = computed(() => {
 });
 
 onMounted(() => {
-  eqCurve();
   void loadPortfolio();
 });
 </script>
@@ -273,7 +188,6 @@ onMounted(() => {
         <h1>{{ t("title") }}</h1>
         <p>{{ t("subtitle") }}</p>
       </div>
-      <SegControl v-model="timeframe" :options="TIMEFRAMES" @update:model-value="onTimeframe" />
     </div>
 
     <!-- Invite de connexion si aucune session active -->
@@ -291,9 +205,12 @@ onMounted(() => {
     <!-- equity + allocation -->
     <div class="grid2">
       <div class="card" v-reveal>
-        <div class="ch-head"><div><div class="t">{{ t("equityCurve") }}</div><div class="big" :class="pnlValue >= 0 ? 'up' : 'down'">${{ fmtNum(equityValue) }}</div></div><div class="lab">{{ t("lastNDays", { n: 30 }) }}</div></div>
-        <div ref="eqEl" class="eqchart" v-reveal>
-          <svg viewBox="0 0 760 260" preserveAspectRatio="none" v-html="eqMarkup"></svg>
+        <div class="ch-head"><div><div class="t">{{ t("accountSummary") }}</div><div class="big" :class="pnlValue >= 0 ? 'up' : 'down'">${{ fmtNum(equityValue) }}</div></div><div class="lab">{{ t("tfS04") }}</div></div>
+        <div class="summary-list">
+          <div><span>{{ t("kpiAvailable") }}</span><b>${{ fmtNum(freeCash) }}</b></div>
+          <div><span>{{ t("kpiInvested") }}</span><b>${{ fmtNum(investedValue) }}</b></div>
+          <div><span>{{ t("kpiPnlToday") }}</span><b :class="pnlValue >= 0 ? 'up' : 'down'">{{ signed(pnlValue) }}</b></div>
+          <div><span>{{ t("positionsHoldings") }}</span><b>{{ positionsCount }}</b></div>
         </div>
       </div>
       <div class="card alloc" v-reveal>
@@ -330,28 +247,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- stats + activity -->
-    <div class="grid3">
-      <div class="card stats-card" v-reveal>
-        <div class="t">{{ t("tradingStats") }}</div>
-        <div class="winring">
-          <div class="ring">
-            <svg width="96" height="96" viewBox="0 0 96 96">
-              <circle cx="48" cy="48" r="40" fill="none" stroke="var(--panel2)" stroke-width="9" />
-              <circle cx="48" cy="48" r="40" fill="none" stroke="var(--up)" stroke-width="9" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="78" />
-            </svg>
-            <div class="c"><b>69%</b><span>WIN RATE</span></div>
-          </div>
-          <div class="desc">{{ t("winDesc", { wins: 142, total: 206 }) }}<b style="color: #fff">2.4×</b>.</div>
-        </div>
-        <div class="minis">
-          <div class="mini"><div class="l">{{ t("bestTrade") }}</div><div class="v up">+$18,420</div></div>
-          <div class="mini"><div class="l">{{ t("worstTrade") }}</div><div class="v down">−$4,910</div></div>
-          <div class="mini"><div class="l">{{ t("totalTrades") }}</div><div class="v">206</div></div>
-          <div class="mini"><div class="l">{{ t("avgDuration") }}</div><div class="v">4h 12m</div></div>
-        </div>
-      </div>
-
+    <!-- activity -->
+    <div class="grid3 single">
       <div class="card act" v-reveal>
         <div class="hh">{{ t("recentActivity") }}</div>
         <div v-if="recentActivity.length === 0" class="arow soft">—</div>
@@ -621,6 +518,9 @@ onMounted(() => {
   gap: 14px;
   margin-top: 14px;
 }
+.grid3.single {
+  grid-template-columns: 1fr;
+}
 @media (max-width: 980px) {
   .grid3 {
     grid-template-columns: 1fr;
@@ -664,6 +564,27 @@ onMounted(() => {
 .winring .ring .c span {
   font-size: 9.5px;
   color: var(--soft);
+}
+.summary-list {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+}
+.summary-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  font-family: var(--mono);
+}
+.summary-list span {
+  color: var(--soft);
+  font-size: 12px;
+}
+.summary-list b {
+  font-size: 15px;
 }
 .winring .desc {
   font-size: 13px;

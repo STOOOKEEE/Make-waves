@@ -2,7 +2,7 @@
 // Vue détail d'une compétition — portée depuis design_site/competition.html.
 // Hero + règles + récompenses + classement + déroulé + modale d'inscription 3 étapes.
 // L'app-bar et le .grain sont globaux : on démarre au .page de la source.
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import type { TideClient } from "@tide/client";
 import { getComp } from "../data/competitions";
 import StatusBadge from "../components/StatusBadge.vue";
@@ -50,7 +50,7 @@ const { t, locale } = useI18n({
     connectWallet: "Connect your wallet",
     connected: "✓ Connected",
     noDeposit:
-      "No deposit required. Demo capital is credited automatically on registration.",
+      "Paper registration only. If a real buy-in is enabled later, it will be requested as a separate signed payment.",
     continueBtn: "Continue",
     verifyAccept: "Verify & accept",
     competition: "Competition",
@@ -104,7 +104,7 @@ const { t, locale } = useI18n({
     connectWallet: "Connecte ton wallet",
     connected: "✓ Connecté",
     noDeposit:
-      "Aucun dépôt requis. Le capital de démo est crédité automatiquement à l'inscription.",
+      "Inscription paper uniquement. Si un buy-in réel est activé plus tard, il sera demandé dans un paiement signé séparé.",
     continueBtn: "Continuer",
     verifyAccept: "Vérifie & accepte",
     competition: "Compétition",
@@ -196,6 +196,7 @@ const leadTitle = computed(() =>
 const showModal = ref(false);
 const step = ref(0);
 const agree = ref(false);
+const resumeAfterWallet = ref(false);
 // Référence vers la carte « classement » (pour scroll si terminée).
 const leadCard = ref<HTMLElement | null>(null);
 
@@ -239,6 +240,7 @@ function onJoin(): void {
 
 function closeModal(): void {
   showModal.value = false;
+  resumeAfterWallet.value = false;
 }
 
 // Fermeture au clic sur le fond (et non sur la modale elle-même).
@@ -250,11 +252,21 @@ function onOverlayClick(e: MouseEvent): void {
 
 function goStep1(): void {
   if (!walletConnected.value) {
+    resumeAfterWallet.value = true;
+    showModal.value = false;
     wallet.connect();
     return;
   }
   step.value = 1;
 }
+
+watch(walletConnected, (connectedNow) => {
+  if (connectedNow && resumeAfterWallet.value) {
+    resumeAfterWallet.value = false;
+    step.value = 1;
+    showModal.value = true;
+  }
+});
 
 function shorten(addr: string): string {
   return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;

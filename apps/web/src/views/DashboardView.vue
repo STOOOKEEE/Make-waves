@@ -19,12 +19,12 @@ const { t } = useI18n({
     noMarket: "No market",
     high24h: "24h High",
     low24h: "24h Low",
-    volume24h: "24h Volume",
+    chartSource: "Chart source",
+    liveFeed: "Live feed",
+    fallbackFeed: "Synthetic fallback",
     candles: "Candles",
     line: "Line",
     positionsTab: "Positions",
-    openOrders: "Open orders",
-    history: "History",
     market: "Market",
     side: "Side",
     size: "Size",
@@ -41,6 +41,7 @@ const { t } = useI18n({
     sellAsset: "Sell {asset}",
     orderSent: "✓ Paper order sent",
     orderBook: "Order book",
+    indicativeBook: "Indicative depth",
     price: "Price",
     total: "Total",
     modePaper: "Paper",
@@ -59,12 +60,12 @@ const { t } = useI18n({
     noMarket: "Aucun marché",
     high24h: "Haut 24h",
     low24h: "Bas 24h",
-    volume24h: "Volume 24h",
+    chartSource: "Source graphique",
+    liveFeed: "Flux live",
+    fallbackFeed: "Repli synthétique",
     candles: "Chandeliers",
     line: "Ligne",
     positionsTab: "Positions",
-    openOrders: "Ordres ouverts",
-    history: "Historique",
     market: "Marché",
     side: "Sens",
     size: "Taille",
@@ -81,6 +82,7 @@ const { t } = useI18n({
     sellAsset: "Vendre {asset}",
     orderSent: "✓ Ordre simulé envoyé",
     orderBook: "Carnet d'ordres",
+    indicativeBook: "Profondeur indicative",
     price: "Prix",
     total: "Total",
     modePaper: "Paper",
@@ -222,6 +224,9 @@ const stats24h = ref<{ change: number; high: number; low: number } | null>(null)
 const stat24High = computed(() => stats24h.value?.high ?? cur.value.hi);
 const stat24Low = computed(() => stats24h.value?.low ?? cur.value.lo);
 const stat24Change = computed(() => stats24h.value?.change ?? cur.value.c);
+const chartSourceLabel = computed(() =>
+  realCandles.value.length > 0 ? t("liveFeed") : t("fallbackFeed"),
+);
 
 // Prix réels du feed off-chain (devise → prix). Détermine ce que le backend peut
 // réellement coter : seuls ces actifs donnent lieu à un ordre paper effectif.
@@ -772,7 +777,7 @@ onUnmounted(() => {
           </div>
           <div class="scell"><div class="l">{{ t('high24h') }}</div><div class="v">${{ fmt(stat24High) }}</div></div>
           <div class="scell"><div class="l">{{ t('low24h') }}</div><div class="v">${{ fmt(stat24Low) }}</div></div>
-          <div class="scell"><div class="l">{{ t('volume24h') }}</div><div class="v">$2.81B</div></div>
+          <div class="scell"><div class="l">{{ t('chartSource') }}</div><div class="v">{{ chartSourceLabel }}</div></div>
         </div>
         <div class="chart-bar">
           <div class="tf">
@@ -800,8 +805,6 @@ onUnmounted(() => {
       <div class="card pos">
         <div class="pos-tabs">
           <button class="on">{{ t('positionsTab') }} <span class="cnt">{{ positions.length }}</span></button>
-          <button>{{ t('openOrders') }} <span class="cnt">0</span></button>
-          <button>{{ t('history') }}</button>
         </div>
         <div class="ptable">
           <div class="pthead">
@@ -854,7 +857,7 @@ onUnmounted(() => {
       </div>
 
       <div class="card book">
-        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ cur.s }}/RLUSD</span></div>
+        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ t('indicativeBook') }} · {{ cur.s }}/RLUSD</span></div>
         <div class="bk-head"><div>{{ t('price') }}</div><div>{{ t('size') }}</div><div>{{ t('total') }}</div></div>
         <div v-html="asksHtml"></div>
         <div class="bk-spread">{{ fmt(cur.p) }} &nbsp;·&nbsp; spread {{ (cur.p * 0.0001).toFixed(cur.p < 1 ? 4 : 2) }}</div>
