@@ -8,7 +8,11 @@ import type { FeedLogger, OnchainPriceProvider } from "./feed/compose-price";
 import { PriceFeedError } from "./feed/errors";
 import { AmmOnchainPriceProvider } from "./feed/onchain-price";
 import { fetchBinanceBookDepth } from "./feed/binance-book-feed";
+import { fetchGateBookDepth } from "./feed/gate-book-feed";
+import { fetchGeckoTerminalHistory } from "./feed/geckoterminal-history";
+import type { GeckoTerminalToken } from "./feed/geckoterminal-history";
 import { fetchHyperliquidBookDepth } from "./feed/hyperliquid-book-feed";
+import { isKlineInterval } from "./feed/klines";
 import type { SymbolPoolMap } from "./feed/onchain-price";
 import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
@@ -40,6 +44,14 @@ const INDEXER_SYNC_MS = 15_000;
 // l'équité). 250 = max d'un appel CoinGecko. ATTENTION : un volume indexé dont la
 // devise n'est PAS dans ce top est normalisé à 0 (cf. risque tracé F4).
 const MARKETS_PER_PAGE = 250;
+
+/** Tokens DEX dont on connaît une source GeckoTerminal publique. */
+const DEX_HISTORY_TOKENS: Readonly<Record<string, GeckoTerminalToken>> = {
+  RAIN: {
+    network: "arbitrum",
+    address: "0x25118290e6a5f4139381d072181157035864099d",
+  },
+};
 
 /**
  * Pools AMM on-chain par symbole de cotation (`asset` exprimé en `asset2`). VIDE
@@ -78,7 +90,20 @@ function fetchBookDepth(symbol: string, limit: number) {
   if (symbol.toUpperCase() === "HYPE") {
     return fetchHyperliquidBookDepth(symbol, limit, postJson);
   }
-  return fetchBinanceBookDepth(symbol, limit, fetchJson);
+  return fetchBinanceBookDepth(symbol, limit, fetchJson).catch(() =>
+    fetchGateBookDepth(symbol, limit, fetchJson),
+  );
+}
+
+function fetchDexHistory(symbol: string, interval: string, limit: number) {
+  if (!isKlineInterval(interval)) {
+    return undefined;
+  }
+  const token = DEX_HISTORY_TOKENS[symbol.toUpperCase()];
+  if (token === undefined) {
+    return undefined;
+  }
+  return fetchGeckoTerminalHistory(token, interval, limit, fetchJson);
 }
 
 /** Source de prix on-chain : seulement si un client ET des pools sont configurés. */
@@ -237,6 +262,7 @@ async function main(): Promise<void> {
     competitionStore,
     onchainPrices,
     getBookDepth: fetchBookDepth,
+    getDexHistory: fetchDexHistory,
     sign,
     exec,
     metrics,

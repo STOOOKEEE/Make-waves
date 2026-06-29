@@ -126,4 +126,93 @@ describe("createApp", () => {
     }
     expect(historyCalls).toEqual(["rain", "hyperliquid", "figure-heloc"]);
   });
+
+  it("préfère les bougies OHLC CoinGecko au fallback price-only", async () => {
+    const urls: string[] = [];
+    const fetchJson: FetchJson = (url) => {
+      urls.push(url);
+      if (url.includes("/coins/markets")) {
+        return Promise.resolve([
+          {
+            id: "rain",
+            symbol: "rain",
+            name: "Rain",
+            current_price: 0.016,
+            price_change_percentage_24h: 2,
+          },
+        ]);
+      }
+      if (url.includes("/klines")) {
+        return Promise.reject(new Error("Binance ne cote pas RAIN"));
+      }
+      if (url.includes("/coins/rain/ohlc")) {
+        return Promise.resolve([
+          [0, 0.015, 0.016, 0.014, 0.0155],
+          [60 * 60_000, 0.0155, 0.017, 0.015, 0.016],
+        ]);
+      }
+      return Promise.reject(new Error(`URL inattendue: ${url}`));
+    };
+    const { app, refreshPrices } = createApp({
+      markets: { baseUrl: "https://api.example.com/api/v3", vsCurrency: "usd", perPage: 250 },
+      fetchJson,
+    });
+    await refreshPrices();
+    const res = await app.inject({ method: "GET", url: "/history/RAIN?interval=1h&limit=2" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { t: 0, o: 0.015, h: 0.016, l: 0.014, c: 0.0155, source: "CoinGecko", mode: "ohlc" },
+      {
+        t: 60 * 60_000,
+        o: 0.0155,
+        h: 0.017,
+        l: 0.015,
+        c: 0.016,
+        source: "CoinGecko",
+        mode: "ohlc",
+      },
+    ]);
+    expect(urls.some((url) => url.includes("/coins/rain/market_chart"))).toBe(false);
+  });
+
+  it("préfère l'historique DEX quand il est disponible pour le symbole", async () => {
+    const urls: string[] = [];
+    const fetchJson: FetchJson = (url) => {
+      urls.push(url);
+      if (url.includes("/coins/markets")) {
+        return Promise.resolve([
+          {
+            id: "rain",
+            symbol: "rain",
+            name: "Rain",
+            current_price: 0.016,
+            price_change_percentage_24h: 2,
+          },
+        ]);
+      }
+      if (url.includes("/klines")) {
+        return Promise.reject(new Error("Binance ne cote pas RAIN"));
+      }
+      return Promise.reject(new Error(`URL inattendue: ${url}`));
+    };
+    const { app, refreshPrices } = createApp({
+      markets: { baseUrl: "https://api.example.com/api/v3", vsCurrency: "usd", perPage: 250 },
+      fetchJson,
+      getDexHistory: async (symbol, interval, limit) => {
+        expect(symbol).toBe("RAIN");
+        expect(interval).toBe("5m");
+        expect(limit).toBe(288);
+        return [
+          { t: 0, o: 0.015, h: 0.016, l: 0.014, c: 0.0155, source: "GeckoTerminal", mode: "ohlc" },
+        ];
+      },
+    });
+    await refreshPrices();
+    const res = await app.inject({ method: "GET", url: "/history/RAIN?interval=5m&limit=288" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { t: 0, o: 0.015, h: 0.016, l: 0.014, c: 0.0155, source: "GeckoTerminal", mode: "ohlc" },
+    ]);
+    expect(urls.some((url) => url.includes("/coins/rain/ohlc"))).toBe(false);
+  });
 });

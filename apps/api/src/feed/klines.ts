@@ -9,7 +9,7 @@ export interface Candle {
   readonly l: number;
   readonly c: number;
   /** Source de l'historique : vrai OHLC CEX ou série de prix reconstruite. */
-  readonly source?: "Binance" | "CoinGecko";
+  readonly source?: "Binance" | "CoinGecko" | "GeckoTerminal";
   /** Nature de la donnée : `ohlc` = vraies bougies, `price` = points de prix. */
   readonly mode?: "ohlc" | "price";
 }

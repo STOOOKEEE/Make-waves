@@ -10,6 +10,7 @@ import type { MarketRow, MarketsFeedConfig } from "./feed/coingecko-markets";
 import { composePriceMap } from "./feed/compose-price";
 import { fetchKlines, isKlineInterval } from "./feed/klines";
 import type { Candle } from "./feed/klines";
+import { fetchCoinGeckoOhlc } from "./feed/coingecko-ohlc";
 import { fetchCoinGeckoHistory } from "./feed/coingecko-history";
 import type { BookDepth } from "./feed/binance-book-feed";
 import { PriceFeedError } from "./feed/errors";
@@ -57,6 +58,12 @@ export interface AppConfig {
   readonly metrics?: MetricsDeps;
   /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
   readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
+  /** Historique DEX réel prioritaire pour les tokens dont la pool est connue. */
+  readonly getDexHistory?: (
+    symbol: string,
+    interval: string,
+    limit: number,
+  ) => Promise<Candle[]> | undefined;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -113,14 +120,30 @@ export function createApp(config: AppConfig): App {
       if (config.markets === undefined || row === undefined) {
         throw error;
       }
-      return fetchCoinGeckoHistory(
-        config.markets.baseUrl,
-        row.id,
-        config.markets.vsCurrency,
-        interval,
-        limit,
-        config.fetchJson,
-      );
+      const markets = config.markets;
+      const dexHistory = config.getDexHistory?.(symbol, interval, limit);
+      const coinGeckoHistory = () =>
+        fetchCoinGeckoOhlc(
+          markets.baseUrl,
+          row.id,
+          markets.vsCurrency,
+          interval,
+          limit,
+          config.fetchJson,
+        ).catch(() =>
+          fetchCoinGeckoHistory(
+            markets.baseUrl,
+            row.id,
+            markets.vsCurrency,
+            interval,
+            limit,
+            config.fetchJson,
+          ),
+        );
+      if (dexHistory === undefined) {
+        return coinGeckoHistory();
+      }
+      return dexHistory.then((candles) => candles ?? coinGeckoHistory()).catch(coinGeckoHistory);
     });
     historyCache.set(key, { at: now, data });
     data.catch(() => historyCache.delete(key));

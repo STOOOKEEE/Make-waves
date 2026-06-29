@@ -193,13 +193,14 @@ const filteredMarkets = computed(() => {
   );
 });
 
-// Timeframe = INTERVALLE de bougie (vue trading) → notation Binance.
-const TF_INTERVAL: Readonly<Record<string, string>> = {
-  "5m": "5m",
-  "15m": "15m",
-  "1H": "1h",
-  "4H": "4h",
-  "1D": "1d",
+// Requête historique par bouton. `1D` est une fenêtre 24h, pas une bougie daily :
+// sinon un token récent comme RAIN affiche une échelle historique hors sujet.
+const TF_QUERY: Readonly<Record<string, { interval: string; limit: number }>> = {
+  "5m": { interval: "5m", limit: 120 },
+  "15m": { interval: "15m", limit: 120 },
+  "1H": { interval: "1h", limit: 120 },
+  "4H": { interval: "4h", limit: 120 },
+  "1D": { interval: "5m", limit: 288 },
 };
 // Volatilité du repli synthétique (si Binance indisponible) par intervalle.
 const TF_VOL: Readonly<Record<string, number>> = {
@@ -217,7 +218,7 @@ const TF_MS: Readonly<Record<string, number>> = {
   "15m": 15 * MINUTE_MS,
   "1H": 60 * MINUTE_MS,
   "4H": 240 * MINUTE_MS,
-  "1D": 1440 * MINUTE_MS,
+  "1D": 25 * MINUTE_MS,
 };
 const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
 const tf = ref<string>("1D");
@@ -234,13 +235,13 @@ const stats24h = ref<{ change: number; high: number; low: number } | null>(null)
 const stat24High = computed(() => stats24h.value?.high ?? cur.value.hi);
 const stat24Low = computed(() => stats24h.value?.low ?? cur.value.lo);
 const stat24Change = computed(() => stats24h.value?.change ?? cur.value.c);
-const chartSourceLabel = computed(() =>
-  historyMode.value === "ohlc"
-    ? t("liveFeed")
-    : historyMode.value === "price"
-      ? t("priceFeed")
-      : t("fallbackFeed"),
-);
+const chartSourceLabel = computed(() => {
+  const source = realCandles.value[0]?.source;
+  if (source !== undefined) {
+    return source;
+  }
+  return historyMode.value === "price" ? t("priceFeed") : t("fallbackFeed");
+});
 
 // Prix réels du feed off-chain (devise → prix). Détermine ce que le backend peut
 // réellement coter : seuls ces actifs donnent lieu à un ordre paper effectif.
@@ -552,9 +553,9 @@ function inferHistoryMode(candles: readonly Candle[]): "ohlc" | "price" | "synth
 // Charge les vraies bougies (Binance) du marché/intervalle courant puis re-render.
 async function loadHistory(): Promise<void> {
   const symbol = cur.value.s;
-  const interval = TF_INTERVAL[tf.value] ?? "1h";
+  const query = TF_QUERY[tf.value] ?? { interval: "1h", limit: 120 };
   try {
-    realCandles.value = await props.client.history(symbol, interval, 120);
+    realCandles.value = await props.client.history(symbol, query.interval, query.limit);
     historyMode.value = inferHistoryMode(realCandles.value);
   } catch {
     realCandles.value = []; // Binance indisponible → repli synthétique
@@ -566,7 +567,7 @@ async function loadHistory(): Promise<void> {
 // Stats 24h du marché courant (24 bougies 1h) — indépendantes du timeframe du chart.
 async function loadStats24h(): Promise<void> {
   try {
-    const candles = await props.client.history(cur.value.s, "1h", 24);
+    const candles = await props.client.history(cur.value.s, "5m", 288);
     const first = candles[0];
     const last = candles[candles.length - 1];
     if (first === undefined || last === undefined || first.o <= 0) {
