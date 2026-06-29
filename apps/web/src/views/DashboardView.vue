@@ -1160,6 +1160,9 @@ onUnmounted(() => {
 
 /* watchlist */
 .watch {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
 }
 .wt-head {
@@ -1194,7 +1197,10 @@ onUnmounted(() => {
   color: var(--mut2);
 }
 .wl-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .wl-empty {
   padding: 24px 16px;
