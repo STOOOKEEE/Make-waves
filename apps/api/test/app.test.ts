@@ -112,8 +112,16 @@ describe("createApp", () => {
       const res = await app.inject({ method: "GET", url: `/history/${symbol}?interval=1h&limit=2` });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual([
-        { t: 0, o: 0.01, h: 0.01, l: 0.01, c: 0.01 },
-        { t: 60 * 60_000, o: 0.02, h: 0.02, l: 0.02, c: 0.02 },
+        { t: 0, o: 0.01, h: 0.01, l: 0.01, c: 0.01, source: "CoinGecko", mode: "price" },
+        {
+          t: 60 * 60_000,
+          o: 0.02,
+          h: 0.02,
+          l: 0.02,
+          c: 0.02,
+          source: "CoinGecko",
+          mode: "price",
+        },
       ]);
     }
     expect(historyCalls).toEqual(["rain", "hyperliquid", "figure-heloc"]);

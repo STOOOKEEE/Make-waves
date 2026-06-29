@@ -1,13 +1,17 @@
 import { PriceFeedError } from "./errors";
 import type { FetchJson } from "./cex-price-feed";
 
-/** Bougie OHLC : timestamp (ms) d'ouverture + open/high/low/close. */
+/** Bougie historique : timestamp (ms) d'ouverture + open/high/low/close. */
 export interface Candle {
   readonly t: number;
   readonly o: number;
   readonly h: number;
   readonly l: number;
   readonly c: number;
+  /** Source de l'historique : vrai OHLC CEX ou série de prix reconstruite. */
+  readonly source?: "Binance" | "CoinGecko";
+  /** Nature de la donnée : `ohlc` = vraies bougies, `price` = points de prix. */
+  readonly mode?: "ohlc" | "price";
 }
 
 const BINANCE_BASE = "https://api.binance.com/api/v3";

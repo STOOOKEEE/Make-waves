@@ -70,6 +70,8 @@ function toCandles(points: Array<[number, number]>, interval: KlineInterval): Ca
         h: Math.max(...values),
         l: Math.min(...values),
         c: last,
+        source: "CoinGecko",
+        mode: "price",
       };
     });
 }

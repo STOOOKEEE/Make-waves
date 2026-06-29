@@ -111,13 +111,17 @@ export interface MarketRow {
   readonly change24h: number;
 }
 
-/** Bougie OHLC (historique réel pour le chart). */
+/** Bougie historique pour le chart. */
 export interface Candle {
   readonly t: number;
   readonly o: number;
   readonly h: number;
   readonly l: number;
   readonly c: number;
+  /** Source de l'historique : vrai OHLC CEX ou série de prix reconstruite. */
+  readonly source?: "Binance" | "CoinGecko";
+  /** Nature de la donnée : `ohlc` = vraies bougies, `price` = points de prix. */
+  readonly mode?: "ohlc" | "price";
 }
 
 /** Niveau du carnet retourné par l'API : prix, taille et total cumulés. */

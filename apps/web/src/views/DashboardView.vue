@@ -21,8 +21,10 @@ const { t } = useI18n({
     low24h: "24h Low",
     chartSource: "Chart source",
     liveFeed: "Live feed",
+    priceFeed: "Price feed",
     fallbackFeed: "Synthetic fallback",
     candles: "Candles",
+    candlesUnavailable: "Candles unavailable for price-only history",
     line: "Line",
     positionsTab: "Positions",
     market: "Market",
@@ -64,8 +66,10 @@ const { t } = useI18n({
     low24h: "Bas 24h",
     chartSource: "Source graphique",
     liveFeed: "Flux live",
+    priceFeed: "Flux prix",
     fallbackFeed: "Repli synthétique",
     candles: "Chandeliers",
+    candlesUnavailable: "Chandeliers indisponibles pour un historique de prix",
     line: "Ligne",
     positionsTab: "Positions",
     market: "Marché",
@@ -219,8 +223,9 @@ const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
 const tf = ref<string>("1D");
 const chartType = ref<"candles" | "line">("candles");
 
-// Vraies bougies OHLC (CoinGecko via backend) ; vide → repli synthétique.
+// Historique marché chargé depuis le backend ; vide → repli synthétique.
 const realCandles = ref<Candle[]>([]);
+const historyMode = ref<"ohlc" | "price" | "synthetic">("synthetic");
 
 // Stats 24h FIXES (variation / haut / bas) — indépendantes de la taille de bougie
 // du chart. Calculées sur les 24 dernières bougies 1h (= 24h), pas sur la fenêtre
@@ -230,7 +235,11 @@ const stat24High = computed(() => stats24h.value?.high ?? cur.value.hi);
 const stat24Low = computed(() => stats24h.value?.low ?? cur.value.lo);
 const stat24Change = computed(() => stats24h.value?.change ?? cur.value.c);
 const chartSourceLabel = computed(() =>
-  realCandles.value.length > 0 ? t("liveFeed") : t("fallbackFeed"),
+  historyMode.value === "ohlc"
+    ? t("liveFeed")
+    : historyMode.value === "price"
+      ? t("priceFeed")
+      : t("fallbackFeed"),
 );
 
 // Prix réels du feed off-chain (devise → prix). Détermine ce que le backend peut
@@ -370,7 +379,8 @@ function renderChart(): void {
     g += `<line class="gridln" x1="0" y1="${y}" x2="${W - pad}" y2="${y}"/><text class="axis" x="${W - pad + 6}" y="${y + 3}">${fmt(v)}</text>`;
   }
   const cx = (i: number): number => 8 + i * cw + cw / 2;
-  if (chartType.value === "line") {
+  const effectiveChartType = historyMode.value === "price" ? "line" : chartType.value;
+  if (effectiveChartType === "line") {
     // Vue en ligne : polyligne des clôtures + aire dégradée.
     const d = candles.map((k, i) => `${cx(i)},${Y(k.c)}`).join(" L");
     g += `<defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFF6CE" stop-opacity=".22"/><stop offset="100%" stop-color="#BFF6CE" stop-opacity="0"/></linearGradient></defs>`;
@@ -520,8 +530,23 @@ function setTf(value: string): void {
   void loadHistory();
 }
 function setChartType(value: "candles" | "line"): void {
+  if (value === "candles" && historyMode.value === "price") {
+    return;
+  }
   chartType.value = value;
   renderChart();
+}
+
+function inferHistoryMode(candles: readonly Candle[]): "ohlc" | "price" | "synthetic" {
+  const firstMode = candles[0]?.mode;
+  if (firstMode === "ohlc" || firstMode === "price") {
+    return firstMode;
+  }
+  if (candles.length === 0) {
+    return "synthetic";
+  }
+  const flat = candles.filter((k) => k.o === k.h && k.h === k.l && k.l === k.c).length;
+  return flat / candles.length > 0.8 ? "price" : "ohlc";
 }
 
 // Charge les vraies bougies (Binance) du marché/intervalle courant puis re-render.
@@ -530,8 +555,10 @@ async function loadHistory(): Promise<void> {
   const interval = TF_INTERVAL[tf.value] ?? "1h";
   try {
     realCandles.value = await props.client.history(symbol, interval, 120);
+    historyMode.value = inferHistoryMode(realCandles.value);
   } catch {
     realCandles.value = []; // Binance indisponible → repli synthétique
+    historyMode.value = "synthetic";
   }
   renderChart();
 }
@@ -879,10 +906,15 @@ onUnmounted(() => {
             >{{ o.l }}</button>
           </div>
           <div class="ct-type">
-            <button :class="{ on: chartType === 'candles' }" :title="t('candles')" @click="setChartType('candles')">
+            <button
+              :class="{ on: chartType === 'candles' && historyMode !== 'price' }"
+              :disabled="historyMode === 'price'"
+              :title="historyMode === 'price' ? t('candlesUnavailable') : t('candles')"
+              @click="setChartType('candles')"
+            >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="3" height="12" rx="1" /><rect x="6" y="3" width="1" height="18" /><rect x="16" y="9" width="3" height="9" rx="1" /><rect x="17" y="5" width="1" height="16" /></svg>
             </button>
-            <button :class="{ on: chartType === 'line' }" :title="t('line')" @click="setChartType('line')">
+            <button :class="{ on: chartType === 'line' || historyMode === 'price' }" :title="t('line')" @click="setChartType('line')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 17l5-6 4 3 8-9" /></svg>
             </button>
           </div>

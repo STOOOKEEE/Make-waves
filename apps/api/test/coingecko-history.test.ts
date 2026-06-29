@@ -7,7 +7,7 @@ function fakeFetch(response: unknown): FetchJson {
 }
 
 describe("fetchCoinGeckoHistory", () => {
-  it("convertit market_chart prices en bougies OHLC", async () => {
+  it("convertit market_chart prices en série de prix bucketée", async () => {
     const candles = await fetchCoinGeckoHistory(
       "https://api.example.com/api/v3",
       "rain-coin",
@@ -24,8 +24,8 @@ describe("fetchCoinGeckoHistory", () => {
       }),
     );
     expect(candles).toEqual([
-      { t: 0, o: 1, h: 2, l: 1, c: 2 },
-      { t: 60 * 60_000, o: 3, h: 3, l: 2.5, c: 2.5 },
+      { t: 0, o: 1, h: 2, l: 1, c: 2, source: "CoinGecko", mode: "price" },
+      { t: 60 * 60_000, o: 3, h: 3, l: 2.5, c: 2.5, source: "CoinGecko", mode: "price" },
     ]);
   });
 });
