@@ -40,7 +40,7 @@ const { t } = useI18n({
     sellAsset: "Sell {asset}",
     orderSent: "✓ Paper order sent",
     orderBook: "Order book",
-    bookLive: "CEX live",
+    bookLive: "Binance live",
     bookLoading: "Loading...",
     bookUnavailable: "Real book unavailable",
     price: "Price",
@@ -83,7 +83,7 @@ const { t } = useI18n({
     sellAsset: "Vendre {asset}",
     orderSent: "✓ Ordre simulé envoyé",
     orderBook: "Carnet d'ordres",
-    bookLive: "Flux CEX réel",
+    bookLive: "Flux Binance réel",
     bookLoading: "Chargement...",
     bookUnavailable: "Carnet réel indisponible",
     price: "Prix",
@@ -246,6 +246,8 @@ const book = ref<BookDepth | null>(null);
 const bookStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
 const bookError = ref<string | null>(null);
 let bookRequestSeq = 0;
+const BOOK_REFRESH_MS = 1_500;
+let bookRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 // Réf du <svg> du chart pour staggerer le fade-in des bougies.
 const chartSvg = ref<SVGSVGElement | null>(null);
@@ -433,9 +435,32 @@ function rowWidth(total: number, max: number): string {
   return `${Math.max(0, Math.min(100, (total / max) * 100))}%`;
 }
 
-async function loadBook(): Promise<void> {
+function fmtBookSize(value: number): string {
+  if (value >= 1000) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  }
+  if (value >= 1) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 3 });
+  }
+  if (value >= 0.01) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  }
+  return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+}
+
+function fmtSpread(spread: number): string {
+  const bps = spread * 10_000;
+  return `${bps.toFixed(bps < 10 ? 2 : 1)} bp`;
+}
+
+async function loadBook(silent = false): Promise<void> {
   const seq = ++bookRequestSeq;
-  bookStatus.value = "loading";
+  if (!silent || book.value === null) {
+    bookStatus.value = "loading";
+  }
+  if (!silent) {
+    book.value = null;
+  }
   bookError.value = null;
   try {
     const depth = await props.client.bookDepth(cur.value.s, 8);
@@ -452,6 +477,17 @@ async function loadBook(): Promise<void> {
     bookStatus.value = "error";
     bookError.value = t("bookUnavailable");
   }
+}
+
+function startBookRefresh(): void {
+  if (bookRefreshTimer !== null) {
+    clearInterval(bookRefreshTimer);
+  }
+  bookRefreshTimer = setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void loadBook(true);
+    }
+  }, BOOK_REFRESH_MS);
 }
 
 // ---------- sélection de marché ----------
@@ -714,10 +750,15 @@ async function initDashboard(): Promise<void> {
 onMounted(() => {
   renderChart();
   void loadBook();
+  startBookRefresh();
   window.addEventListener("resize", renderChart);
   void initDashboard();
 });
 onUnmounted(() => {
+  if (bookRefreshTimer !== null) {
+    clearInterval(bookRefreshTimer);
+    bookRefreshTimer = null;
+  }
   window.removeEventListener("resize", renderChart);
 });
 </script>
@@ -897,10 +938,10 @@ onUnmounted(() => {
           >
             <span class="depth" :style="{ width: rowWidth(row.total, book.asks[book.asks.length - 1]?.total ?? row.total) }"></span>
             <span class="px">{{ fmt(row.price) }}</span>
-            <span class="d">{{ fmt(row.size) }}</span>
-            <span class="d">{{ fmt(row.total) }}</span>
+            <span class="d">{{ fmtBookSize(row.size) }}</span>
+            <span class="d">{{ fmtBookSize(row.total) }}</span>
           </div>
-          <div class="bk-spread">{{ fmt(book.mid) }} &nbsp;·&nbsp; spread {{ book.spread.toFixed(4) }}</div>
+          <div class="bk-spread">{{ fmt(book.mid) }} &nbsp;·&nbsp; spread {{ fmtSpread(book.spread) }}</div>
           <div
             v-for="row in book.bids"
             :key="`bid-${row.price}-${row.total}`"
@@ -908,8 +949,8 @@ onUnmounted(() => {
           >
             <span class="depth" :style="{ width: rowWidth(row.total, book.bids[book.bids.length - 1]?.total ?? row.total) }"></span>
             <span class="px">{{ fmt(row.price) }}</span>
-            <span class="d">{{ fmt(row.size) }}</span>
-            <span class="d">{{ fmt(row.total) }}</span>
+            <span class="d">{{ fmtBookSize(row.size) }}</span>
+            <span class="d">{{ fmtBookSize(row.total) }}</span>
           </div>
         </template>
         <div v-else class="book-empty">
