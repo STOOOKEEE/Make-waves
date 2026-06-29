@@ -3,15 +3,22 @@
  * CompetitionsView — écran des compétitions. Carte vedette (saison 04) +
  * grille filtrable. Porté depuis design_site/competitions.html.
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import type { TideClient } from "@tide/client";
 import { localizedCompetitions, getComp } from "../data/competitions";
 import type { CompetitionMock, CompetitionStatus } from "../data/competitions";
 import { useCountdown } from "../composables/useCountdown";
+import { useCompetitionsLive } from "../composables/useCompetitionsLive";
 import { useI18n } from "../i18n/useI18n";
 import StatusBadge from "../components/StatusBadge.vue";
 import SegControl from "../components/SegControl.vue";
 
+const props = defineProps<{ client: TideClient }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
+
+// État live (participants, pot, clôture) fusionné dans le catalogue de présentation.
+const liveComps = useCompetitionsLive(props.client);
+onMounted(liveComps.load);
 
 const { t, locale } = useI18n({
   en: {
@@ -80,10 +87,15 @@ const { t, locale } = useI18n({
   },
 });
 
-// Compétition vedette + reste de la grille (hors vedette) — réactif à la langue.
-const featured = computed(() => getComp("season-04", locale.value));
+// Compétition vedette + reste de la grille (hors vedette) — réactif à la langue
+// et à l'état live (pot/participants/statut réels écrasent le décor mock).
+const featured = computed(() =>
+  liveComps.merge(getComp("season-04", locale.value)),
+);
 const grid = computed(() =>
-  localizedCompetitions(locale.value).filter((c) => !c.featured),
+  localizedCompetitions(locale.value)
+    .filter((c) => !c.featured)
+    .map(liveComps.merge),
 );
 
 // Compte à rebours de la cagnotte vedette.
@@ -152,7 +164,7 @@ function openComp(id: string): void {
         <div class="row">
           <div>
             <div class="l">{{ t("featPlayersLabel") }}</div>
-            <div class="v">12 480</div>
+            <div class="v">{{ featured.players }}</div>
           </div>
           <div>
             <div class="l">{{ t("featFormatLabel") }}</div>
@@ -160,7 +172,7 @@ function openComp(id: string): void {
           </div>
           <div>
             <div class="l">{{ t("featRankLabel") }}</div>
-            <div class="v up">#18</div>
+            <div class="v up">—</div>
           </div>
         </div>
         <div class="acts">
@@ -178,14 +190,14 @@ function openComp(id: string): void {
       <div class="feat-side">
         <div class="potbox">
           <div class="l">{{ t("potLabel") }}</div>
-          <div class="pot">$50,000</div>
+          <div class="pot">{{ featured.pot }}</div>
           <div class="cd">
             <div><div class="v">{{ dd }}</div><div class="l2">{{ t("cdDays") }}</div></div>
             <div><div class="v">{{ hh }}</div><div class="l2">{{ t("cdHours") }}</div></div>
             <div><div class="v">{{ mm }}</div><div class="l2">{{ t("cdMins") }}</div></div>
             <div><div class="v">{{ ss }}</div><div class="l2">{{ t("cdSecs") }}</div></div>
           </div>
-          <div class="lab">USDC + NFT · top 50</div>
+          <div class="lab">RLUSD + NFT · top 50</div>
         </div>
       </div>
     </div>
@@ -230,7 +242,7 @@ function openComp(id: string): void {
           <span>{{ c.players }}</span>
           <span></span>
         </div>
-        <button class="cta" :class="CTA[c.status].c">
+        <button class="cta" :class="CTA[c.status].c" @click.stop="openComp(c.id)">
           {{ CTA[c.status].l }}
         </button>
       </div>

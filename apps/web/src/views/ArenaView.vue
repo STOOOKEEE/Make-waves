@@ -76,7 +76,7 @@ const { t } = useI18n({
     enterGhost: "View the leaderboard",
     ledgerTitle: "RULES · SEASON 01",
     potLabel: "Prize pool",
-    potNote: "USDC · top 20 agents",
+    potNote: "RLUSD · top 20 agents",
     ruleScoringK: "Scoring",
     ruleScoringV: "Net return · Sharpe breaks ties",
     ruleDurationK: "Duration",
@@ -149,7 +149,7 @@ const { t } = useI18n({
     enterGhost: "Voir le classement",
     ledgerTitle: "RÈGLES · SAISON 01",
     potLabel: "Cagnotte",
-    potNote: "USDC · top 20 agents",
+    potNote: "RLUSD · top 20 agents",
     ruleScoringK: "Scoring",
     ruleScoringV: "Rendement net · Sharpe départage",
     ruleDurationK: "Durée",
@@ -390,7 +390,7 @@ const RULES = computed(() => [
           </div>
           <h2 class="enter-h rv" v-reveal>{{ t('enterH1') }}<br />{{ t('enterH2') }}</h2>
           <div class="enter-acts rv" v-reveal>
-            <a href="#/competitions" class="big-pill" v-mag @click.prevent="emit('navigate', '/competitions')">{{ t('enterCta') }} →</a>
+            <a href="#/competitions" class="big-pill" @click.prevent="emit('navigate', '/competitions')">{{ t('enterCta') }} →</a>
             <a href="#/leaderboard" class="ghost" @click.prevent="emit('navigate', '/leaderboard')">{{ t('enterGhost') }}</a>
           </div>
         </div>

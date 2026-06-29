@@ -1,5 +1,6 @@
 import type { Competition, MarketOrderInput, Side } from "@tide/core";
 import type { Amount } from "@tide/xrpl";
+import type { LiveOfferIntent } from "../exec/plan-live";
 
 /** Corps de requête HTTP malformé (validation au bord, avant le domaine). */
 export class BadRequestError extends Error {
@@ -97,19 +98,24 @@ export function parseBuyInRequest(body: unknown): BuyInRequest {
   };
 }
 
-/** Corps d'une demande de signature de swap Live (le `sourceTag` est serveur). */
-export interface LiveOfferRequest {
-  readonly account: string;
-  readonly gives: Amount;
-  readonly wants: Amount;
-}
-
-export function parseLiveOfferRequest(body: unknown): LiveOfferRequest {
+/**
+ * Corps d'une intention de swap Live : QUOI échanger (base/side/quantité) et avec
+ * quelle tolérance de slippage. Les montants bornés (`gives`/`wants`), l'attribution
+ * (`sourceTag`) et l'issuer du quote sont dérivés CÔTÉ SERVEUR par le moteur
+ * d'exécution — le client ne les fournit jamais.
+ */
+export function parseLiveOfferRequest(body: unknown): LiveOfferIntent {
   const obj = asRecord(body, "liveOffer");
+  const side = str(obj, "side", "liveOffer");
+  if (side !== "buy" && side !== "sell") {
+    throw new BadRequestError('liveOffer: "side" doit valoir "buy" ou "sell"');
+  }
   return {
     account: str(obj, "account", "liveOffer"),
-    gives: parseAmount(obj["gives"], "liveOffer.gives"),
-    wants: parseAmount(obj["wants"], "liveOffer.wants"),
+    base: str(obj, "base", "liveOffer"),
+    side,
+    amountBase: num(obj, "amountBase", "liveOffer"),
+    slippageTolerance: num(obj, "slippageTolerance", "liveOffer"),
   };
 }
 

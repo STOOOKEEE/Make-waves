@@ -9,12 +9,15 @@
 
 import { computed, onMounted, ref } from "vue";
 import type { TideClient } from "@tide/client";
+import type { LeaderboardEntry } from "@tide/core";
 import { useCountdown } from "../composables/useCountdown";
 import { useLeaderboard } from "../composables/useLeaderboard";
+import { useSession } from "../composables/useSession";
 import { useI18n } from "../i18n/useI18n";
 import SegControl from "../components/SegControl.vue";
 
 const props = defineProps<{ client: TideClient }>();
+const { userId, connected } = useSession();
 
 const { t } = useI18n({
   en: {
@@ -24,7 +27,7 @@ const { t } = useI18n({
     scopeAllTime: "All-time",
     scopeFriends: "Friends",
     seasonPot: "Season prize pool",
-    potCaption: "USDC + season NFT · top 50",
+    potCaption: "RLUSD + season NFT · top 50",
     days: "Days",
     hours: "Hours",
     min: "Min",
@@ -46,7 +49,7 @@ const { t } = useI18n({
     scopeAllTime: "All-time",
     scopeFriends: "Amis",
     seasonPot: "Cagnotte de la saison",
-    potCaption: "USDC + NFT de saison · top 50",
+    potCaption: "RLUSD + NFT de saison · top 50",
     days: "Jours",
     hours: "Heures",
     min: "Min",
@@ -88,8 +91,11 @@ onMounted(async () => {
   }
 });
 
-// Capital de départ paper (référence pour le rendement).
-const START_EQUITY = 100_000;
+// Capital de départ paper (référence pour le rendement) — doit suivre le backend.
+const START_EQUITY = 10_000;
+// Nombre minimal d'entrées réelles pour basculer du mock peuplé au classement réel
+// (en dessous, le podium top 3 serait creux → on garde la démo peuplée).
+const MIN_REAL_ENTRIES = 3;
 
 // Palette d'avatars (mêmes couleurs que le source).
 const cols = [
@@ -146,16 +152,20 @@ function mockRet(i: number): string {
   return (150 - i * 6 - i * i * 0.05).toFixed(1);
 }
 
-// Récompense par paliers : top 3 fixe, top 50 dégressif, sinon « — ».
-function prizeFor(rank: number): string {
+// Récompense par paliers (montant) : top 3 fixe, top 50 dégressif, sinon 0.
+function prizeAmount(rank: number): number {
   const prizeT = [15000, 8000, 4000];
   if (rank <= 3) {
-    return "$" + (prizeT[rank - 1] ?? 0).toLocaleString("en-US");
+    return prizeT[rank - 1] ?? 0;
   }
   if (rank <= 50) {
-    return "$" + Math.max(150, 800 - rank * 12).toLocaleString("en-US");
+    return Math.max(150, 800 - rank * 12);
   }
-  return "—";
+  return 0;
+}
+function prizeFor(rank: number): string {
+  const amount = prizeAmount(rank);
+  return amount > 0 ? "$" + amount.toLocaleString("en-US") : "—";
 }
 
 // Classe de rang (or sur le top 3).
@@ -196,31 +206,53 @@ function mockRows(): BoardRow[] {
   return out;
 }
 
-// Lignes réelles : on mappe les LeaderboardEntry de l'API.
-function realRows(): BoardRow[] {
-  return lb.entries.value.map((entry, i) => {
-    const retNum = ((entry.equity - START_EQUITY) / START_EQUITY) * 100;
-    const retStr = (retNum >= 0 ? "+" : "") + retNum.toFixed(1);
-    return {
-      rank: entry.rank,
-      name: entry.userId,
-      address: "0x…",
-      avatar: avatarFor(entry.userId),
-      color: cols[i % cols.length] ?? "#fff",
-      ret: retStr + "%",
-      pnl: (entry.pnl >= 0 ? "+$" : "-$") + Math.abs(entry.pnl).toLocaleString("en-US"),
-      trades: "—",
-      win: "—",
-      prize: prizeFor(entry.rank),
-      rankClass: rankClassFor(entry.rank),
-    };
-  });
+// Mappe une entrée API vers une ligne d'affichage.
+function entryToRow(entry: LeaderboardEntry, i: number): BoardRow {
+  const retNum = ((entry.equity - START_EQUITY) / START_EQUITY) * 100;
+  const retStr = (retNum >= 0 ? "+" : "") + retNum.toFixed(1);
+  return {
+    rank: entry.rank,
+    name: entry.userId,
+    address: "0x…",
+    avatar: avatarFor(entry.userId),
+    color: cols[i % cols.length] ?? "#fff",
+    ret: retStr + "%",
+    pnl: (entry.pnl >= 0 ? "+$" : "-$") + Math.abs(entry.pnl).toLocaleString("en-US"),
+    trades: "—",
+    win: "—",
+    prize: prizeFor(entry.rank),
+    rankClass: rankClassFor(entry.rank),
+  };
 }
 
-// Source de vérité : réel si dispo, sinon mock.
+// Lignes réelles : on mappe les LeaderboardEntry de l'API.
+function realRows(): BoardRow[] {
+  return lb.entries.value.map(entryToRow);
+}
+
+// « Ta ligne » : l'entrée réelle du compte de session, si présente au classement.
+const myRow = computed<BoardRow | null>(() => {
+  if (!connected.value) {
+    return null;
+  }
+  const idx = lb.entries.value.findIndex((e) => e.userId === userId.value);
+  const entry = idx >= 0 ? lb.entries.value[idx] : undefined;
+  return entry !== undefined ? entryToRow(entry, idx) : null;
+});
+
+// Source de vérité : classement réel dès qu'il y a assez de comptes, sinon mock peuplé.
 const rows = computed<BoardRow[]>(() =>
-  lb.entries.value.length > 0 ? realRows() : mockRows(),
+  lb.entries.value.length >= MIN_REAL_ENTRIES ? realRows() : mockRows(),
 );
+
+// Top 3 du classement courant (réel ou mock) pour le podium.
+const top3 = computed(() => rows.value.slice(0, 3));
+
+// Cagnotte de saison = somme des récompenses affichées (cohérent avec la colonne).
+const seasonPotTotal = computed(() => {
+  const total = rows.value.reduce((sum, row) => sum + prizeAmount(row.rank), 0);
+  return "$" + total.toLocaleString("en-US");
+});
 
 // Libellé de comptage : « Affichage 1–N sur 12 480 » (N = lignes hors ta ligne).
 const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
@@ -241,7 +273,7 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
       <div v-reveal class="card season">
         <div>
           <span class="lab">{{ t('seasonPot') }}</span>
-          <div class="pot">$50,000</div>
+          <div class="pot">{{ seasonPotTotal }}</div>
           <div class="potc">{{ t('potCaption') }}</div>
         </div>
         <div class="cd">
@@ -252,30 +284,30 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
         </div>
       </div>
       <div v-reveal class="card podium">
-        <div class="pod p2">
-          <div class="av" style="background: #bff6ce">DM</div>
+        <div v-if="top3[1]" class="pod p2">
+          <div class="av" :style="{ background: top3[1].color }">{{ top3[1].avatar }}</div>
           <div class="rk">{{ t('rankPrefix') }} 02</div>
-          <div class="nm">degen_maxi</div>
-          <div class="ad">0x19…ab88</div>
-          <div class="ret">+118.3%</div>
-          <div class="prize">$8,000</div>
+          <div class="nm">{{ top3[1].name }}</div>
+          <div class="ad">{{ top3[1].address }}</div>
+          <div class="ret">{{ top3[1].ret }}</div>
+          <div class="prize">{{ top3[1].prize }}</div>
         </div>
-        <div class="pod p1">
+        <div v-if="top3[0]" class="pod p1">
           <div class="crown">👑</div>
-          <div class="av" style="background: #ffd66b">QV</div>
+          <div class="av" :style="{ background: top3[0].color }">{{ top3[0].avatar }}</div>
           <div class="rk">{{ t('rankPrefix') }} 01</div>
-          <div class="nm">quant_viper</div>
-          <div class="ad">0x7a…34f1</div>
-          <div class="ret">+142.8%</div>
-          <div class="prize">$15,000</div>
+          <div class="nm">{{ top3[0].name }}</div>
+          <div class="ad">{{ top3[0].address }}</div>
+          <div class="ret">{{ top3[0].ret }}</div>
+          <div class="prize">{{ top3[0].prize }}</div>
         </div>
-        <div class="pod p3">
-          <div class="av" style="background: #ffb9ac">SH</div>
+        <div v-if="top3[2]" class="pod p3">
+          <div class="av" :style="{ background: top3[2].color }">{{ top3[2].avatar }}</div>
           <div class="rk">{{ t('rankPrefix') }} 03</div>
-          <div class="nm">satoshi_heir</div>
-          <div class="ad">0xc4…7d20</div>
-          <div class="ret">+97.6%</div>
-          <div class="prize">$4,000</div>
+          <div class="nm">{{ top3[2].name }}</div>
+          <div class="ad">{{ top3[2].address }}</div>
+          <div class="ret">{{ top3[2].ret }}</div>
+          <div class="prize">{{ top3[2].prize }}</div>
         </div>
       </div>
     </div>
@@ -321,21 +353,21 @@ const countLabel = computed(() => t("countLabel", { n: rows.value.length }));
           <div class="prize" :class="{ no: row.prize === '—' }">{{ row.prize }}</div>
         </div>
 
-        <!-- ta ligne (statique, fidèle au source) -->
-        <div class="lrow me">
-          <div class="rk">18</div>
+        <!-- ta ligne : entrée réelle du compte de session (si présente au classement) -->
+        <div v-if="myRow" class="lrow me">
+          <div class="rk">{{ myRow.rank }}</div>
           <div class="who">
-            <span class="av" style="background: #fff">P</span>
+            <span class="av" :style="{ background: myRow.color }">{{ myRow.avatar }}</span>
             <span>
-              <b>{{ t('you') }} — 0xPilote.eth</b>
-              <span>{{ t('ranksUpToday', { n: 6 }) }}</span>
+              <b>{{ t('you') }} — {{ myRow.name }}</b>
+              <span></span>
             </span>
           </div>
-          <div class="ret">+28.9%</div>
-          <div class="num c-hide">+$26,041</div>
-          <div class="num c-hide">206</div>
-          <div class="num c-hide">69%</div>
-          <div class="prize">$584</div>
+          <div class="ret">{{ myRow.ret }}</div>
+          <div class="num c-hide">{{ myRow.pnl }}</div>
+          <div class="num c-hide">{{ myRow.trades }}</div>
+          <div class="num c-hide">{{ myRow.win }}</div>
+          <div class="prize">{{ myRow.prize }}</div>
         </div>
       </div>
     </div>

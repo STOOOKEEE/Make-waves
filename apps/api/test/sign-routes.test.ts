@@ -6,6 +6,7 @@ import type { MetricsReader, ServerDeps } from "../src/http/server";
 import { PaperService } from "../src/services/paper-service";
 import { CompetitionService } from "../src/services/competition-service";
 import type {
+  PayloadStatus,
   XamanCreatedPayload,
   XamanPayloadApi,
 } from "../src/xaman/sign-request";
@@ -16,6 +17,10 @@ const ACCOUNT = "rPh1pu5PSEPBv45NWPYTN7gUEMmaGNePGY";
 const POOL = "r3ZrdNvM99kxJjtYXL7twctbexdeCyD9hp";
 const ISSUER = "rBHYF7U1FLhG9ZWcyhRL9Rytrvx5ARBAUK";
 const SOURCE_TAG = 7777;
+const RLUSD = "524C555344000000000000000000000000000000";
+const QUOTE = { currency: RLUSD, issuer: ISSUER, symbol: "RLUSD" };
+/** Prix de référence du feed (XRP en RLUSD ≈ USD). */
+const PRICES = { XRP: 0.5 };
 
 const PAYLOAD: XamanCreatedPayload = {
   uuid: "u-1",
@@ -26,12 +31,18 @@ const PAYLOAD: XamanCreatedPayload = {
 /** Faux SDK Xaman : capture la tx envoyée et renvoie une réponse contrôlée. */
 class FakeApi implements XamanPayloadApi {
   lastTxjson: Record<string, unknown> | undefined;
-  constructor(private readonly result: XamanCreatedPayload | null) {}
+  constructor(
+    private readonly result: XamanCreatedPayload | null,
+    private readonly status: PayloadStatus | null = null,
+  ) {}
   async create(payload: {
     txjson: object;
   }): Promise<XamanCreatedPayload | null> {
     this.lastTxjson = payload.txjson as Record<string, unknown>;
     return this.result;
+  }
+  async get(): Promise<PayloadStatus | null> {
+    return this.status;
   }
 }
 
@@ -49,6 +60,28 @@ function withSign(api: XamanPayloadApi): FastifyInstance {
     sign: { api, sourceTag: SOURCE_TAG, prizePoolAddress: POOL },
   });
 }
+
+/** Serveur avec signature Xaman ET moteur d'exécution Live (quote + prix réels). */
+function withSignExec(api: XamanPayloadApi): FastifyInstance {
+  return buildServer({
+    ...baseDeps(),
+    getPrices: () => PRICES,
+    sign: { api, sourceTag: SOURCE_TAG, prizePoolAddress: POOL },
+    exec: { sourceTag: SOURCE_TAG, quote: QUOTE },
+  });
+}
+
+/** Serveur avec le moteur d'exécution SEUL (GemWallet : /exec/plan, pas Xaman). */
+function withExecOnly(): FastifyInstance {
+  return buildServer({
+    ...baseDeps(),
+    getPrices: () => PRICES,
+    exec: { sourceTag: SOURCE_TAG, quote: QUOTE },
+  });
+}
+
+/** Intention de swap valide (achat de 100 XRP, slippage 1 %). */
+const INTENT = { account: ACCOUNT, base: "XRP", side: "buy", amountBase: 100, slippageTolerance: 0.01 };
 
 describe("routes de signature Xaman", () => {
   it("buy-in: 201 et injecte le sourceTag + la destination CÔTÉ SERVEUR", async () => {
@@ -69,6 +102,29 @@ describe("routes de signature Xaman", () => {
     expect(api.lastTxjson?.["SourceTag"]).toBe(SOURCE_TAG);
     expect(api.lastTxjson?.["Destination"]).toBe(POOL);
     expect(api.lastTxjson?.["Account"]).toBe(ACCOUNT);
+  });
+
+  it("connect: 201 et crée un payload SignIn (connexion de wallet)", async () => {
+    const api = new FakeApi(PAYLOAD);
+    const res = await withSign(api).inject({ method: "POST", url: "/sign/connect" });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().uuid).toBe("u-1");
+    expect(api.lastTxjson?.["TransactionType"]).toBe("SignIn");
+  });
+
+  it("status: renvoie l'état résolu + l'adresse signataire", async () => {
+    const status: PayloadStatus = {
+      resolved: true,
+      signed: true,
+      account: ACCOUNT,
+      txid: null,
+    };
+    const res = await withSign(new FakeApi(PAYLOAD, status)).inject({
+      method: "GET",
+      url: "/sign/status/u-1",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual(status);
   });
 
   it("buy-in: 400 si le corps est invalide (account manquant)", async () => {
@@ -117,49 +173,104 @@ describe("routes de signature Xaman", () => {
     expect(res.json()).toEqual({ error: "Service amont indisponible" });
   });
 
-  it("live-offer: 400 si l'offre est triviale (gives == wants, rejet du builder)", async () => {
+  it("live-offer: 201, le serveur calcule l'OfferCreate borné et injecte l'attribution", async () => {
     const api = new FakeApi(PAYLOAD);
-    const res = await withSign(api).inject({
+    const res = await withSignExec(api).inject({
       method: "POST",
       url: "/sign/live-offer",
-      payload: { account: ACCOUNT, gives: "10000000", wants: "10000000" },
+      payload: INTENT,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(api.lastTxjson?.["TransactionType"]).toBe("OfferCreate");
+    expect(api.lastTxjson?.["SourceTag"]).toBe(SOURCE_TAG);
+    expect(api.lastTxjson?.["Account"]).toBe(ACCOUNT);
+    // Achat de 100 XRP à 0.5 + 1 % de slippage → on FOURNIT au plus 50.5 RLUSD.
+    expect(api.lastTxjson?.["TakerGets"]).toEqual({
+      currency: RLUSD,
+      issuer: ISSUER,
+      value: "50.5",
+    });
+    // … et on REÇOIT 100 XRP (en drops).
+    expect(api.lastTxjson?.["TakerPays"]).toBe("100000000");
+  });
+
+  it("live-offer: 400 si l'actif n'est pas tradable en Live (LiveExecError)", async () => {
+    const api = new FakeApi(PAYLOAD);
+    const res = await withSignExec(api).inject({
+      method: "POST",
+      url: "/sign/live-offer",
+      payload: { ...INTENT, base: "DOGE" },
     });
     expect(res.statusCode).toBe(400);
     expect(api.lastTxjson).toBeUndefined(); // rejeté avant l'appel réseau
   });
 
-  it("live-offer: 400 si le corps est invalide (account manquant)", async () => {
-    const res = await withSign(new FakeApi(PAYLOAD)).inject({
+  it("live-offer: 400 si le slippage est hors borne (rejet du moteur)", async () => {
+    const api = new FakeApi(PAYLOAD);
+    const res = await withSignExec(api).inject({
       method: "POST",
       url: "/sign/live-offer",
-      payload: { gives: "10000000", wants: "5000000" },
+      payload: { ...INTENT, slippageTolerance: 1.5 },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(api.lastTxjson).toBeUndefined();
+  });
+
+  it("live-offer: 400 si le corps est invalide (side manquant)", async () => {
+    const res = await withSignExec(new FakeApi(PAYLOAD)).inject({
+      method: "POST",
+      url: "/sign/live-offer",
+      payload: { account: ACCOUNT, base: "XRP", amountBase: 100, slippageTolerance: 0.01 },
     });
     expect(res.statusCode).toBe(400);
   });
 
   it("live-offer: 502 si Xaman refuse (null)", async () => {
-    const res = await withSign(new FakeApi(null)).inject({
+    const res = await withSignExec(new FakeApi(null)).inject({
       method: "POST",
       url: "/sign/live-offer",
-      payload: { account: ACCOUNT, gives: "10000000", wants: "5000000" },
+      payload: INTENT,
     });
     expect(res.statusCode).toBe(502);
   });
 
-  it("live-offer: 201, accepte un montant IOU objet et taggue le swap", async () => {
-    const api = new FakeApi(PAYLOAD);
-    const res = await withSign(api).inject({
+  it("exec/plan: 201, renvoie l'OfferCreate taggé (signature côté extension)", async () => {
+    const res = await withExecOnly().inject({
       method: "POST",
-      url: "/sign/live-offer",
-      payload: {
-        account: ACCOUNT,
-        gives: "10000000",
-        wants: { currency: "USD", issuer: ISSUER, value: "5" },
-      },
+      url: "/exec/plan",
+      payload: INTENT,
     });
     expect(res.statusCode).toBe(201);
-    expect(api.lastTxjson?.["TransactionType"]).toBe("OfferCreate");
-    expect(api.lastTxjson?.["SourceTag"]).toBe(SOURCE_TAG);
+    const plan = res.json();
+    expect(plan.offer.TransactionType).toBe("OfferCreate");
+    expect(plan.offer.SourceTag).toBe(SOURCE_TAG);
+    expect(plan.offer.TakerPays).toBe("100000000");
+    expect(plan.referencePrice).toBe(0.5);
+    expect(plan.limitPrice).toBeCloseTo(0.505);
+  });
+
+  it("config: expose le SourceTag aussi quand seul le moteur GemWallet est actif", async () => {
+    const res = await withExecOnly().inject({ method: "GET", url: "/config" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ sourceTag: SOURCE_TAG, quoteSymbol: "RLUSD" });
+  });
+
+  it("exec/plan: 400 quand le feed ne cote pas la base (LiveExecError)", async () => {
+    const noPrice = buildServer({
+      ...baseDeps(),
+      getPrices: () => ({}),
+      exec: { sourceTag: SOURCE_TAG, quote: QUOTE },
+    });
+    const res = await noPrice.inject({ method: "POST", url: "/exec/plan", payload: INTENT });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("sans moteur d'exécution, /sign/live-offer et /exec/plan sont absents (404)", async () => {
+    const onlyXaman = withSign(new FakeApi(PAYLOAD));
+    const a = await onlyXaman.inject({ method: "POST", url: "/sign/live-offer", payload: INTENT });
+    expect(a.statusCode).toBe(404); // Xaman seul, pas de quote → live-offer non monté
+    const b = await buildServer(baseDeps()).inject({ method: "POST", url: "/exec/plan", payload: INTENT });
+    expect(b.statusCode).toBe(404);
   });
 
   it("sans config de signature, les routes /sign/* sont absentes (404)", async () => {

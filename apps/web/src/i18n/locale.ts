@@ -12,19 +12,16 @@ function isLocale(value: string | null): value is Locale {
 }
 
 /**
- * Langue initiale : choix mémorisé > langue du navigateur > défaut (EN).
- * Le défaut EN est volontaire (vitrine hackathon internationale).
+ * Langue initiale : choix mémorisé > défaut (EN). La langue du navigateur est
+ * volontairement ignorée — le site est en anglais par défaut (vitrine hackathon
+ * internationale) ; l'utilisateur bascule en FR explicitement s'il le souhaite.
  */
 function detectInitial(): Locale {
   if (typeof window === "undefined") {
     return DEFAULT_LOCALE;
   }
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (isLocale(stored)) {
-    return stored;
-  }
-  const nav = window.navigator.language.slice(0, 2).toLowerCase();
-  return isLocale(nav) ? nav : DEFAULT_LOCALE;
+  return isLocale(stored) ? stored : DEFAULT_LOCALE;
 }
 
 const current = ref<Locale>(detectInitial());

@@ -1,3 +1,4 @@
+import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
 import { connectXrplClient } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
 import { createApp } from "./app";
@@ -7,8 +8,12 @@ import type { FeedLogger, OnchainPriceProvider } from "./feed/compose-price";
 import { PriceFeedError } from "./feed/errors";
 import { AmmOnchainPriceProvider } from "./feed/onchain-price";
 import type { SymbolPoolMap } from "./feed/onchain-price";
-import type { MetricsDeps, SignDeps } from "./http/server";
+import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
+import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
+import { PaperService } from "./services/paper-service";
+import { seedDemoAccounts } from "./seed/accounts";
+import { seedCompetitions } from "./seed/competitions";
 import { SqliteAccountStore } from "./store/sqlite-account-store";
 import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
@@ -23,17 +28,16 @@ import { createXamanApi } from "./xaman/sdk";
 // sans elle, l'API tourne en mode off-chain pur (comportement par défaut).
 
 const DEFAULT_VS_CURRENCY = "usd";
-/** Devise de référence du volume indexé : doit correspondre à `vsCurrency` du CEX. */
+/** Devise de référence du volume indexé : doit correspondre à `vsCurrency` du feed. */
 const REFERENCE_CURRENCY = DEFAULT_VS_CURRENCY;
 const PRICE_REFRESH_MS = 30_000;
 const INDEXER_SYNC_MS = 15_000;
-// Symboles cotés par le feed CEX (clé de la PriceMap). ATTENTION : tout volume
-// indexé dont la devise n'est PAS dans cette liste est normalisé à **0** (prix
-// introuvable → garde-fou conservateur de l'indexeur, cf. risque tracé F4). Pour
-// compter le volume d'un token (ex. RLUSD), l'AJOUTER ici ET à SYMBOL_TO_ID (et,
-// pour le prix on-chain, à ONCHAIN_POOLS). Lien à ne pas oublier en activant le Live.
-const SYMBOL_TO_ID: Readonly<Record<string, string>> = { XRP: "ripple" };
-const SYMBOLS = ["XRP"];
+// Feed « markets » CoinGecko : top N coins par capitalisation en UN appel (prix +
+// %24h + nom), sans mapping manuel par coin. La PriceMap couvre donc ces N coins
+// (watchlist dynamique + actifs tradables en Paper ; un actif coté ne casse pas
+// l'équité). 250 = max d'un appel CoinGecko. ATTENTION : un volume indexé dont la
+// devise n'est PAS dans ce top est normalisé à 0 (cf. risque tracé F4).
+const MARKETS_PER_PAGE = 250;
 
 /**
  * Pools AMM on-chain par symbole de cotation (`asset` exprimé en `asset2`). VIDE
@@ -128,6 +132,30 @@ function buildSignDeps(sourceTag: number | undefined): SignDeps | undefined {
   };
 }
 
+/**
+ * Moteur d'exécution Live. Quote par défaut = RLUSD mainnet (le token de cotation
+ * du produit) ; `TIDE_RLUSD_ISSUER` permet de surcharger l'issuer (autre émetteur,
+ * testnet). Dans les deux cas, le moteur n'est activé que si un SourceTag est
+ * présent (sinon on signerait des swaps non attribués) :
+ * - issuer SURCHARGÉ sans SourceTag = config explicitement cassée → on lève ;
+ * - défaut sans SourceTag = mode off-chain pur assumé → Live simplement désactivé.
+ * Le moteur tourne sans Xaman : `/exec/plan` (GemWallet) reste exposé ;
+ * `/sign/live-offer` n'apparaît qu'avec Xaman.
+ */
+function buildExecDeps(sourceTag: number | undefined): ExecDeps | undefined {
+  const override = env.readLiveQuote();
+  if (override !== undefined) {
+    if (sourceTag === undefined) {
+      throw new Error("TIDE_RLUSD_ISSUER configuré mais TIDE_SOURCE_TAG manquant (attribution requise)");
+    }
+    return { sourceTag, quote: override };
+  }
+  if (sourceTag === undefined) {
+    return undefined;
+  }
+  return { sourceTag, quote: DEFAULT_LIVE_QUOTE };
+}
+
 /** Démarre la synchronisation périodique de l'indexeur (premier sync au boot). */
 function startIndexerSync(indexer: AttributionIndexer): void {
   const run = (): void => {
@@ -161,23 +189,34 @@ async function main(): Promise<void> {
   const onchainPrices = buildOnchainProvider(xrpl);
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
   const sign = buildSignDeps(sourceTag);
+  const exec = buildExecDeps(sourceTag);
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined
       ? { store: indexerSetup.store, sourceTag: indexerSetup.sourceTag }
       : undefined;
 
+  // Compétitions de démo (idempotent) : le front fusionne leur état live avec
+  // son catalogue de présentation. Sans seed, la liste serait vide au premier boot.
+  const competitionStore = new SqliteCompetitionStore(db);
+  seedCompetitions(competitionStore);
+
+  // Comptes de démo (idempotent) : peuplent le classement de vraies entrées
+  // variées dès le premier lancement (équités calculées au prix réel du feed).
+  const accountStore = new SqliteAccountStore(db);
+  seedDemoAccounts(new PaperService(undefined, accountStore), accountStore);
+
   const { app, cache, refreshPrices } = createApp({
-    feed: {
+    markets: {
       baseUrl: env.readCexBaseUrl(),
-      symbolToId: SYMBOL_TO_ID,
       vsCurrency: DEFAULT_VS_CURRENCY,
+      perPage: MARKETS_PER_PAGE,
     },
-    symbols: SYMBOLS,
     fetchJson,
-    accountStore: new SqliteAccountStore(db),
-    competitionStore: new SqliteCompetitionStore(db),
+    accountStore,
+    competitionStore,
     onchainPrices,
     sign,
+    exec,
     metrics,
   });
 
@@ -216,7 +255,8 @@ async function main(): Promise<void> {
     `Tide API à l'écoute sur :${String(port)} ` +
       `[on-chain:${onchainPrices !== undefined ? "on" : "off"} ` +
       `indexeur:${indexerSetup !== undefined ? "on" : "off"} ` +
-      `xaman:${sign !== undefined ? "on" : "off"}]`,
+      `xaman:${sign !== undefined ? "on" : "off"} ` +
+      `live:${exec !== undefined ? "on" : "off"}]`,
   );
 }
 

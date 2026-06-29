@@ -4,6 +4,168 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-29 — F15 : feed « markets » CoinGecko (top 250 coins, watchlist dynamique) [Phase 2, feed]
+
+**Quoi.** La watchlist était limitée à **9 coins codés en dur** (`SYMBOL_TO_ID` + `/simple/price`) et son %24h était mock. Bascule sur **CoinGecko `/coins/markets`** : un seul appel = top N coins par capitalisation avec **prix + %24h réel + nom**, sans mapping manuel.
+- **Back** : `feed/coingecko-markets.ts` (`fetchMarkets`, parsing tolérant, **dédoublonnage par symbole** = garde le plus gros market cap). `AppConfig.markets` (+ branche `refreshPrices`), route **`GET /markets`**, export. `main.ts` passe en mode `markets` (`perPage=250`), `SYMBOL_TO_ID`/`SYMBOLS` retirés. L'ancien `/simple/price` (`cex-price-feed`) reste pour les tests/legacy.
+- **Client** : type `MarketRow` + `markets()`.
+- **Front** : watchlist **dynamique** (`loadMarkets` depuis `/markets`), `livePrices` dérivés (les 250 cotés → ordres Paper + equity OK pour tous), sélection XRP par défaut / conservée ensuite. La recherche (déjà câblée) filtre les 250.
+
+406 tests (+7), typecheck + lint + build OK. **Vérifié en réel** (CoinGecko) : `/markets` = **249 coins** (250 − 1 homonyme dédoublonné), HYPE inclus (Hyperliquid $63.47), XRP présent ; front headless : watchlist 249 lignes, recherche « hype » → HYPE.
+
+**Pourquoi.** « Importer tous les coins » sans mapper chacun à la main, et pouvoir trouver des actifs comme HYPE. `/coins/markets` donne tout en un appel (prix, %24h, nom, ordre par capitalisation).
+
+**Cheminement.** Top 250 (max d'un appel) + recherche locale plutôt que recherche globale (~17k coins, plus lourde) — couvre HYPE (#10) et tout le mainstream. `PriceMap` alimentée par les 250 → cohérence ordres/equity. **Live reste XRP/RLUSD** (cf. F-précédentes : seul actif XRPL réel). **Chart** : Binance klines → un coin absent de Binance (ex. HYPE) retombe sur le repli synthétique (watchlist/prix réels, bougies approximées).
+
+**Bugs & fix.** Aucun (nouvelle surface). Dette : rate-limit CoinGecko free (1 appel/30 s, repli mock transitoire si 429) ; mock `data/markets.ts` reste en fallback pré-chargement (pairs « /USDC » brièvement visibles avant le 1er fetch).
+
+**Suivi — chart des coins hors Binance (ex. HYPE).** Sélectionner un coin absent de Binance (rendu possible par F15) tombait sur le repli synthétique **sans dates** (timestamps absents) et **« trop zoomé »** (échelle Y sans marge). Fix `DashboardView` : le repli est **horodaté** (`TF_MS` : pas de l'intervalle, finissant « maintenant ») → axe des dates affiché ; et l'échelle Y reçoit **+8 % de marge** haut/bas → tracé moins serré (amélioration sur **tous** les charts, réels comme synthétiques). Vérifié headless (HYPE en 1D : dates `…/05 …/06` + bougies centrées).
+
+---
+
+## 2026-06-29 — F14 : refonte UX du terminal — barre de mode Paper↔Live + nettoyage spot [Phase 3, UI]
+
+**Quoi.** Le passage Paper→Live (trading réel) était un micro-toggle noyé au milieu du ticket, sans signal d'« argent réel », et la disposition mélangeait des vestiges « perp ». Refonte du Dashboard :
+- **Barre de mode** pleine largeur en tête du terminal (`.main` passe en flex colonne ; les 3 colonnes vont dans `.deck`). Segmented **Paper | Live** + contexte du compte : en Paper « Solde virtuel $… », en Live badge **« ⚡ ARGENT RÉEL »** + chip wallet (adresse raccourcie · Xaman/GemWallet, ou « Connecter le wallet »).
+- **Transformation visuelle en Live** : nouveau token `--live` (ambre) ; le segment Live, le badge et une teinte diffuse (icône de paire, focus, raccourcis %) passent en ambre. Les couleurs Buy/Sell du bouton d'ordre restent **sémantiques** (vert/rouge), non teintées.
+- **Zéro cul-de-sac** : cliquer « Live » sans wallet **ouvre la connexion** (Xaman/GemWallet) puis bascule automatiquement une fois résolue (`pendingLive` + `watch(walletConnected)`). Segment Live inerte si le serveur n'expose pas de quote (`/config.quoteSymbol === null`).
+- **Cohérence spot** : carnet libellé `…/RLUSD` (au lieu de `/USDC`), retrait de « Funding 8h » et des types d'ordre non implémentés (Stop/Limit) → terminal **market-only** honnête. Suppression du CSS/i18n morts (`.otype`, `.lev`, `leverage`/`exposure`/`estLiq`/`orderLimit`/`limitPrice`).
+
+typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : rendu **Paper** (barre + deck 3 colonnes, ticket épuré) ET **Live** (segment ambre, badge ARGENT RÉEL, chip wallet, accent diffusé) — capture via CDP en simulant un wallet connecté puis clic « Live ».
+
+**Pourquoi.** « Comment passer en trading réel / sortir du paper » devait être évident. Le mode est un **contexte global** du terminal (argent virtuel ↔ réel), pas un sous-réglage d'ordre : il mérite une barre proéminente, un changement d'apparence (garde-fou anti-erreur) et une connexion wallet sans friction.
+
+**Cheminement.** Option retenue (sur 3 maquettes proposées) : barre de mode en tête plutôt que switch dans le header global (réservé à l'identité) ou en tête de ticket (trop discret). Le switch vit là où on trade, avec la place pour le wallet/solde et la teinte de mode. Décision validée avec Armand avant implémentation.
+
+**Bugs & fix.** La **barre de recherche** de la watchlist était décorative (`input` sans `v-model` ni filtrage) → câblée (`search` + `filteredMarkets`, filtre symbole/nom insensible à la casse, état vide « Aucun marché »). Vérifié headless : 9 marchés → 1 (« SOL ») en tapant « sol ». Le chart ne s'anime pas toujours en capture headless (connu) ; rendu correct en navigateur réel.
+
+---
+
+## 2026-06-29 — F13 : moteur d'exécution Live spot (best execution + slippage branchés) [Phase 3, chemin critique]
+
+**Quoi.** Le swap Live existait (UI→Xaman/GemWallet→`OfferCreate` taggé) mais l'exécution était **naïve** (le front calculait `gives`/`wants` au prix spot exact, sans slippage → offre qui risque de ne pas remplir) et **bloquée** (`RLUSD_ISSUER` vide en constante front). F13 branche le vrai moteur (`@tide/xrpl` `planExecution`, écrit en F5 mais jamais câblé) et sort l'issuer en config serveur.
+- **Back — moteur** : `apps/api/src/exec/plan-live.ts` (`planLiveOffer`) résout les devises (base XRP native / quote configuré), prend le prix de référence du feed et délègue à `planExecution` (compare AMM/carnet, **borne le slippage**, produit l'`OfferCreate` taggé). `LiveExecError`→400. Le contrat de route passe d'un `OfferCreate` brut à une **intention** (`account/base/side/amountBase/slippageTolerance`) ; `sourceTag` + issuer du quote restent **serveur**.
+- **Back — routes** : `POST /exec/plan` (renvoie le plan = offer borné + prix, pour signature **GemWallet** côté extension) et `POST /sign/live-offer` (refait le plan puis crée le payload **Xaman**). `/exec/plan` exposé dès qu'un quote est configuré ; `/sign/live-offer` seulement si Xaman l'est aussi. `/config` étendu (`quoteSymbol`). `ExecDeps` dans `app.ts`/`server.ts`.
+- **Config** : `TIDE_RLUSD_ISSUER` (`config/env.ts` `readLiveQuote`, validé), assemblé dans `main.ts` (`buildExecDeps`, **fail-loud** si issuer sans `TIDE_SOURCE_TAG`). `.env.example` + log de boot (`live:on/off`).
+- **Client `@tide/client`** : `signLiveOffer`/`planLiveOffer` prennent l'intention ; types `ExecSide`/`ApiOfferCreate`/`ExecutionPlanDto` ; `PublicConfig.quoteSymbol`.
+- **Front** : `useWallet.signLiveOffer(base, side, amountBase, slippage)` (GemWallet via `planLiveOffer`+`submitTransaction`, plus aucune construction de montant/sourceTag côté front) ; `DashboardView` retire `RLUSD_ISSUER`/`RLUSD_CURRENCY`/`DROPS_PER_XRP`, charge `quoteSymbol` via `/config`, constante `LIVE_SLIPPAGE=1 %`, `placeLiveOrder` envoie l'intention.
+
+399 tests (+10), typecheck (5 packages) + lint clean. **Vérifié au runtime** (serveur réel) : OFF par défaut (`live:off`, `/exec/plan` 404) ; avec `TIDE_RLUSD_ISSUER` → `live:on`, `/config`=`{sourceTag,quoteSymbol:"RLUSD"}`, et `/exec/plan` renvoie un `OfferCreate` réel (prix XRP **live** du feed, `TakerGets` borné +1 %, `TakerPays` = drops exacts, `SourceTag` injecté) ; base non tradable → 400.
+
+**Pourquoi.** « Passer de vrais trades spot » était la demande : la plomberie existait mais l'exécution n'était pas fiable (pas de slippage = offre qui peut rester au carnet sans remplir) ni activable (issuer en dur côté front). Le moteur best-execution dormait depuis F5 ; F13 le met enfin sur le chemin.
+
+**Cheminement.**
+- **Intention, pas montants.** Le client n'envoie plus `gives`/`wants` (qu'il calculait au prix sec) mais l'intention ; le serveur borne. Un client ne peut donc ni détourner l'attribution, ni soumettre une offre non protégée.
+- **Une planification, deux signatures.** `planLiveOffer` est partagé : `/exec/plan` rend l'offer (GemWallet signe côté extension, le `SourceTag` étant déjà dans l'offer — public, pas un secret) ; `/sign/live-offer` enrobe le même plan dans un payload Xaman. DRY, et GemWallet hérite du même bornage que Xaman.
+- **Prix de référence = feed.** Faute de pool on-chain câblé (`ONCHAIN_POOLS` vide), `ammPrice`=`bookPrice`=prix du feed (RLUSD pegué ≈ USD) ; la borne de slippage protège l'exécution réelle. Avec un pool on-chain, ces deux prix divergeraient (et `planExecution` choisirait le meilleur). Documenté dans `plan-live.ts`.
+- **Issuer en config serveur.** `TIDE_RLUSD_ISSUER` remplace la constante front : le front ne connaît plus l'issuer (tout l'`OfferCreate` est calculé serveur), il lit juste `quoteSymbol` pour activer le bouton.
+- **Code mort retiré.** `createLiveOfferSignRequest` (et `LiveOfferParams`/`LiveOfferRequest`) supprimés : le live-offer passe désormais par `createSignRequest(api, plan.offer)`.
+
+**Frontière de vérification (honnête).** **NON testé en réel** (frontière mainnet/clés/app d'Armand) : la signature Xaman/GemWallet effective et le **remplissage on-chain** de l'`OfferCreate` (le moteur produit une offre correcte et bornée, reste à la voir s'exécuter sur le DEX). **Reste** : tester un swap de bout en bout (1 swap taggé → compteur d'attribution).
+
+**MàJ même-jour.** RLUSD mainnet (`rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De`, vérifié doc Ripple/XRPScan) est désormais le **quote Live par défaut** (`DEFAULT_LIVE_QUOTE`) : le moteur s'active dès que `TIDE_SOURCE_TAG` est défini, sans `TIDE_RLUSD_ISSUER` (qui ne sert plus qu'à surcharger l'émetteur). Garde-fou préservé : issuer surchargé sans SourceTag → lève ; défaut sans SourceTag → Live off (mode off-chain pur). Vérifié au runtime : `/config`=`quoteSymbol:"RLUSD"` et `/exec/plan` produit l'`OfferCreate` taggé avec l'issuer mainnet.
+
+**Bugs & fix.** Aucun (nouvelle surface). Dette : seul XRP↔quote tradable (un seul actif XRPL natif au feed) ; slippage en constante front (à exposer en réglage) ; le prix d'exécution vient du CEX tant que `ONCHAIN_POOLS` est vide.
+
+---
+
+## 2026-06-29 — F12c : chart trading réel (Binance klines, timeframes 15m→1W, axe des dates)
+
+**Quoi.** Le chart utilisait des bougies inventées (RNG), puis un essai CoinGecko OHLC limité (granularité fixe 30min/4h/4j, pas de vrais 15m/1h). Bascule sur **Binance klines** (public, sans clé, sans rate-limit) :
+- **Backend** : `feed/klines.ts` (`fetchKlines` + validation d'intervalle), route `GET /history/:symbol?interval=15m&limit=120` (paire dérivée `{SYMBOL}USDT`). Cache 60s conservé. `feed/ohlc.ts` (CoinGecko) supprimé.
+- **Front** : timeframes = **vrais intervalles de bougie** `15m / 1H / 4H / 1D / 1W` (et plus de « grosses » plages). Chart branché sur les vraies bougies horodatées ; **axe des dates** en bas (heure pour l'intraday, date sinon). High/Low/variation calculés sur les bougies réelles.
+
+389 tests, typecheck + lint clean. **Vérifié** : les 5 intervalles renvoient des écarts exacts (15/60/240/1440/10080 min) et des prix réels (SOL/XRP cohérents avec le marché).
+
+**Pourquoi.** Pour du trading il faut des petites timeframes exactes (15m, 1h, 4h, 1d, 1w) avec OHLC réel et dates — ce que CoinGecko free ne fournit pas, mais Binance klines oui (intervalle exact en paramètre).
+
+**Bugs & fix.** CoinGecko : pas de 15m/1h réels + rate-limit (429) → Binance. Le feed de prix spot (watchlist) reste sur CoinGecko (peut 429 transitoirement → prix mock le temps d'un cycle).
+
+---
+
+## 2026-06-28 — F12b : activation Live (clés XUMM), GemWallet, correctifs chart/landing [Phase 3]
+
+**Quoi.**
+- **Clés XUMM activées** : `dotenv` ajouté à l'API, `apps/api/.env` (gitignoré) charge `XUMM_API_KEY`/`SECRET` + `TIDE_SOURCE_TAG` + `TIDE_PRIZE_POOL_ADDRESS`. `/sign/*` monté (`xaman:on`). **Vérifié** : `POST /sign/connect` renvoie un vrai payload Xaman (uuid/signUrl/qrPng).
+- **GemWallet** : second wallet dans « Connect wallet ». `@gemwallet/api` ajouté ; la modale propose **Xaman (QR)** ou **GemWallet (extension)** ; connexion = `getAddress`, swap Live = `submitTransaction`. Endpoint **`GET /config`** (SourceTag public) pour signer côté extension. Session étendue (`walletType` xaman/gem).
+- **Chart** : le SOL (et tout actif réel) était cassé — prix réel injecté mais `hi`/`lo` restés mock → échelle absurde. Corrigé : le tracé démarre du **prix réel**, et `loadPrices` recale `hi`/`lo` sur le prix.
+- **Timeframes** : 15m/1H/4H/1D/1W étaient inertes → câblés (état `tf` + volatilité/seed par timeframe).
+- **Landing** : tags format (Paper/Competition/Rewards) → **navigation** ; bascule **SOUND [OFF]/[ON]** fonctionnelle ; mouvement magnétique des boutons retiré (directive supprimée).
+
+389 tests, typecheck + lint clean. Build OK.
+
+**Pourquoi.** Tour de polish post-test navigateur d'Armand : activer le Live avec ses vraies clés, ajouter le wallet qu'il utilise (GemWallet), et réparer les interactions mortes (timeframes, chart, tags, son).
+
+**Frontière de vérification.** `POST /sign/connect` validé en réel (vrai payload). **NON testés ici** (pas d'app/extension) : signature Xaman/GemWallet réelle et swap on-chain ; rendu des bougies (l'animation ne se déclenche pas en capture headless — OK en vrai navigateur). **Reste** : `RLUSD_ISSUER` (DashboardView) à renseigner pour exécuter les swaps Live.
+
+**Bugs & fix.** Chart : `m.lo` mock vs prix réel → départ du tracé recalé sur `m.p`. **Xaman « Erreur interne » (500)** : le transport front posait `content-type: application/json` même sans body → Fastify rejetait le JSON vide sur les POST sans corps (`/sign/connect`, `/competitions/:id/close`). Double fix : transport ne pose le header que s'il y a un body, ET parser serveur tolérant au body vide. Logos Xaman/GemWallet ajoutés à la modale. Dette : `apps/api/.env` co-localisé (chargé par cwd) ; `RLUSD_ISSUER` en constante front.
+
+---
+
+## 2026-06-28 — F12 : mode Live — connexion de wallet + swap réel signé Xaman [Phase 3]
+
+**Quoi.** « Connect wallet » et le trading réel (mode Live), non-custodial via Xaman.
+- **Backend** : `XamanPayloadApi.get(uuid)` (suivi de payload) + `createConnectSignRequest` (SignIn) + `getPayloadStatus`. Routes **`POST /sign/connect`** (connexion wallet) et **`GET /sign/status/:uuid`** (polling résolu/signé + adresse), montées avec le bloc XUMM. 20 tests sign (connect/status couverts).
+- **Client `@tide/client`** : `connectWallet()`, `signStatus(uuid)` + type `PayloadStatus`.
+- **Front** : `useSession` étendu (`liveAddress` persistant) ; **`useWallet`** (singleton : créer payload → QR → poller jusqu'à résolution, gère connexion ET swap) ; **`SignModal`** global (QR + deeplink Xaman + état). « Connect wallet » (Landing + pastille header) → SignIn → adresse stockée. **Dashboard** : toggle **Paper/Live** ; en Live, l'ordre XRP↔RLUSD construit un `OfferCreate` signé dans Xaman.
+
+389 tests, typecheck + lint clean. Build OK.
+
+**Pourquoi.** Le funnel du produit : paper (sans friction) → conversion en **Live** (volume réel taggé `SourceTag`, l'enjeu nº1 du hackathon). « Connect wallet » était inerte ; il fait maintenant une vraie connexion non-custodiale.
+
+**Cheminement.**
+- **Connexion = SignIn.** En XRPL non-custodial il n'y a pas de « session wallet » ; on prouve le contrôle d'une adresse via un payload `SignIn`, puis on récupère l'adresse via le polling du statut. Une seule mécanique (`useWallet.start`) sert connexion ET swap.
+- **Live = XRP↔RLUSD uniquement.** Seuls XRP et les tokens émis (RLUSD) sont de vrais actifs XRPL ; les autres marchés du watchlist restent paper. Le bouton Live est désactivé hors XRP.
+- **Dégradation honnête.** Sans clés XUMM côté serveur, `/sign/*` répond 404 → la modale affiche « Mode Live non configuré » (jamais d'échec muet).
+
+**Frontière de vérification (honnête).** Le flux **compile, lint, et la mécanique est testée** (routes + fakes). **NON testé en réel** (pas de clés ici) : la signature Xaman réelle et le swap on-chain. **Pour activer** : (1) renseigner `XUMM_API_KEY`/`XUMM_API_SECRET` + `TIDE_SOURCE_TAG` + `TIDE_PRIZE_POOL_ADDRESS` dans `.env` puis redémarrer l'API (monte `/sign/*`) ; (2) pour le **swap Live**, renseigner `RLUSD_ISSUER` (émetteur RLUSD mainnet) dans `DashboardView.vue` — vide par défaut, Live désactivé tant que non fourni.
+
+**Bugs & fix.** Aucun (nouvelle surface). Dette : `RLUSD_ISSUER` en constante front (à sortir en config/endpoint) ; le polling de statut est en `setInterval` (pas de websocket Xaman).
+
+---
+
+## 2026-06-28 — F11b : correctifs d'intégration navigateur (CORS, feed multi-actifs, mocks résiduels) [Phase 2]
+
+**Quoi.** Test dans un vrai navigateur (cross-origin) → l'app paraissait 100 % mock. Causes trouvées et corrigées :
+- **CORS (cause racine).** Le front (Vite, port distinct) appelait l'API sans header CORS → le navigateur **bloquait toutes les requêtes** (silencieusement) → repli systématique sur les mocks. Ajout de **`@fastify/cors`** (`origin: true`). C'est ce qui faisait que « rien ne marchait » alors que `curl`/vitest passaient.
+- **Feed mono-actif.** Le backend ne cotait que XRP → SOL/BTC/ETH restaient mock et n'étaient pas tradables. Feed CEX étendu à **9 actifs** (XRP, BTC, ETH, SOL, AVAX, LINK, ARB, DOGE, OP → ids CoinGecko).
+- **Header (`AppBar`).** `$128,940 / #18 / 0xPilote.eth` étaient **codés en dur** (visibles sur toutes les pages). Branchés sur le compte de session (équité/rang/identité réels, rafraîchis ; « Connect » + « — » hors session).
+- **Dashboard.** Positions hardcodées → **avoirs réels** ; available/0xPilote.eth → réels ; auto-connexion d'un compte démo au montage (le terminal « marche » sans étape manuelle) ; **levier retiré** (le produit est spot, cf. SPEC) → ticket honnête (`amount/price`), suffixe `RLUSD`, « Close » = vente réelle.
+- **Compétitions / Classement.** Valeurs hero codées en dur branchées sur le live : vedette (`pot`/`participants`), podium top 3 + cagnotte + « ta ligne » du classement. **Bug corrigé** : `START_EQUITY` du rendement était 100 000 au lieu de 10 000 (back). Garde podium creux : on garde le mock peuplé sous 3 entrées réelles.
+- **LandingView.** Bloc vitrine entièrement mock + contrôle segmenté **Arena/Leaderboard/Rewards inerte** (l'indicateur bougeait mais aucun contenu ne changeait). Boutons → **navigation** vers les pages réelles ; « TOP TRADERS — LIVE » + le hero « Season leader » branchés sur le vrai classement.
+- **Langue** : EN par défaut **strict** (détection navigateur retirée — affichait FR sur un OS FR).
+- **Seed de comptes de démo** (`seed/accounts.ts`) : 6 traders préchargés (achats à prix d'entrée variés) → **classement réel et peuplé dès le boot** (équités calculées au prix courant du feed).
+
+387 tests, typecheck + lint clean. **Vérifié dans un navigateur headless (Brave)** : EN, prix réels, header réel (rang #7), podium/table/cagnotte réels, compétitions live, ticket spot.
+
+**Pourquoi.** L'intégration F11 était correcte au niveau contrat (curl/vitest verts) mais **jamais éprouvée dans un navigateur** : CORS la rendait inopérante côté client, et plusieurs hero/valeurs restaient des littéraux de template non branchés. Leçon : valider une intégration front/back **dans le navigateur cible**, pas seulement en curl.
+
+**Bugs & fix.** CORS absent (bloquant) ; `START_EQUITY` 100k→10k ; levier perp sur moteur spot (retiré) ; suffixes `USDC`→`RLUSD`.
+
+---
+
+## 2026-06-28 — F11 : reliage front ↔ back (refonte design mergée + zones mock branchées) [Phase 2]
+
+**Quoi.** La refonte du front (branche `design` d'un coéquipier : « terminal éditorial » bilingue FR/EN) est **mergée dans `dev`** (0 conflit — `dev` n'avait pas touché `apps/web`) puis **reliée au backend**. Les vues qui tournaient sur des mocks consomment désormais l'API réelle.
+- **Back — 4 routes ajoutées** : `GET /competitions` (liste), `GET /competitions/:id` (détail), `GET /prices` (instantané du feed), `GET /accounts/:id/portfolio` (soldes valorisés + equity + pnl). Plus `CompetitionStore.list()` (in-memory + SQLite), `CompetitionService.list()/get()` (état live : participants réels, pot, clôture), `PaperService.portfolioOf()` (valorisation par devise réutilisant `equity` du core), et un **seed** de 9 compétitions de démo (`apps/api/src/seed/competitions.ts`, idempotent, ids alignés sur le catalogue front).
+- **Client `@tide/client`** étendu : `competitions()`, `competition(id)`, `prices()`, `portfolio(userId)` + types `CompetitionSummary`/`Portfolio`/`Holding`.
+- **Front** : `useSession` (identité partagée, userId persistant en `localStorage`) ; `usePaper` branché dessus ; `useCompetitionsLive` (fusion **catalogue de présentation + état live**) ; Dashboard (prix XRP réel, XRP ajouté comme actif tradable par défaut, ordres XRP/RLUSD effectifs) ; CompetitionsView + CompetitionView (pot/participants/statut live, join sur le compte de session, état « inscrit » réel) ; PortfolioView (holdings/equity/pnl/rang + activité = ordres réels).
+
+387 tests (3 ajoutés au contrat client↔serveur), typecheck (5 packages, vue-tsc inclus) + lint clean. Build front OK. Smoke end-to-end vérifié (prix → ordre spot → portfolio cohérent → join → participants live).
+
+**Pourquoi.** Le front refait était autonome (catalogue mock `data/competitions.ts`, prix simulés, portfolio en dur). Objectif : que l'UI reflète l'état RÉEL du backend pour une démo crédible, sans dénaturer le contenu éditorial (descriptifs, visuels, leaders narratifs) qui n'a pas vocation à vivre côté serveur.
+
+**Cheminement.**
+- **Séparation présentation / live.** Le modèle `Competition` du core reste **économie pure** (buyIn/rake/poids). Les routes exposent une **vue live** (`CompetitionSummary`) que le front **fusionne par `id`** avec son catalogue : les champs dynamiques (pot, participants, statut) viennent du back, le décor reste front. Migrer le copywriting bilingue au back aurait été disproportionné.
+- **Portefeuille DRY.** `portfolioOf` valorise chaque avoir via `equity({[devise]: montant}, …)` et l'équité totale via `equity(soldes, …)` → une seule règle de prix, pas de duplication, cohérent avec le leaderboard.
+- **Identité partagée.** Le front éclatait l'identité (userId saisi au terminal, `"0xPilote.eth"` hardcodé en compétition, rien en portfolio). `useSession` unifie : connecter le terminal renseigne l'identité de toute l'app.
+- **Ordres Dashboard rendus réels et sûrs.** Ils échouaient silencieusement (quote `USDC` ≠ devise de réf `RLUSD`). Corrigé en `RLUSD` + compte de session. **Garde-fou** : on n'exécute un ordre réel que pour un actif que le backend **sait coter** (sinon l'avoir serait détenu sans prix et **casserait `equity()`**, qui lève sur prix manquant). XRP (seul actif coté) ajouté au watchlist avec son prix live et sélectionné par défaut. Levier laissé **cosmétique** (le moteur paper est spot, sans marge) : l'ordre dépense `amount` en devise de référence.
+- **Décor assumé (tracé honnêtement).** Sans historique côté back : courbe d'équité, win-rate / meilleur-pire trade, chart en bougies et carnet d'ordres restent simulés (le prix d'ancrage, lui, est réel).
+
+**Bugs & fix.** Ordres Dashboard inopérants côté serveur (quote `USDC`) → `RLUSD`. `useMarket.ts` identifié comme **code mort** (jamais importé) — laissé en l'état (code d'un coéquipier), à supprimer ou rebrancher au chart plus tard.
+
+---
+
 ## 2026-06-23 — F10 : câblage runtime on-chain + exposition HTTP [Phase 1/2, chemin critique]
 
 **Quoi.** Assemblage des briques F1→F9 (jusqu'ici écrites/testées mais **inertes**) dans le runtime, et exposition HTTP. Concrètement :

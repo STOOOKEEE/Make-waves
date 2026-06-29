@@ -3,13 +3,20 @@
 // elle rend sa propre barre supérieure (.bar) et ses propres tokens de couleurs
 // (différents des tokens globaux). Le .grain global est déjà rendu par App.vue.
 import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue'
+import type { TideClient } from '@tide/client'
+import { useSession } from '../composables/useSession'
+import { useWallet } from '../composables/useWallet'
 import { useI18n } from '../i18n/useI18n'
 import LangToggle from '../components/LangToggle.vue'
 import BrandMark from '../components/BrandMark.vue'
 
+const props = defineProps<{ client: TideClient }>()
+const { userId, connected } = useSession()
+
 const { t, locale, intlLocale } = useI18n({
   en: {
     soundOff: 'SOUND [OFF]',
+    soundOn: 'SOUND [ON]',
     heroDesc: 'TIDE IS A WEB3 PAPER-TRADING ARENA WHERE THE BEST TRADERS COMPETE FOR REAL REWARDS.',
     seasonLive: 'SEASON 04 · LIVE',
     tradersCount: '12 480 TRADERS',
@@ -19,10 +26,10 @@ const { t, locale, intlLocale } = useI18n({
     tagPaper: 'Paper Trading',
     tagCompetition: 'Competition',
     tagRewards: 'On-chain Rewards',
-    demoWallet: 'Demo wallet',
-    s04Return: 'S04 return · rank #18 · starting capital $100,000',
+    demoWallet: 'Season leader',
+    s04Return: 'S04 return · rank #{rank}',
     topTradersLive: 'Top traders — live',
-    meName: 'you — 0xPilote.eth',
+    meName: 'you — connect',
     meRanks: '↑ 6 ranks today',
     segArena: 'Arena',
     segLeaderboard: 'Leaderboard',
@@ -42,13 +49,13 @@ const { t, locale, intlLocale } = useI18n({
     stepsHeadL2: 'the grid — 60s',
     stepsLead: 'Connect, get your capital, and the race begins. No endless onboarding.',
     step1Title: 'Connect your wallet',
-    step1Body: 'MetaMask, Phantom or WalletConnect. No deposit, no KYC. Your identity stays yours.',
+    step1Body: 'Xaman or GemWallet. No deposit, no KYC. Your identity stays yours.',
     step2Title: 'Get $100,000',
-    step2Body: 'Demo capital credited instantly. Open positions on 200+ pairs with real data.',
+    step2Body: 'Demo capital credited instantly. Open positions on the top 250 spot markets with real data.',
     step3Title: 'Climb & cash out',
     step3Body: 'Beat the market and your rivals. At the close, rewards drop automatically on-chain.',
     seasonPot: 'Season pot',
-    potCaption: 'USDC + season NFT · split across the top 50',
+    potCaption: 'RLUSD + season NFT · split across the top 50',
     cdDays: 'Days',
     cdHours: 'Hours',
     cdMin: 'Min',
@@ -78,6 +85,7 @@ const { t, locale, intlLocale } = useI18n({
   },
   fr: {
     soundOff: 'SON [OFF]',
+    soundOn: 'SON [ON]',
     heroDesc: "TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.",
     seasonLive: 'SAISON 04 · LIVE',
     tradersCount: '12 480 TRADERS',
@@ -87,10 +95,10 @@ const { t, locale, intlLocale } = useI18n({
     tagPaper: 'Paper Trading',
     tagCompetition: 'Compétition',
     tagRewards: 'Récompenses On-chain',
-    demoWallet: 'Portefeuille de démo',
-    s04Return: 'Rendement S04 · rang #18 · capital initial $100,000',
+    demoWallet: 'Meilleur trader',
+    s04Return: 'Rendement S04 · rang #{rank}',
     topTradersLive: 'Top traders — live',
-    meName: 'toi — 0xPilote.eth',
+    meName: 'toi — connecté',
     meRanks: "↑ 6 rangs aujourd'hui",
     segArena: 'Arène',
     segLeaderboard: 'Classement',
@@ -110,13 +118,13 @@ const { t, locale, intlLocale } = useI18n({
     stepsHeadL2: 'la grille — 60s',
     stepsLead: "Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.",
     step1Title: 'Connecte ton wallet',
-    step1Body: 'MetaMask, Phantom ou WalletConnect. Aucun dépôt, aucun KYC. Ton identité reste la tienne.',
+    step1Body: 'Xaman ou GemWallet. Aucun dépôt, aucun KYC. Ton identité reste la tienne.',
     step2Title: 'Reçois $100 000',
-    step2Body: 'Capital de démo crédité instantanément. Ouvre tes positions sur 200+ paires en données réelles.',
+    step2Body: 'Capital de démo crédité instantanément. Ouvre tes positions sur le top 250 des marchés spot en données réelles.',
     step3Title: 'Grimpe & encaisse',
     step3Body: 'Bats le marché et tes rivaux. À la clôture, les récompenses tombent automatiquement on-chain.',
     seasonPot: 'Cagnotte de la saison',
-    potCaption: 'USDC + NFT de saison · répartis sur le top 50',
+    potCaption: 'RLUSD + NFT de saison · répartis sur le top 50',
     cdDays: 'Jours',
     cdHours: 'Heures',
     cdMin: 'Min',
@@ -152,6 +160,18 @@ function goDashboard(): void {
   emit('navigate', '/dashboard')
 }
 
+// Connexion de wallet réelle (Xaman / GemWallet, mode Live).
+const wallet = useWallet(props.client)
+function connectWallet(): void {
+  void wallet.connect()
+}
+
+// Bascule du son (pas d'audio embarqué : reflète juste l'état dans le bandeau).
+const soundOn = ref<boolean>(false)
+function toggleSound(): void {
+  soundOn.value = !soundOn.value
+}
+
 // État de chargement : déclenche l'animation de montée du hero (.gl>span).
 const loaded = ref<boolean>(false)
 
@@ -164,6 +184,59 @@ const active = ref<number>(0)
 const segButtons = ref<Array<HTMLButtonElement | null>>([null, null, null])
 const indicator = ref<HTMLSpanElement | null>(null)
 const segLabels = computed(() => [t('segArena'), t('segLeaderboard'), t('segRewards')] as const)
+// Chaque onglet renvoie vers sa page réelle (sinon le contrôle ne ferait rien).
+const SEG_ROUTES = ['/arena', '/leaderboard', '/competitions'] as const
+
+// ---- Vitrine live : top traders + leader de saison (vraies données API) ----
+const START_EQUITY = 10_000
+
+interface LandRow {
+  rank: number
+  name: string
+  ret: string
+  me: boolean
+}
+
+function toReturn(equity: number): string {
+  const r = ((equity - START_EQUITY) / START_EQUITY) * 100
+  return (r >= 0 ? '+' : '') + r.toFixed(1) + '%'
+}
+
+const board = ref<LandRow[]>([])
+const leader = ref<{ name: string; equity: string; ret: string; rank: number } | null>(null)
+
+async function loadBoard(): Promise<void> {
+  try {
+    const entries = await props.client.leaderboard()
+    board.value = entries.slice(0, 4).map((e) => ({
+      rank: e.rank,
+      name: e.userId,
+      ret: toReturn(e.equity),
+      me: false,
+    }))
+    const top = entries[0]
+    leader.value =
+      top !== undefined
+        ? {
+            name: top.userId,
+            equity: '$' + Math.round(top.equity).toLocaleString('en-US'),
+            ret: toReturn(top.equity),
+            rank: top.rank,
+          }
+        : null
+    if (connected.value) {
+      const mine = entries.find((e) => e.userId === userId.value)
+      if (mine !== undefined) {
+        board.value = [
+          ...board.value,
+          { rank: mine.rank, name: userId.value, ret: toReturn(mine.equity), me: true },
+        ]
+      }
+    }
+  } catch {
+    // API indisponible : la vitrine reste vide (dégradation propre).
+  }
+}
 
 let clockTimer: ReturnType<typeof setInterval> | undefined
 let loadFallback: ReturnType<typeof setTimeout> | undefined
@@ -180,6 +253,7 @@ function moveIndicator(): void {
 function selectSeg(i: number): void {
   active.value = i
   moveIndicator()
+  emit('navigate', SEG_ROUTES[i] ?? '/dashboard')
 }
 
 // Met à jour les deux horloges via Intl.DateTimeFormat (fr-FR).
@@ -213,6 +287,7 @@ onMounted(() => {
 
   updateClocks()
   clockTimer = setInterval(updateClocks, 10000)
+  void loadBoard()
 
   // Recalcule l'indicateur après le rendu (et avec un léger délai, comme la source).
   void nextTick(() => moveIndicator())
@@ -238,7 +313,7 @@ onUnmounted(() => {
           <span class="partner">TIDE</span>
         </div>
         <div class="bar-grp">
-          <div class="snd lab"><span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span> {{ t('soundOff') }}</div>
+          <button type="button" class="snd lab" :class="{ on: soundOn }" @click="toggleSound"><span class="dots"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span> {{ soundOn ? t('soundOn') : t('soundOff') }}</button>
           <div class="desc lab soft">{{ t('heroDesc') }}</div>
           <div class="loc lab">
             <div><span class="pin"></span> {{ t('seasonLive') }} <span class="t">{{ t1 }}</span></div>
@@ -247,7 +322,7 @@ onUnmounted(() => {
         </div>
         <div class="bar-cta">
           <LangToggle variant="dark" />
-          <a href="#" class="pill-cta" data-mag v-mag @click.prevent="goDashboard">{{ t('join') }}</a>
+          <a href="#" class="pill-cta" @click.prevent="goDashboard">{{ t('join') }}</a>
         </div>
       </div>
     </div>
@@ -263,9 +338,9 @@ onUnmounted(() => {
         <div class="divider"></div>
         <div class="tags rv" v-reveal>
           <span class="k">{{ t('formatLabel') }}</span>
-          <span class="tag on">{{ t('tagPaper') }}</span>
-          <span class="tag">{{ t('tagCompetition') }}</span>
-          <span class="tag">{{ t('tagRewards') }}</span>
+          <a class="tag on" href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('tagPaper') }}</a>
+          <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagCompetition') }}</a>
+          <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagRewards') }}</a>
         </div>
 
         <!-- DARK SCREEN -->
@@ -273,11 +348,11 @@ onUnmounted(() => {
           <div class="scr-grid">
             <div>
               <div class="scr-head">
-                <div class="acct">{{ t('demoWallet') }}<b>0xPilote.eth</b></div>
+                <div class="acct">{{ t('demoWallet') }}<b>{{ leader ? leader.name : '—' }}</b></div>
                 <div class="scr-live"><i></i> LIVE</div>
               </div>
-              <div class="scr-balrow"><div class="scr-bal">$128,940</div><div class="scr-chip">+28.94%</div></div>
-              <div class="lab soft">{{ t('s04Return') }}</div>
+              <div class="scr-balrow"><div class="scr-bal">{{ leader ? leader.equity : '—' }}</div><div class="scr-chip">{{ leader ? leader.ret : '' }}</div></div>
+              <div class="lab soft">{{ t('s04Return', { rank: leader ? leader.rank : '—' }) }}</div>
               <div class="chart">
                 <svg viewBox="0 0 420 170" preserveAspectRatio="none">
                   <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFF6CE" stop-opacity=".26" /><stop offset="100%" stop-color="#BFF6CE" stop-opacity="0" /></linearGradient></defs>
@@ -288,11 +363,16 @@ onUnmounted(() => {
             </div>
             <div class="scr-board">
               <div class="blab">{{ t('topTradersLive') }}</div>
-              <div class="brow t1"><div class="rk">1</div><div class="nm">quant_viper<span>0x7a…34f1</span></div><div class="pl">+142.8%</div></div>
-              <div class="brow"><div class="rk">2</div><div class="nm">degen_maxi<span>0x19…ab88</span></div><div class="pl">+118.3%</div></div>
-              <div class="brow"><div class="rk">3</div><div class="nm">satoshi_heir<span>0xc4…7d20</span></div><div class="pl">+97.6%</div></div>
-              <div class="brow"><div class="rk">4</div><div class="nm">liquid_zen<span>0x88…1c0e</span></div><div class="pl">+84.1%</div></div>
-              <div class="brow me"><div class="rk">18</div><div class="nm">{{ t('meName') }}<span>{{ t('meRanks') }}</span></div><div class="pl">+28.9%</div></div>
+              <div
+                v-for="(r, i) in board"
+                :key="r.name"
+                class="brow"
+                :class="{ t1: i === 0 && !r.me, me: r.me }"
+              >
+                <div class="rk">{{ r.rank }}</div>
+                <div class="nm">{{ r.name }}<span></span></div>
+                <div class="pl">{{ r.ret }}</div>
+              </div>
             </div>
           </div>
           <div class="seg">
@@ -376,7 +456,7 @@ onUnmounted(() => {
       <div class="wrap">
         <h2 class="rv" v-reveal>{{ t('ctaHeadL1') }}<br />{{ t('ctaHeadL2') }}</h2>
         <p class="rv" v-reveal>{{ t('ctaP') }}</p>
-        <div class="rv" v-reveal><a href="#" class="big-pill" data-mag v-mag @click.prevent="goDashboard">{{ t('connectWallet') }}</a></div>
+        <div class="rv" v-reveal><a href="#" class="big-pill" @click.prevent="connectWallet">{{ t('connectWallet') }}</a></div>
       </div>
     </section>
 
@@ -444,7 +524,8 @@ onUnmounted(() => {
 .mark img { width: 32px; height: 32px; object-fit: contain; }
 .partner { font-weight: 700; font-size: 22px; letter-spacing: -.02em; }
 .bar-grp { display: flex; gap: 46px; align-items: flex-start; padding-top: 5px; }
-.snd { display: flex; align-items: center; gap: 9px; cursor: pointer; }
+.snd { display: flex; align-items: center; gap: 9px; cursor: pointer; border: none; background: none; font: inherit; color: inherit; padding: 0; }
+.snd.on .dots i { background: var(--blue); }
 .dots { display: grid; grid-template-columns: repeat(3, 2px); grid-template-rows: repeat(3, 2px); gap: 1.5px; }
 .dots i { width: 2px; height: 2px; background: #fff; display: block; }
 .desc { max-width: 280px; }
@@ -468,7 +549,7 @@ onUnmounted(() => {
 .divider { height: 1px; background: var(--hair); margin: 46px 0 22px; }
 .tags { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 34px; }
 .tags .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--soft); margin-right: 6px; }
-.tag { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; border: 1px solid var(--hair); border-radius: 100px; padding: 8px 15px; transition: background .2s, color .2s; }
+.tag { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; border: 1px solid var(--hair); border-radius: 100px; padding: 8px 15px; transition: background .2s, color .2s; text-decoration: none; cursor: pointer; }
 .tag:hover, .tag.on { background: #fff; color: var(--blue); border-color: #fff; }
 
 /* ---------- DARK SCREEN ---------- */

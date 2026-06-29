@@ -22,5 +22,17 @@ export function createXamanApi(
   return {
     create: ({ txjson }) =>
       sdk.payload.create({ txjson } as unknown as XummCreatePayload),
+    get: async (uuid) => {
+      const payload = await sdk.payload.get(uuid);
+      if (payload === null) {
+        return null;
+      }
+      return {
+        resolved: payload.meta.resolved,
+        signed: payload.meta.signed,
+        account: payload.response.account ?? null,
+        txid: payload.response.txid ?? null,
+      };
+    },
   };
 }

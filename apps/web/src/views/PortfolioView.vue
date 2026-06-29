@@ -1,17 +1,26 @@
 <script setup lang="ts">
-/* Portefeuille — porté fidèlement depuis design_site/portfolio.html.
- * Page mock (aucun backend) : KPIs, courbe d'équité, donut de répartition,
- * tableau des avoirs, anneau de win-rate, activité récente. */
+/* Portefeuille du compte de session. Données réelles : KPIs (équité, cash,
+ * PnL, rang), avoirs valorisés, donut de répartition, activité (ordres réels).
+ * Décor assumé (pas d'historique côté backend) : tracé de la courbe d'équité et
+ * statistiques de trading (win-rate, meilleur/pire trade). */
 
 import { computed, onMounted, ref } from "vue";
+import type { Fill } from "@tide/core";
+import type { Portfolio, TideClient } from "@tide/client";
 import SegControl from "../components/SegControl.vue";
-import { HOLDINGS, ALLOC_PALETTE, fmtNum } from "../data/markets";
+import { ALLOC_PALETTE, fmtNum } from "../data/markets";
+import { useSession } from "../composables/useSession";
+import { errorMessage } from "../composables/messages";
 import { useI18n } from "../i18n/useI18n";
+
+const props = defineProps<{ client: TideClient }>();
+const { userId, connected } = useSession();
 
 const { t } = useI18n({
   en: {
     title: "Portfolio",
     subtitle: "Demo capital $100,000 · Season 04 — real-time performance.",
+    connectPrompt: "Connect the terminal to load your real portfolio.",
     tf24H: "24H",
     tf7J: "7D",
     tf30J: "30D",
@@ -20,8 +29,8 @@ const { t } = useI18n({
     kpiTotalEquity: "Total equity",
     kpiAvailable: "Available",
     kpiFreeCash: "free cash",
-    kpiPnlToday: "Today's PnL",
-    kpiPnlUnrealized: "Unrealized PnL",
+    kpiPnlToday: "Session PnL",
+    kpiInvested: "Invested",
     nPositions: "{n} positions",
     kpiSeasonRank: "Season rank",
     rankUpToday: "↑ {n} today",
@@ -55,6 +64,7 @@ const { t } = useI18n({
   fr: {
     title: "Portefeuille",
     subtitle: "Capital de démo $100 000 · Saison 04 — performance en temps réel.",
+    connectPrompt: "Connecte le terminal pour charger ton portefeuille réel.",
     tf24H: "24H",
     tf7J: "7J",
     tf30J: "30J",
@@ -63,8 +73,8 @@ const { t } = useI18n({
     kpiTotalEquity: "Équité totale",
     kpiAvailable: "Disponible",
     kpiFreeCash: "cash libre",
-    kpiPnlToday: "PnL aujourd'hui",
-    kpiPnlUnrealized: "PnL non réalisé",
+    kpiPnlToday: "PnL session",
+    kpiInvested: "Investi",
     nPositions: "{n} positions",
     kpiSeasonRank: "Rang saison",
     rankUpToday: "↑ {n} aujourd'hui",
@@ -96,6 +106,71 @@ const { t } = useI18n({
     actDogeMeta: "hier · marché",
   },
 });
+
+/* ---- Données réelles du compte de session ---- */
+const REFERENCE_CCY = "RLUSD";
+const portfolio = ref<Portfolio | null>(null);
+const activity = ref<readonly Fill[]>([]);
+const rank = ref<number | null>(null);
+const loadError = ref("");
+
+async function loadPortfolio(): Promise<void> {
+  if (!connected.value) {
+    return;
+  }
+  try {
+    await props.client.ensureAccount(userId.value);
+    portfolio.value = await props.client.portfolio(userId.value);
+    activity.value = await props.client.orders(userId.value);
+    const board = await props.client.leaderboard();
+    rank.value = board.find((e) => e.userId === userId.value)?.rank ?? null;
+  } catch (e) {
+    loadError.value = errorMessage(e);
+  }
+}
+
+const equityValue = computed(() => portfolio.value?.equity ?? 0);
+const pnlValue = computed(() => portfolio.value?.pnl ?? 0);
+const freeCash = computed(() => portfolio.value?.balances[REFERENCE_CCY] ?? 0);
+const pnlPct = computed(() => {
+  const start = equityValue.value - pnlValue.value; // capital de départ
+  return start > 0 ? (pnlValue.value / start) * 100 : 0;
+});
+
+/** Avoir valorisé + part d'allocation (sur l'équité totale). */
+interface HoldingRow {
+  currency: string;
+  amount: number;
+  value: number;
+  alloc: number;
+}
+const holdings = computed<HoldingRow[]>(() => {
+  const p = portfolio.value;
+  if (p === null || p.equity <= 0) {
+    return [];
+  }
+  return p.holdings.map((h) => ({
+    currency: h.currency,
+    amount: h.amount,
+    value: h.value,
+    alloc: (h.value / p.equity) * 100,
+  }));
+});
+const positionsCount = computed(
+  () => holdings.value.filter((h) => h.currency !== REFERENCE_CCY).length,
+);
+const investedValue = computed(() =>
+  holdings.value
+    .filter((h) => h.currency !== REFERENCE_CCY)
+    .reduce((a, h) => a + h.value, 0),
+);
+
+function signed(value: number): string {
+  return (value >= 0 ? "+" : "−") + "$" + fmtNum(Math.abs(value));
+}
+
+// Ordres réels les plus récents d'abord (le store les conserve dans l'ordre).
+const recentActivity = computed(() => [...activity.value].reverse().slice(0, 6));
 
 /* ---- timeframe segmenté (défaut 30J) ---- */
 const TIMEFRAMES = computed(() => [
@@ -166,27 +241,28 @@ function onTimeframe(): void {
   });
 }
 
-/* ---- donut de répartition (porté de donut()) ---- */
-const donutMarkup = ref("");
-
-function donut(): void {
-  const total = HOLDINGS.reduce((a, h) => a + h.alloc, 0);
-  let off = 0;
+/* ---- donut de répartition (avoirs réels valorisés) ---- */
+const donutMarkup = computed(() => {
+  const rows = holdings.value;
+  const total = rows.reduce((a, h) => a + h.value, 0);
+  if (total <= 0) {
+    return "";
+  }
   const R = 62;
   const C = 2 * Math.PI * R;
+  let off = 0;
   let svg = "";
-  HOLDINGS.forEach((h, i) => {
-    const frac = h.alloc / total;
-    const len = frac * C;
+  rows.forEach((h, i) => {
+    const len = (h.value / total) * C;
     svg += `<circle cx="75" cy="75" r="${R}" fill="none" stroke="${ALLOC_PALETTE[i % ALLOC_PALETTE.length]}" stroke-width="20" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-off}"/>`;
     off += len;
   });
-  donutMarkup.value = svg;
-}
+  return svg;
+});
 
 onMounted(() => {
   eqCurve();
-  donut();
+  void loadPortfolio();
 });
 </script>
 
@@ -200,19 +276,22 @@ onMounted(() => {
       <SegControl v-model="timeframe" :options="TIMEFRAMES" @update:model-value="onTimeframe" />
     </div>
 
-    <!-- KPIs -->
+    <!-- Invite de connexion si aucune session active -->
+    <div v-if="!connected" class="card connect-note" v-reveal>{{ t("connectPrompt") }}</div>
+
+    <!-- KPIs (compte de session) -->
     <div class="kpis">
-      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiTotalEquity") }}</div><div class="v">$128,940</div><div class="s up">+28.94%</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiAvailable") }}</div><div class="v">$42,180</div><div class="s soft">{{ t("kpiFreeCash") }}</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiPnlToday") }}</div><div class="v up">+$3,412</div><div class="s up">+2.72%</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiPnlUnrealized") }}</div><div class="v up">+$29,367</div><div class="s soft">{{ t("nPositions", { n: 3 }) }}</div></div>
-      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiSeasonRank") }}</div><div class="v">#18</div><div class="s up">{{ t("rankUpToday", { n: 6 }) }}</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiTotalEquity") }}</div><div class="v">${{ fmtNum(equityValue) }}</div><div class="s" :class="pnlPct >= 0 ? 'up' : 'down'">{{ pnlPct >= 0 ? "+" : "" }}{{ pnlPct.toFixed(2) }}%</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiAvailable") }}</div><div class="v">${{ fmtNum(freeCash) }}</div><div class="s soft">{{ t("kpiFreeCash") }}</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiPnlToday") }}</div><div class="v" :class="pnlValue >= 0 ? 'up' : 'down'">{{ signed(pnlValue) }}</div><div class="s" :class="pnlPct >= 0 ? 'up' : 'down'">{{ pnlPct >= 0 ? "+" : "" }}{{ pnlPct.toFixed(2) }}%</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiInvested") }}</div><div class="v">${{ fmtNum(investedValue) }}</div><div class="s soft">{{ t("nPositions", { n: positionsCount }) }}</div></div>
+      <div class="card kpi" v-reveal="60"><div class="l">{{ t("kpiSeasonRank") }}</div><div class="v">{{ rank === null ? "—" : "#" + rank }}</div><div class="s soft">{{ t("tfS04") }}</div></div>
     </div>
 
     <!-- equity + allocation -->
     <div class="grid2">
       <div class="card" v-reveal>
-        <div class="ch-head"><div><div class="t">{{ t("equityCurve") }}</div><div class="big up">$128,940.18</div></div><div class="lab">{{ t("lastNDays", { n: 30 }) }}</div></div>
+        <div class="ch-head"><div><div class="t">{{ t("equityCurve") }}</div><div class="big" :class="pnlValue >= 0 ? 'up' : 'down'">${{ fmtNum(equityValue) }}</div></div><div class="lab">{{ t("lastNDays", { n: 30 }) }}</div></div>
         <div ref="eqEl" class="eqchart" v-reveal>
           <svg viewBox="0 0 760 260" preserveAspectRatio="none" v-html="eqMarkup"></svg>
         </div>
@@ -223,11 +302,11 @@ onMounted(() => {
         <div class="donut-wrap">
           <div class="donut">
             <svg width="150" height="150" viewBox="0 0 150 150" v-html="donutMarkup"></svg>
-            <div class="mid"><b>$86.7K</b><span>{{ t("invested") }}</span></div>
+            <div class="mid"><b>${{ fmtNum(investedValue) }}</b><span>{{ t("invested") }}</span></div>
           </div>
           <div class="leg">
-            <div v-for="(h, i) in HOLDINGS" :key="h.s" class="li">
-              <span class="dot" :style="{ background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></span>{{ h.s }}<span class="pc">{{ h.alloc }}%</span>
+            <div v-for="(h, i) in holdings" :key="h.currency" class="li">
+              <span class="dot" :style="{ background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></span>{{ h.currency }}<span class="pc">{{ h.alloc.toFixed(0) }}%</span>
             </div>
           </div>
         </div>
@@ -239,15 +318,14 @@ onMounted(() => {
       <div class="hh">{{ t("positionsHoldings") }}</div>
       <div class="thead"><div>{{ t("colAsset") }}</div><div>{{ t("colQuantity") }}</div><div>{{ t("colAvgPrice") }}</div><div>{{ t("colValue") }}</div><div>{{ t("colPnl") }}</div><div>{{ t("colAllocation") }}</div></div>
       <div>
-        <div v-for="(h, i) in HOLDINGS" :key="h.s" class="trow">
-          <div class="as"><span class="ic" :style="{ background: h.col }">{{ h.s.slice(0, 3) }}</span><span><b>{{ h.s }}</b><span>{{ h.full }}</span></span></div>
-          <div>{{ h.qty }}</div>
-          <div>{{ h.avg }}</div>
-          <div>${{ fmtNum(h.val) }}</div>
-          <div :class="h.pnl >= 0 ? 'up' : 'down'">
-            {{ h.pnl >= 0 ? "+" : "−" }}${{ fmtNum(Math.abs(h.pnl)) }}<br /><span style="font-size: 11px">{{ h.pnl >= 0 ? "+" : "" }}{{ h.pnlp }}%</span>
-          </div>
-          <div>{{ h.alloc }}%<div class="allocbar"><i :style="{ width: h.alloc * 2 + '%', background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></i></div></div>
+        <div v-if="holdings.length === 0" class="trow empty">—</div>
+        <div v-for="(h, i) in holdings" :key="h.currency" class="trow">
+          <div class="as"><span class="ic" :style="{ background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }">{{ h.currency.slice(0, 3) }}</span><span><b>{{ h.currency }}</b><span>spot</span></span></div>
+          <div>{{ fmtNum(h.amount) }}</div>
+          <div class="soft">—</div>
+          <div>${{ fmtNum(h.value) }}</div>
+          <div class="soft">—</div>
+          <div>{{ h.alloc.toFixed(0) }}%<div class="allocbar"><i :style="{ width: Math.min(h.alloc, 100) + '%', background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></i></div></div>
         </div>
       </div>
     </div>
@@ -276,11 +354,12 @@ onMounted(() => {
 
       <div class="card act" v-reveal>
         <div class="hh">{{ t("recentActivity") }}</div>
-        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>SOL / USDC</b><span>{{ t("actSolMeta") }}</span></div><div class="amt">+220 SOL<span>$40,524</span></div></div>
-        <div class="arow"><span class="tag s">{{ t("tagSell") }}</span><div class="mn"><b>ARB / USDC</b><span>{{ t("actArbMeta") }}</span></div><div class="amt">−4,800 ARB<span>$5,001</span></div></div>
-        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>BTC / USDC</b><span>{{ t("actBtcMeta") }}</span></div><div class="amt">+0.22 BTC<span>$14,830</span></div></div>
-        <div class="arow"><span class="tag s">{{ t("tagSell") }}</span><div class="mn"><b>ETH / USDC</b><span>{{ t("actEthMeta") }}</span></div><div class="amt">−6 ETH<span>$19,128</span></div></div>
-        <div class="arow"><span class="tag b">{{ t("tagBuy") }}</span><div class="mn"><b>DOGE / USDC</b><span>{{ t("actDogeMeta") }}</span></div><div class="amt">+62k DOGE<span>$9,796</span></div></div>
+        <div v-if="recentActivity.length === 0" class="arow soft">—</div>
+        <div v-for="(f, i) in recentActivity" :key="i" class="arow">
+          <span class="tag" :class="f.side === 'buy' ? 'b' : 's'">{{ f.side === "buy" ? t("tagBuy") : t("tagSell") }}</span>
+          <div class="mn"><b>{{ f.pair.base }} / {{ f.pair.quote }}</b><span>market</span></div>
+          <div class="amt">{{ f.side === "buy" ? "+" : "−" }}{{ fmtNum(f.amount) }} {{ f.pair.base }}<span>${{ fmtNum(f.quoteAmount) }}</span></div>
+        </div>
       </div>
     </div>
   </div>

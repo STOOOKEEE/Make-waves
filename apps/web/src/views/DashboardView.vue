@@ -1,11 +1,13 @@
 <script setup lang="ts">
 // Terminal de trading — porté depuis design_site/dashboard.html.
 // Bento 3 colonnes : watchlist, chart + positions, ticket + carnet d'ordres.
-import { onMounted, onUnmounted, ref, watch } from "vue";
-import type { TideClient } from "@tide/client";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import type { Candle, TideClient } from "@tide/client";
 import type { MarketOrderInput } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
+import { useWallet } from "../composables/useWallet";
+import { useSession } from "../composables/useSession";
 import { useI18n } from "../i18n/useI18n";
 
 const props = defineProps<{ client: TideClient }>();
@@ -14,14 +16,12 @@ const { t } = useI18n({
   en: {
     markets: "Markets",
     searchPlaceholder: "Search…",
+    noMarket: "No market",
     high24h: "24h High",
     low24h: "24h Low",
     volume24h: "24h Volume",
-    funding8h: "8h Funding",
     candles: "Candles",
     line: "Line",
-    tf1D: "1D",
-    tf1W: "1W",
     positionsTab: "Positions",
     openOrders: "Open orders",
     history: "History",
@@ -33,33 +33,35 @@ const { t } = useI18n({
     closed: "Closed",
     buy: "Buy",
     sell: "Sell",
-    orderLimit: "Limit",
-    limitPrice: "Limit price",
     amount: "Amount",
     available: "Avail.",
-    leverage: "Leverage",
     estQty: "Est. quantity",
-    exposure: "Exposure ({lev}×)",
     estFees: "Est. fees",
-    estLiq: "Est. liquidation",
     buyAsset: "Buy {asset}",
     sellAsset: "Sell {asset}",
     orderSent: "✓ Paper order sent",
     orderBook: "Order book",
     price: "Price",
     total: "Total",
+    modePaper: "Paper",
+    modeLive: "Live",
+    liveXrpOnly: "Live: XRP only",
+    liveNotConfigured: "Live not configured",
+    virtualBalance: "Virtual balance",
+    realBadge: "REAL FUNDS",
+    connectToTrade: "Connect wallet",
+    paperHint: "Simulated — no real funds",
+    liveHint: "Real swap on XRPL, signed in your wallet",
   },
   fr: {
     markets: "Marchés",
     searchPlaceholder: "Rechercher…",
+    noMarket: "Aucun marché",
     high24h: "Haut 24h",
     low24h: "Bas 24h",
     volume24h: "Volume 24h",
-    funding8h: "Funding 8h",
     candles: "Chandeliers",
     line: "Ligne",
-    tf1D: "1J",
-    tf1W: "1S",
     positionsTab: "Positions",
     openOrders: "Ordres ouverts",
     history: "Historique",
@@ -71,41 +73,160 @@ const { t } = useI18n({
     closed: "Fermée",
     buy: "Acheter",
     sell: "Vendre",
-    orderLimit: "Limite",
-    limitPrice: "Prix limite",
     amount: "Montant",
     available: "Dispo.",
-    leverage: "Levier",
     estQty: "Quantité estimée",
-    exposure: "Exposition ({lev}×)",
     estFees: "Frais estimés",
-    estLiq: "Liquidation approx.",
     buyAsset: "Acheter {asset}",
     sellAsset: "Vendre {asset}",
     orderSent: "✓ Ordre simulé envoyé",
     orderBook: "Carnet d'ordres",
     price: "Prix",
     total: "Total",
+    modePaper: "Paper",
+    modeLive: "Live",
+    liveXrpOnly: "Live : XRP uniquement",
+    liveNotConfigured: "Live non configuré",
+    virtualBalance: "Solde virtuel",
+    realBadge: "ARGENT RÉEL",
+    connectToTrade: "Connecter le wallet",
+    paperHint: "Simulé — aucun fonds réel",
+    liveHint: "Swap réel sur XRPL, signé dans ton wallet",
   },
 });
 
 // ---------- backend paper (best-effort, ne bloque jamais l'UX) ----------
 const paper = usePaper(props.client);
+const wallet = useWallet(props.client);
+const session = useSession();
+
+// Mode d'exécution : Paper (simulé) ou Live (swap réel XRPL signé Xaman/GemWallet).
+const mode = ref<"paper" | "live">("paper");
+
+// Mode Live : seul XRP est un actif XRPL réel, tradé contre le quote configuré
+// côté serveur (RLUSD). Tolérance de slippage du swap (le serveur borne l'ordre).
+const LIVE_SLIPPAGE = 0.01; // 1 %
+// Symbole du quote Live exposé par le serveur (null ⇒ Live non configuré). Le
+// front n'a plus besoin de l'issuer : tout l'OfferCreate est calculé côté serveur.
+const liveQuoteSymbol = ref<string | null>(null);
+
+function liveConfigured(): boolean {
+  return liveQuoteSymbol.value !== null;
+}
+
+function liveTradable(): boolean {
+  return cur.value.s === "XRP" && liveConfigured();
+}
+
+// Bascule de mode. Passer en Live SANS wallet connecté ouvre directement la
+// connexion (Xaman/GemWallet) puis bascule une fois résolue — jamais de cul-de-sac.
+const pendingLive = ref(false);
+function setMode(m: "paper" | "live"): void {
+  if (m === "paper") {
+    mode.value = "paper";
+    pendingLive.value = false;
+    return;
+  }
+  if (!liveConfigured()) {
+    return; // Live non configuré côté serveur → segment inerte (cf. template)
+  }
+  if (session.walletConnected.value) {
+    mode.value = "live";
+  } else {
+    pendingLive.value = true;
+    wallet.connect();
+  }
+}
+// La connexion réussie (depuis la barre OU le header) confirme l'intention Live.
+watch(session.walletConnected, (connectedNow) => {
+  if (connectedNow && pendingLive.value) {
+    mode.value = "live";
+    pendingLive.value = false;
+  }
+});
+
+/** Adresse XRPL raccourcie pour l'affichage (rXXXX…abcd). */
+function shorten(addr: string): string {
+  return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
+}
+/** Nom lisible du wallet connecté. */
+function walletKind(): string {
+  return session.walletType.value === "gem" ? "GemWallet" : "Xaman";
+}
 
 // ---------- état réactif (équivalent du <script> source) ----------
+// Devise de référence du moteur paper (les comptes sont fondés en RLUSD).
+const REFERENCE_QUOTE = "RLUSD";
+// Identité de démo si le terminal est utilisé sans connexion explicite.
+const DEMO_USER = "pilote";
+
+// Watchlist réactive : part du catalogue mock, enrichie des prix réels du backend.
+const markets = ref<Market[]>([...MARKETS]);
 const [FIRST_MARKET] = MARKETS;
 if (!FIRST_MARKET) {
   throw new Error("MARKETS ne doit jamais être vide");
 }
 const cur = ref<Market>(FIRST_MARKET);
-const lev = ref(3);
 const side = ref<"buy" | "sell">("buy");
 const amount = ref(5000);
 
-const AVAIL = 42180;
+// Recherche de la watchlist : filtre par symbole ou nom (insensible à la casse).
+const search = ref("");
+const filteredMarkets = computed(() => {
+  const q = search.value.trim().toLowerCase();
+  if (q === "") {
+    return markets.value;
+  }
+  return markets.value.filter(
+    (m) => m.s.toLowerCase().includes(q) || m.full.toLowerCase().includes(q),
+  );
+});
 
-// Type d'ordre : 0 = Marché, 1 = Limite, 2 = Stop.
-const otypeIdx = ref(0);
+// Timeframe = INTERVALLE de bougie (vue trading) → notation Binance.
+const TF_INTERVAL: Readonly<Record<string, string>> = {
+  "5m": "5m",
+  "15m": "15m",
+  "1H": "1h",
+  "4H": "4h",
+  "1D": "1d",
+};
+// Volatilité du repli synthétique (si Binance indisponible) par intervalle.
+const TF_VOL: Readonly<Record<string, number>> = {
+  "5m": 0.25,
+  "15m": 0.35,
+  "1H": 0.5,
+  "4H": 0.7,
+  "1D": 1,
+};
+// Durée d'une bougie par intervalle (ms) — horodate le repli synthétique pour que
+// l'axe des dates s'affiche même quand Binance ne cote pas l'actif (ex. HYPE).
+const MINUTE_MS = 60_000;
+const TF_MS: Readonly<Record<string, number>> = {
+  "5m": 5 * MINUTE_MS,
+  "15m": 15 * MINUTE_MS,
+  "1H": 60 * MINUTE_MS,
+  "4H": 240 * MINUTE_MS,
+  "1D": 1440 * MINUTE_MS,
+};
+const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
+const tf = ref<string>("1D");
+const chartType = ref<"candles" | "line">("candles");
+
+// Vraies bougies OHLC (CoinGecko via backend) ; vide → repli synthétique.
+const realCandles = ref<Candle[]>([]);
+
+// Stats 24h FIXES (variation / haut / bas) — indépendantes de la taille de bougie
+// du chart. Calculées sur les 24 dernières bougies 1h (= 24h), pas sur la fenêtre
+// affichée (sinon elles varieraient d'un timeframe à l'autre).
+const stats24h = ref<{ change: number; high: number; low: number } | null>(null);
+const stat24High = computed(() => stats24h.value?.high ?? cur.value.hi);
+const stat24Low = computed(() => stats24h.value?.low ?? cur.value.lo);
+const stat24Change = computed(() => stats24h.value?.change ?? cur.value.c);
+
+// Prix réels du feed off-chain (devise → prix). Détermine ce que le backend peut
+// réellement coter : seuls ces actifs donnent lieu à un ordre paper effectif.
+const livePrices = ref<Record<string, number>>({});
+
 // Index du raccourci % actif (-1 = aucun).
 const pctIdx = ref(-1);
 
@@ -128,6 +249,15 @@ function spark(up: boolean): string {
   return `<svg viewBox="0 0 60 22" preserveAspectRatio="none" style="width:56px;height:22px"><path d="${d}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="1.6"/></svg>`;
 }
 
+/** Hash d'une chaîne en entier (seed déterministe distinct par marché+timeframe). */
+function hashSeed(text: string): number {
+  let h = 7;
+  for (let i = 0; i < text.length; i++) {
+    h = (h * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return h;
+}
+
 /** PRNG déterministe (LCG) seedé — chart/carnet stables par marché. */
 function rng(seed: number): () => number {
   let a = seed >>> 0;
@@ -137,36 +267,82 @@ function rng(seed: number): () => number {
   };
 }
 
-// ---------- chart (port exact de renderChart) ----------
+/** Libellé d'axe temporel : heure (intraday) ou date selon l'intervalle. */
+function fmtAxisDate(ts: number): string {
+  const d = new Date(ts);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const intraday =
+    tf.value === "5m" || tf.value === "15m" || tf.value === "1H" || tf.value === "4H";
+  if (intraday) {
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return `${dd}/${mo} ${hh}:${mi}`;
+  }
+  return `${dd}/${mo}`;
+}
+
+interface ChartCandle {
+  o: number;
+  c: number;
+  hi: number;
+  lo: number;
+  t?: number;
+}
+
+/** Bougies à tracer : vraies (Binance) si dispo, sinon repli synthétique. */
+function chartCandles(): ChartCandle[] {
+  const real = realCandles.value;
+  if (real.length > 0) {
+    return real.map((k) => ({ o: k.o, c: k.c, hi: k.h, lo: k.l, t: k.t }));
+  }
+  // Repli (Binance indisponible) : bougies seedées autour du prix courant,
+  // horodatées (pas de l'intervalle, finissant « maintenant ») → axe des dates OK.
+  const m = cur.value;
+  const vol = TF_VOL[tf.value] ?? 1;
+  const r = rng(hashSeed(m.s + "|" + tf.value));
+  const count = 58;
+  const step = TF_MS[tf.value] ?? 60 * MINUTE_MS;
+  const now = Date.now();
+  let price = m.p * (1 - 0.06 * vol);
+  const out: ChartCandle[] = [];
+  for (let i = 0; i < count; i++) {
+    const drift = ((m.p - price) / (count - i)) * 0.6;
+    const o = price;
+    const ch = (r() - 0.45) * m.p * 0.018 * vol + drift;
+    const c = o + ch;
+    const hi = Math.max(o, c) + r() * m.p * 0.01 * vol;
+    const lo = Math.min(o, c) - r() * m.p * 0.01 * vol;
+    out.push({ o, c, hi, lo, t: now - (count - 1 - i) * step });
+    price = c;
+  }
+  const last = out[count - 1];
+  if (last !== undefined) {
+    last.c = m.p;
+  }
+  return out;
+}
+
+// ---------- chart ----------
 function renderChart(): void {
   const W = 820;
   const H = 400;
   const pad = 46;
-  const n = 58;
   const m = cur.value;
-  const r = rng(m.s.split("").reduce((a, c) => a + c.charCodeAt(0), 7));
-  let price = m.lo * 0.98;
-  const candles: { o: number; c: number; hi: number; lo: number }[] = [];
-  for (let i = 0; i < n; i++) {
-    const drift = ((m.p - price) / (n - i)) * 0.6;
-    const o = price;
-    const ch = (r() - 0.45) * m.p * 0.018 + drift;
-    const c = o + ch;
-    const hi = Math.max(o, c) + r() * m.p * 0.01;
-    const lo = Math.min(o, c) - r() * m.p * 0.01;
-    candles.push({ o, c, hi, lo });
-    price = c;
-  }
-  const lastCandle = candles[n - 1];
-  if (lastCandle) {
-    lastCandle.c = m.p;
-  }
+  const candles = chartCandles();
+  const n = candles.length;
   let mx = -1e9;
   let mn = 1e9;
   candles.forEach((k) => {
     mx = Math.max(mx, k.hi);
     mn = Math.min(mn, k.lo);
   });
+  // Marge verticale (8 %) autour de la plage : sinon les bougies collent aux bords
+  // et le tracé paraît « trop zoomé ». Garde-fou si la plage est nulle (prix plats).
+  const range = mx - mn || mx * 0.02 || 1;
+  const padY = range * 0.08;
+  mn -= padY;
+  mx += padY;
   const Y = (v: number): number => pad + ((mx - v) / (mx - mn)) * (H - pad * 2);
   const cw = (W - pad - 12) / n;
   const bw = cw * 0.62;
@@ -176,18 +352,38 @@ function renderChart(): void {
     const v = mx - ((mx - mn) * i) / 4;
     g += `<line class="gridln" x1="0" y1="${y}" x2="${W - pad}" y2="${y}"/><text class="axis" x="${W - pad + 6}" y="${y + 3}">${fmt(v)}</text>`;
   }
-  candles.forEach((k, i) => {
-    const x = 8 + i * cw + cw / 2;
-    const up = k.c >= k.o;
-    const col = up ? "var(--up)" : "var(--down)";
-    const yb = Y(Math.max(k.o, k.c));
-    const yt = Y(Math.min(k.o, k.c));
-    g += `<line class="candle" x1="${x}" y1="${Y(k.hi)}" x2="${x}" y2="${Y(k.lo)}" stroke="${col}" stroke-width="1"/>`;
-    g += `<rect class="candle" x="${x - bw / 2}" y="${yb}" width="${bw}" height="${Math.max(1, yt - yb)}" fill="${col}" rx="1"/>`;
-  });
+  const cx = (i: number): number => 8 + i * cw + cw / 2;
+  if (chartType.value === "line") {
+    // Vue en ligne : polyligne des clôtures + aire dégradée.
+    const d = candles.map((k, i) => `${cx(i)},${Y(k.c)}`).join(" L");
+    g += `<defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#BFF6CE" stop-opacity=".22"/><stop offset="100%" stop-color="#BFF6CE" stop-opacity="0"/></linearGradient></defs>`;
+    g += `<path fill="url(#lg)" d="M${d} L${cx(n - 1)},${H} L${cx(0)},${H} Z"/>`;
+    g += `<path fill="none" stroke="#BFF6CE" stroke-width="2" d="M${d}"/>`;
+  } else {
+    candles.forEach((k, i) => {
+      const x = cx(i);
+      const up = k.c >= k.o;
+      const col = up ? "var(--up)" : "var(--down)";
+      const yb = Y(Math.max(k.o, k.c));
+      const yt = Y(Math.min(k.o, k.c));
+      g += `<line class="candle" x1="${x}" y1="${Y(k.hi)}" x2="${x}" y2="${Y(k.lo)}" stroke="${col}" stroke-width="1"/>`;
+      g += `<rect class="candle" x="${x - bw / 2}" y="${yb}" width="${bw}" height="${Math.max(1, yt - yb)}" fill="${col}" rx="1"/>`;
+    });
+  }
   const ly = Y(m.p);
   g += `<line x1="0" y1="${ly}" x2="${W - pad}" y2="${ly}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4 4" opacity=".8"/>`;
   g += `<rect x="${W - pad}" y="${ly - 9}" width="${pad}" height="18" fill="var(--blue)" rx="3"/><text class="axis" x="${W - pad + 5}" y="${ly + 3}" fill="#fff" style="font-weight:700">${fmt(m.p)}</text>`;
+  // Axe des dates en bas (bougies réelles horodatées).
+  const labelCount = 5;
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.round((i / (labelCount - 1)) * (n - 1));
+    const k = candles[idx];
+    if (k === undefined || k.t === undefined) {
+      continue;
+    }
+    const anchor = i === 0 ? "start" : i === labelCount - 1 ? "end" : "middle";
+    g += `<text class="axis" x="${cx(idx)}" y="${H - 8}" text-anchor="${anchor}">${fmtAxisDate(k.t)}</text>`;
+  }
   chartHtml.value = g;
   // Stagger du fade-in après que le DOM ait reçu le innerHTML.
   requestAnimationFrame(() => {
@@ -235,45 +431,77 @@ function selectMarket(m: Market): void {
   cur.value = m;
 }
 
-// Re-render chart + carnet quand le marché change.
-watch(cur, () => {
+// ---------- timeframe du chart ----------
+const tfOptions = TF_LIST.map((v) => ({ v, l: v }));
+function setTf(value: string): void {
+  tf.value = value;
+  void loadHistory();
+}
+function setChartType(value: "candles" | "line"): void {
+  chartType.value = value;
   renderChart();
+}
+
+// Charge les vraies bougies (Binance) du marché/intervalle courant puis re-render.
+async function loadHistory(): Promise<void> {
+  const symbol = cur.value.s;
+  const interval = TF_INTERVAL[tf.value] ?? "1h";
+  try {
+    realCandles.value = await props.client.history(symbol, interval, 120);
+  } catch {
+    realCandles.value = []; // Binance indisponible → repli synthétique
+  }
+  renderChart();
+}
+
+// Stats 24h du marché courant (24 bougies 1h) — indépendantes du timeframe du chart.
+async function loadStats24h(): Promise<void> {
+  try {
+    const candles = await props.client.history(cur.value.s, "1h", 24);
+    const first = candles[0];
+    const last = candles[candles.length - 1];
+    if (first === undefined || last === undefined || first.o <= 0) {
+      stats24h.value = null;
+      return;
+    }
+    stats24h.value = {
+      high: Math.max(...candles.map((k) => k.h)),
+      low: Math.min(...candles.map((k) => k.l)),
+      change: ((last.c - first.o) / first.o) * 100,
+    };
+  } catch {
+    stats24h.value = null;
+  }
+}
+
+// Recharge l'historique + les stats 24h + re-render le carnet quand le marché change.
+watch(cur, () => {
+  void loadHistory();
+  void loadStats24h();
   renderBook();
 });
 
-// ---------- ticket : valeurs dérivées (port de updateTicket) ----------
+// ---------- ticket : valeurs dérivées (spot pur, sans levier) ----------
 function estimatedQty(): number {
-  return (amount.value * lev.value) / cur.value.p;
+  return amount.value / cur.value.p;
 }
 function estQtyLabel(): string {
   return estimatedQty().toFixed(cur.value.p < 1 ? 0 : 2) + " " + cur.value.s;
 }
-function exposureLabel(): string {
-  return "$" + fmt(amount.value * lev.value);
-}
-function liqLabel(): string {
-  const m = cur.value;
-  const liq = side.value === "buy" ? m.p * (1 - 0.9 / lev.value) : m.p * (1 + 0.9 / lev.value);
-  return "$" + fmt(liq);
+/** Cash disponible réel du compte (devise de référence). */
+function availLabel(): string {
+  return "$" + fmt(paper.balances.value?.[REFERENCE_QUOTE] ?? 0);
 }
 
 // ---------- handlers ticket ----------
 function setSide(s: "buy" | "sell"): void {
   side.value = s;
 }
-function setOtype(i: number): void {
-  otypeIdx.value = i;
-}
-function levUp(): void {
-  lev.value = Math.min(20, lev.value + 1);
-}
-function levDown(): void {
-  lev.value = Math.max(1, lev.value - 1);
-}
 function setPct(i: number): void {
   pctIdx.value = i;
   const pct = [25, 50, 75, 100][i] ?? 100;
-  amount.value = Math.round((AVAIL * pct) / 100);
+  const cash = paper.balances.value?.[REFERENCE_QUOTE] ?? 0;
+  amount.value = Math.round((cash * pct) / 100);
 }
 function onAmountInput(e: Event): void {
   const raw = (e.target as HTMLInputElement).value.replace(/[^0-9.]/g, "");
@@ -286,7 +514,7 @@ function amountDisplay(): string {
   return amount.value.toLocaleString("en-US");
 }
 
-// ---------- positions (lignes statiques) ----------
+// ---------- positions = avoirs réels du compte (spot) ----------
 interface PosRow {
   pair: string;
   sideCls: "l" | "s";
@@ -297,32 +525,75 @@ interface PosRow {
   pnlCls: "up" | "down";
   closed: boolean;
 }
-const positions = ref<PosRow[]>([
-  { pair: "SOL/USDC", sideCls: "l", sideLabel: "LONG 3×", size: "820", px: "156.40 → 184.20", pnl: "+$22,796", pnlCls: "up", closed: false },
-  { pair: "BTC/USDC", sideCls: "l", sideLabel: "LONG 2×", size: "0.62", px: "59,900 → 67,412", pnl: "+$9,315", pnlCls: "up", closed: false },
-  { pair: "ETH/USDC", sideCls: "s", sideLabel: "SHORT 2×", size: "14", px: "3,090 → 3,188", pnl: "−$2,744", pnlCls: "down", closed: false },
-]);
-function closePos(row: PosRow): void {
-  row.closed = true;
+const positions = computed<PosRow[]>(() => {
+  const bal = paper.balances.value;
+  if (bal === null) {
+    return [];
+  }
+  return Object.entries(bal)
+    .filter(([ccy, amt]) => ccy !== REFERENCE_QUOTE && amt > 0)
+    .map(([ccy, amt]) => {
+      const price = livePrices.value[ccy];
+      return {
+        pair: `${ccy}/${REFERENCE_QUOTE}`,
+        sideCls: "l",
+        sideLabel: "SPOT",
+        size: fmt(amt),
+        px: price !== undefined ? fmt(price) : "—",
+        // Pas de prix d'entrée stocké (moteur sans cost-basis) → valeur de marché.
+        pnl: price !== undefined ? "$" + fmt(amt * price) : "—",
+        pnlCls: "up",
+        closed: false,
+      };
+    });
+});
+
+/** Ferme une position = vend tout l'avoir de l'actif (ordre paper réel). */
+async function closePos(row: PosRow): Promise<void> {
+  const [ccy] = row.pair.split("/");
+  const amt = ccy !== undefined ? paper.balances.value?.[ccy] : undefined;
+  const price = ccy !== undefined ? livePrices.value[ccy] : undefined;
+  if (ccy !== undefined && amt !== undefined && amt > 0 && price !== undefined) {
+    await paper.placeOrder({
+      pair: { base: ccy, quote: REFERENCE_QUOTE },
+      side: "sell",
+      amount: amt,
+      price,
+    });
+  }
 }
 
 // ---------- bouton placer (UX optimiste + ordre paper réel best-effort) ----------
 const placeOverride = ref("");
 function placeLabel(): string {
   if (placeOverride.value) return placeOverride.value;
+  if (mode.value === "live") {
+    if (!liveConfigured()) return t("liveNotConfigured");
+    if (cur.value.s !== "XRP") return t("liveXrpOnly");
+    return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s }) + " · Live";
+  }
   return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s });
 }
 async function placeOrderBackground(): Promise<void> {
   // Ordre paper réel en arrière-plan ; les erreurs sont avalées par le composable.
   try {
+    // On n'exécute un ordre réel que pour un actif que le backend sait coter :
+    // un actif non coté serait détenu sans prix et casserait le calcul d'équité.
+    if (livePrices.value[cur.value.s] === undefined) {
+      return;
+    }
     if (!paper.connected.value) {
-      paper.userId.value = "0xPilote.eth";
+      if (paper.userId.value.trim() === "") {
+        paper.userId.value = DEMO_USER;
+      }
       await paper.connect();
     }
+    // Spot pur : on dépense `amount` en devise de référence ; le moteur paper
+    // n'a pas de marge.
     const order: MarketOrderInput = {
-      pair: { base: cur.value.s, quote: "USDC" },
+      pair: { base: cur.value.s, quote: REFERENCE_QUOTE },
       side: side.value,
-      amount: estimatedQty(),
+      amount: amount.value / cur.value.p,
       price: cur.value.p,
     };
     await paper.placeOrder(order);
@@ -330,7 +601,22 @@ async function placeOrderBackground(): Promise<void> {
     // API indisponible : sans effet sur l'UX.
   }
 }
+// Swap Live (réel) : envoie l'INTENTION au serveur (base/side/quantité/slippage).
+// Le serveur calcule l'OfferCreate borné (best execution + slippage) et le fait
+// signer via Xaman ou GemWallet — le front ne construit aucun montant.
+async function placeLiveOrder(): Promise<void> {
+  if (!liveTradable()) {
+    return;
+  }
+  const amountBase = amount.value / cur.value.p; // quantité de base (XRP)
+  await wallet.signLiveOffer(cur.value.s, side.value, amountBase, LIVE_SLIPPAGE);
+}
+
 function onPlace(): void {
+  if (mode.value === "live") {
+    void placeLiveOrder();
+    return;
+  }
   placeOverride.value = t("orderSent");
   setTimeout(() => {
     placeOverride.value = "";
@@ -338,11 +624,63 @@ function onPlace(): void {
   void placeOrderBackground();
 }
 
+// ---------- marchés réels du backend (top 250 CoinGecko) ----------
+let marketsLoaded = false;
+async function loadMarkets(): Promise<void> {
+  try {
+    const rows = await props.client.markets();
+    if (rows.length === 0) {
+      return;
+    }
+    // Watchlist dynamique : symbole, nom, prix et %24h réels. hi/lo dérivés du
+    // prix (le chart/échelle a besoin de bornes ; l'amplitude exacte est décor).
+    markets.value = rows.map((r) => ({
+      s: r.symbol,
+      full: r.name,
+      pair: `${r.symbol} / ${REFERENCE_QUOTE}`,
+      p: r.price,
+      c: r.change24h,
+      hi: r.price * 1.04,
+      lo: r.price * 0.96,
+    }));
+    // Prix par symbole : gating des ordres Paper + valorisation (tous cotés).
+    livePrices.value = Object.fromEntries(rows.map((r) => [r.symbol, r.price]));
+    // Sélection : XRP par défaut au 1er chargement (actif Live) ; ensuite on
+    // conserve le marché choisi par l'utilisateur s'il existe toujours.
+    const keep = markets.value.find((m) => m.s === cur.value.s);
+    const xrp = markets.value.find((m) => m.s === "XRP");
+    const [first] = markets.value;
+    cur.value = (marketsLoaded ? keep ?? xrp : xrp ?? keep) ?? first ?? cur.value;
+    marketsLoaded = true;
+  } catch {
+    // Feed indisponible : on conserve la watchlist mock (dégradation propre).
+  }
+}
+
+// Config Live : récupère le symbole du quote (présent ⇔ swap réel activable).
+async function loadLiveConfig(): Promise<void> {
+  try {
+    liveQuoteSymbol.value = (await props.client.config()).quoteSymbol;
+  } catch {
+    liveQuoteSymbol.value = null; // serveur indisponible → Live désactivé proprement
+  }
+}
+
+// Init : prix réels puis connexion (auto-démo si aucune session) → balances peuplés.
+async function initDashboard(): Promise<void> {
+  await Promise.all([loadMarkets(), loadLiveConfig()]);
+  if (paper.userId.value.trim() === "") {
+    paper.userId.value = DEMO_USER;
+  }
+  await paper.connect();
+}
+
 // ---------- cycle de vie ----------
 onMounted(() => {
   renderChart();
   renderBook();
   window.addEventListener("resize", renderChart);
+  void initDashboard();
 });
 onUnmounted(() => {
   window.removeEventListener("resize", renderChart);
@@ -350,14 +688,59 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="main">
+  <div class="main" :class="{ live: mode === 'live' }">
+    <!-- BARRE DE MODE : passage Paper ↔ Live (argent réel), contexte du compte -->
+    <div class="modebar" :class="{ live: mode === 'live' }">
+      <div class="modeseg">
+        <button
+          type="button"
+          :class="{ on: mode === 'paper' }"
+          :title="t('paperHint')"
+          @click="setMode('paper')"
+        >
+          {{ t('modePaper') }}
+        </button>
+        <button
+          type="button"
+          class="livebtn"
+          :class="{ on: mode === 'live' }"
+          :disabled="!liveConfigured()"
+          :title="liveConfigured() ? t('liveHint') : t('liveNotConfigured')"
+          @click="setMode('live')"
+        >
+          {{ t('modeLive') }}
+        </button>
+      </div>
+
+      <div class="modectx">
+        <template v-if="mode === 'live'">
+          <span class="badge">⚡ {{ t('realBadge') }}</span>
+          <button v-if="session.walletConnected.value" class="wchip" @click="session.disconnectWallet()">
+            <span class="dot"></span>{{ shorten(session.liveAddress.value) }}
+            <span class="via">· {{ walletKind() }}</span>
+          </button>
+          <button v-else class="wchip warn" @click="wallet.connect()">
+            <span class="dot"></span>{{ t('connectToTrade') }}
+          </button>
+        </template>
+        <template v-else>
+          <span class="ctxlabel">{{ t('virtualBalance') }}</span>
+          <span class="ctxval">{{ availLabel() }}</span>
+        </template>
+      </div>
+    </div>
+
+    <div class="deck">
     <!-- WATCHLIST -->
     <aside class="card watch">
       <div class="wt-head"><span class="t">{{ t('markets') }}</span><span class="lab">24h</span></div>
-      <div class="srch"><span class="soft">⌕</span><input :placeholder="t('searchPlaceholder')" /></div>
+      <div class="srch">
+        <span class="soft">⌕</span>
+        <input v-model="search" :placeholder="t('searchPlaceholder')" />
+      </div>
       <div class="wl-scroll">
         <div
-          v-for="m in MARKETS"
+          v-for="m in filteredMarkets"
           :key="m.s"
           class="wrow"
           :class="{ on: m.s === cur.s }"
@@ -370,6 +753,7 @@ onUnmounted(() => {
             <span class="y" :class="m.c >= 0 ? 'up' : 'down'">{{ m.c >= 0 ? "+" : "" }}{{ m.c }}%</span>
           </div>
         </div>
+        <div v-if="filteredMarkets.length === 0" class="wl-empty">{{ t('noMarket') }}</div>
       </div>
     </aside>
 
@@ -384,22 +768,26 @@ onUnmounted(() => {
           </div>
           <div class="bigprice">
             <div class="p">${{ fmt(cur.p) }}</div>
-            <div class="c" :class="cur.c >= 0 ? 'up' : 'down'">{{ cur.c >= 0 ? "+" : "" }}{{ cur.c }}% (24h)</div>
+            <div class="c" :class="stat24Change >= 0 ? 'up' : 'down'">{{ stat24Change >= 0 ? "+" : "" }}{{ stat24Change.toFixed(2) }}% (24h)</div>
           </div>
-          <div class="scell"><div class="l">{{ t('high24h') }}</div><div class="v">${{ fmt(cur.hi) }}</div></div>
-          <div class="scell"><div class="l">{{ t('low24h') }}</div><div class="v">${{ fmt(cur.lo) }}</div></div>
+          <div class="scell"><div class="l">{{ t('high24h') }}</div><div class="v">${{ fmt(stat24High) }}</div></div>
+          <div class="scell"><div class="l">{{ t('low24h') }}</div><div class="v">${{ fmt(stat24Low) }}</div></div>
           <div class="scell"><div class="l">{{ t('volume24h') }}</div><div class="v">$2.81B</div></div>
-          <div class="scell"><div class="l">{{ t('funding8h') }}</div><div class="v up">+0.011%</div></div>
         </div>
         <div class="chart-bar">
           <div class="tf">
-            <button>15m</button><button>1H</button><button>4H</button><button class="on">{{ t('tf1D') }}</button><button>{{ t('tf1W') }}</button>
+            <button
+              v-for="o in tfOptions"
+              :key="o.v"
+              :class="{ on: tf === o.v }"
+              @click="setTf(o.v)"
+            >{{ o.l }}</button>
           </div>
           <div class="ct-type">
-            <button class="on" :title="t('candles')">
+            <button :class="{ on: chartType === 'candles' }" :title="t('candles')" @click="setChartType('candles')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="6" width="3" height="12" rx="1" /><rect x="6" y="3" width="1" height="18" /><rect x="16" y="9" width="3" height="9" rx="1" /><rect x="17" y="5" width="1" height="16" /></svg>
             </button>
-            <button :title="t('line')">
+            <button :class="{ on: chartType === 'line' }" :title="t('line')" @click="setChartType('line')">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 17l5-6 4 3 8-9" /></svg>
             </button>
           </div>
@@ -411,8 +799,8 @@ onUnmounted(() => {
 
       <div class="card pos">
         <div class="pos-tabs">
-          <button class="on">{{ t('positionsTab') }} <span class="cnt">3</span></button>
-          <button>{{ t('openOrders') }} <span class="cnt">1</span></button>
+          <button class="on">{{ t('positionsTab') }} <span class="cnt">{{ positions.length }}</span></button>
+          <button>{{ t('openOrders') }} <span class="cnt">0</span></button>
           <button>{{ t('history') }}</button>
         </div>
         <div class="ptable">
@@ -447,19 +835,10 @@ onUnmounted(() => {
           <button class="buy" :class="{ on: side === 'buy' }" @click="setSide('buy')">{{ t('buy') }}</button>
           <button class="sell" :class="{ on: side === 'sell' }" @click="setSide('sell')">{{ t('sell') }}</button>
         </div>
-        <div class="otype">
-          <button :class="{ on: otypeIdx === 0 }" @click="setOtype(0)">{{ t('market') }}</button>
-          <button :class="{ on: otypeIdx === 1 }" @click="setOtype(1)">{{ t('orderLimit') }}</button>
-          <button :class="{ on: otypeIdx === 2 }" @click="setOtype(2)">Stop</button>
-        </div>
-        <div v-if="otypeIdx !== 0" class="field">
-          <div class="fl"><span class="k">{{ t('limitPrice') }}</span></div>
-          <div class="inp"><input type="text" value="184.20" /><span class="suf">USDC</span></div>
-        </div>
         <div class="field">
-          <div class="fl"><span class="k">{{ t('amount') }}</span><span class="b">{{ t('available') }} $42,180</span></div>
+          <div class="fl"><span class="k">{{ t('amount') }}</span><span class="b">{{ t('available') }} {{ availLabel() }}</span></div>
           <div class="inp">
-            <input type="text" :value="amountDisplay()" @input="onAmountInput" /><span class="suf">USDC</span>
+            <input type="text" :value="amountDisplay()" @input="onAmountInput" /><span class="suf">RLUSD</span>
           </div>
         </div>
         <div class="pcts">
@@ -467,46 +846,46 @@ onUnmounted(() => {
             {{ p }}%
           </button>
         </div>
-        <div class="lev">
-          <span class="k">{{ t('leverage') }}</span>
-          <div class="ctrl">
-            <button @click="levDown">−</button>
-            <span class="vv">{{ lev }}×</span>
-            <button @click="levUp">+</button>
-          </div>
-        </div>
         <div class="summary">
           <div class="r"><span>{{ t('estQty') }}</span><b>{{ estQtyLabel() }}</b></div>
-          <div class="r"><span>{{ t('exposure', { lev }) }}</span><b>{{ exposureLabel() }}</b></div>
           <div class="r"><span>{{ t('estFees') }}</span><b>$0.00</b></div>
-          <div class="r"><span>{{ t('estLiq') }}</span><b>{{ liqLabel() }}</b></div>
         </div>
-        <button class="placebtn" :class="{ sell: side === 'sell' }" @click="onPlace">{{ placeLabel() }}</button>
+        <button class="placebtn" :class="{ sell: side === 'sell' }" :disabled="mode === 'live' && !liveTradable()" @click="onPlace">{{ placeLabel() }}</button>
       </div>
 
       <div class="card book">
-        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ cur.s }}/USDC</span></div>
+        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ cur.s }}/RLUSD</span></div>
         <div class="bk-head"><div>{{ t('price') }}</div><div>{{ t('size') }}</div><div>{{ t('total') }}</div></div>
         <div v-html="asksHtml"></div>
         <div class="bk-spread">{{ fmt(cur.p) }} &nbsp;·&nbsp; spread {{ (cur.p * 0.0001).toFixed(cur.p < 1 ? 4 : 2) }}</div>
         <div v-html="bidsHtml"></div>
       </div>
     </aside>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* ---------- MAIN (bento d'écrans sombres sur fond bleu) ---------- */
+/* ---------- MAIN (barre de mode + bento d'écrans sombres) ---------- */
 .main {
-  display: grid;
-  grid-template-columns: 250px 1fr 336px;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
   padding: 0 18px 18px;
   height: calc(100vh - 64px);
 }
+.deck {
+  display: grid;
+  grid-template-columns: 250px 1fr 336px;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
 @media (max-width: 1200px) {
-  .main {
+  .deck {
     grid-template-columns: 1fr 336px;
+  }
+  .main {
     height: auto;
   }
   .watch {
@@ -514,10 +893,142 @@ onUnmounted(() => {
   }
 }
 @media (max-width: 780px) {
-  .main {
+  .deck {
     grid-template-columns: 1fr;
-    height: auto;
   }
+}
+
+/* ---------- BARRE DE MODE (Paper ↔ Live, argent réel) ---------- */
+.modebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 14px;
+  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+}
+.modebar.live {
+  border-color: rgba(255, 157, 60, 0.5);
+  box-shadow: 0 0 0 1px rgba(255, 157, 60, 0.18), 0 8px 28px -16px rgba(255, 157, 60, 0.5);
+}
+.modeseg {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+.modeseg button {
+  border: none;
+  background: none;
+  color: var(--soft);
+  font-family: var(--disp);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 8px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.18s var(--ease);
+}
+.modeseg button.on {
+  background: var(--blue);
+  color: #fff;
+}
+.modeseg button.livebtn.on {
+  background: var(--live);
+  color: #2a1500;
+}
+.modeseg button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.modeseg button:not(.on):not(:disabled):hover {
+  color: var(--text);
+}
+.modectx {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ctxlabel {
+  font-size: 11.5px;
+  color: var(--soft);
+}
+.ctxval {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.badge {
+  font-family: var(--disp);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  color: var(--live);
+  border: 1px solid rgba(255, 157, 60, 0.5);
+  border-radius: 7px;
+  padding: 4px 9px;
+}
+.wchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.wchip:hover {
+  border-color: var(--live);
+}
+.wchip .via {
+  color: var(--soft);
+  font-weight: 500;
+}
+.wchip .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+}
+.wchip.warn {
+  border-color: rgba(255, 157, 60, 0.5);
+  color: var(--live);
+}
+.wchip.warn .dot {
+  background: var(--live);
+}
+
+/* Teinte « argent réel » diffusée au terminal quand Live est actif (les couleurs
+ * buy/sell du bouton d'ordre restent sémantiques et ne sont pas teintées). */
+.main.live .wrow.on {
+  border-left-color: var(--live);
+}
+.main.live .pairsel .ic {
+  background: linear-gradient(135deg, var(--live), #ff7a3c);
+  color: #2a1500;
+}
+.main.live .inp:focus-within {
+  border-color: var(--live);
+}
+.main.live .pcts button.on,
+.main.live .pcts button:hover {
+  border-color: var(--live);
+  color: #fff;
+  background: rgba(255, 157, 60, 0.16);
 }
 .col {
   display: flex;
@@ -563,6 +1074,12 @@ onUnmounted(() => {
 }
 .wl-scroll {
   overflow-y: auto;
+}
+.wl-empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--mut2);
 }
 .wrow {
   display: grid;
@@ -883,32 +1400,6 @@ onUnmounted(() => {
   background: var(--down);
   color: #2a0a06;
 }
-.otype {
-  display: flex;
-  gap: 18px;
-  margin-bottom: 16px;
-}
-.otype button {
-  border: none;
-  background: none;
-  color: var(--soft);
-  font-weight: 600;
-  font-size: 12.5px;
-  padding: 0 0 4px;
-  position: relative;
-}
-.otype button.on {
-  color: var(--text);
-}
-.otype button.on::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: var(--text);
-}
 .field {
   margin-bottom: 14px;
 }
@@ -978,41 +1469,6 @@ onUnmounted(() => {
   color: #fff;
   background: rgba(79, 106, 255, 0.16);
 }
-.lev {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px 13px;
-  margin-bottom: 16px;
-}
-.lev .k {
-  font-size: 12px;
-  color: var(--soft);
-}
-.lev .ctrl {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.lev .ctrl button {
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--line2);
-  background: none;
-  color: var(--text);
-  border-radius: 7px;
-  font-size: 15px;
-  line-height: 1;
-}
-.lev .ctrl .vv {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 14px;
-  min-width: 34px;
-  text-align: center;
-}
 .summary {
   font-size: 12px;
   margin-bottom: 16px;
@@ -1045,6 +1501,11 @@ onUnmounted(() => {
 }
 .placebtn:hover {
   filter: brightness(1.06);
+}
+.placebtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: none;
 }
 
 /* order book */

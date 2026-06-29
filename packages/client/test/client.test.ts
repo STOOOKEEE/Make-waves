@@ -27,6 +27,19 @@ describe("TideClient", () => {
     });
   });
 
+  it("ensureAccount -> POST /accounts/ensure (200)", async () => {
+    const { client, requests } = stub(() => ({
+      status: 200,
+      body: { userId: "a", created: false },
+    }));
+    expect(await client.ensureAccount("a")).toEqual({ userId: "a", created: false });
+    expect(requests[0]).toEqual({
+      path: "/accounts/ensure",
+      method: "POST",
+      body: { userId: "a" },
+    });
+  });
+
   it("balances -> GET et parse le corps", async () => {
     const { client, requests } = stub(() => ({ status: 200, body: { RLUSD: 1000 } }));
     expect(await client.balances("a")).toEqual({ RLUSD: 1000 });
@@ -100,19 +113,40 @@ describe("TideClient", () => {
     });
   });
 
-  it("signLiveOffer -> POST /sign/live-offer (201) avec un montant IOU objet", async () => {
+  it("signLiveOffer -> POST /sign/live-offer (201) avec l'intention de swap", async () => {
     const sign = {
       uuid: "u-2",
       signUrl: "https://xumm.app/sign/u-2",
       qrPng: "https://xumm.app/qr/u-2.png",
     };
     const { client, requests } = stub(() => ({ status: 201, body: sign }));
-    const wants = { currency: "USD", issuer: "rIss", value: "5" };
-    expect(await client.signLiveOffer("rAcc", "10000000", wants)).toEqual(sign);
-    expect(requests[0]?.body).toEqual({
-      account: "rAcc",
-      gives: "10000000",
-      wants,
+    expect(await client.signLiveOffer("rAcc", "XRP", "buy", 100, 0.01)).toEqual(sign);
+    expect(requests[0]).toEqual({
+      path: "/sign/live-offer",
+      method: "POST",
+      body: { account: "rAcc", base: "XRP", side: "buy", amountBase: 100, slippageTolerance: 0.01 },
+    });
+  });
+
+  it("planLiveOffer -> POST /exec/plan (201) renvoie le plan d'exécution", async () => {
+    const plan = {
+      offer: {
+        TransactionType: "OfferCreate",
+        Account: "rAcc",
+        TakerGets: { currency: "RLUSD", issuer: "rIss", value: "50" },
+        TakerPays: "100000000",
+        SourceTag: 7777,
+      },
+      referencePrice: 0.5,
+      limitPrice: 0.505,
+      venue: "amm",
+    };
+    const { client, requests } = stub(() => ({ status: 201, body: plan }));
+    expect(await client.planLiveOffer("rAcc", "XRP", "buy", 100, 0.01)).toEqual(plan);
+    expect(requests[0]).toEqual({
+      path: "/exec/plan",
+      method: "POST",
+      body: { account: "rAcc", base: "XRP", side: "buy", amountBase: 100, slippageTolerance: 0.01 },
     });
   });
 

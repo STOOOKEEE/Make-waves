@@ -23,6 +23,10 @@
   --down: #ffb9ac; /* perte / P&L négatif / short */
   --gold: #ffd66b; /* récompenses / cagnottes / podium */
 
+  /* État Live (argent réel) — signal de mode, pas décoratif */
+  --live: #ff9d3c; /* ambre : mode Live actif, garde-fou anti-erreur */
+  --live-dk: #e8862a;
+
   /* Typo */
   --disp: "Archivo", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;

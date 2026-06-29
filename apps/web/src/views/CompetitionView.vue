@@ -2,12 +2,15 @@
 // Vue détail d'une compétition — portée depuis design_site/competition.html.
 // Hero + règles + récompenses + classement + déroulé + modale d'inscription 3 étapes.
 // L'app-bar et le .grain sont globaux : on démarre au .page de la source.
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { TideClient } from "@tide/client";
 import { getComp } from "../data/competitions";
 import StatusBadge from "../components/StatusBadge.vue";
 import { useCountdown } from "../composables/useCountdown";
 import { useCompetitions } from "../composables/useCompetitions";
+import { useCompetitionsLive } from "../composables/useCompetitionsLive";
+import { useSession } from "../composables/useSession";
+import { useWallet } from "../composables/useWallet";
 import { useI18n } from "../i18n/useI18n";
 
 const { t, locale } = useI18n({
@@ -27,9 +30,10 @@ const { t, locale } = useI18n({
     joinEnded: "View results",
     joinSoon: "Pre-register",
     joinLive: "Join the competition",
+    joinEnrolled: "You're enrolled ✓",
     rulesTitle: "Rules & format",
     capitalDepart: "Starting capital",
-    levierMax: "Max leverage",
+    tradingMode: "Trading mode",
     marchesAutorises: "Allowed markets",
     formatScoring: "Scoring format",
     fraisEntree: "Entry fee",
@@ -79,9 +83,10 @@ const { t, locale } = useI18n({
     joinEnded: "Voir les résultats",
     joinSoon: "Pré-inscription",
     joinLive: "Rejoindre la compétition",
+    joinEnrolled: "Tu es inscrit ✓",
     rulesTitle: "Règles & format",
     capitalDepart: "Capital de départ",
-    levierMax: "Levier max",
+    tradingMode: "Mode de trading",
     marchesAutorises: "Marchés autorisés",
     formatScoring: "Format de scoring",
     fraisEntree: "Frais d'entrée",
@@ -121,8 +126,15 @@ const { t, locale } = useI18n({
 const props = defineProps<{ client: TideClient; competitionId?: string }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 
-// Compétition affichée (mock, résolue dans la langue courante) + pré-inscription.
-const c = computed(() => getComp(props.competitionId, locale.value));
+const { userId, liveAddress, walletConnected, walletType } = useSession();
+const wallet = useWallet(props.client);
+
+// Compétition affichée : catalogue de présentation (résolu dans la langue) fusionné
+// avec son état live (participants, pot, clôture) issu du backend.
+const liveComps = useCompetitionsLive(props.client);
+const c = computed(() =>
+  liveComps.merge(getComp(props.competitionId, locale.value)),
+);
 const isPre = computed(() => c.value.status === "soon");
 
 // Couleurs d'avatars du classement (cycle).
@@ -133,7 +145,7 @@ const medals = ["#FFD66B", "#D9D4C8", "#C98800", "#2A2A30"];
 // Lignes de règles (label / valeur) : label = chrome traduit, valeur = donnée déjà traduite.
 const rules = computed<Array<[string, string]>>(() => [
   [t("capitalDepart"), c.value.capital],
-  [t("levierMax"), c.value.leverage],
+  [t("tradingMode"), c.value.leverage],
   [t("marchesAutorises"), c.value.markets],
   [t("formatScoring"), c.value.format],
   [t("duration"), c.value.duration],
@@ -161,15 +173,19 @@ const { dd, hh, mm, ss } = useCountdown({
   secs: 52,
 });
 
-// Libellé + classe du bouton « rejoindre » selon l'état.
+// Libellé + classe du bouton « rejoindre » selon l'état (inscription réelle prioritaire).
 const joinLabel = computed(() =>
-  c.value.status === "ended"
-    ? t("joinEnded")
-    : c.value.status === "soon"
-      ? t("joinSoon")
-      : t("joinLive"),
+  joined.value
+    ? t("joinEnrolled")
+    : c.value.status === "ended"
+      ? t("joinEnded")
+      : c.value.status === "soon"
+        ? t("joinSoon")
+        : t("joinLive"),
 );
-const joinClass = computed(() => (c.value.status === "ended" ? "ended" : ""));
+const joinClass = computed(() =>
+  joined.value ? "enrolled" : c.value.status === "ended" ? "ended" : "",
+);
 
 // Titre du classement selon l'état.
 const leadTitle = computed(() =>
@@ -184,6 +200,20 @@ const agree = ref(false);
 const leadCard = ref<HTMLElement | null>(null);
 
 const comps = useCompetitions(props.client);
+
+// Charge l'état live (pot/participants/statut) + la liste des inscrits au montage.
+onMounted(() => {
+  void liveComps.load();
+  if (props.competitionId !== undefined) {
+    void comps.loadParticipants(props.competitionId);
+  }
+});
+
+// Déjà inscrit ? (l'utilisateur de session figure parmi les participants réels)
+const joined = computed(
+  () =>
+    userId.value.trim() !== "" && comps.participants.value.includes(userId.value),
+);
 
 // Titre de la modale + textes de succès selon pré-inscription.
 const modalTitle = computed(() => (isPre.value ? t("modalPre") : t("modalJoin")));
@@ -219,15 +249,40 @@ function onOverlayClick(e: MouseEvent): void {
 }
 
 function goStep1(): void {
+  if (!walletConnected.value) {
+    wallet.connect();
+    return;
+  }
   step.value = 1;
 }
 
-// Confirmation : passe au succès puis tente l'appel backend en best-effort.
+function shorten(addr: string): string {
+  return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
+}
+
+const walletLabel = computed(() =>
+  walletConnected.value ? shorten(liveAddress.value) : t("connectWallet"),
+);
+const walletMeta = computed(() =>
+  walletConnected.value
+    ? walletType.value === "gem"
+      ? "GemWallet"
+      : "Xaman"
+    : "Xaman / GemWallet",
+);
+const walletInitial = computed(() =>
+  walletConnected.value ? liveAddress.value.slice(0, 1).toUpperCase() : "W",
+);
+
+// Confirmation : passe au succès puis inscrit réellement le compte de session.
 async function confirm(): Promise<void> {
   step.value = 2;
+  if (userId.value.trim() === "") {
+    return; // pas de session : on garde l'écran de succès, sans inscription réelle
+  }
   // Hybride : l'appel réseau ne bloque jamais l'UX de succès (erreurs captées
-  // dans comps.error par le composable).
-  await comps.join(c.value.id, "0xPilote.eth");
+  // dans comps.error par le composable). On rafraîchit la liste des inscrits.
+  await comps.join(c.value.id, userId.value);
 }
 </script>
 
@@ -381,12 +436,12 @@ async function confirm(): Promise<void> {
         <div class="mstep" :class="{ on: step === 0 }">
           <div class="sl">{{ t("step1") }}</div>
           <h3>{{ t("connectWallet") }}</h3>
-          <div class="walletbox">
-            <span class="wic">P</span>
+          <div class="walletbox" :class="{ off: !walletConnected }">
+            <span class="wic">{{ walletInitial }}</span>
             <div>
-              <b>0xPilote.eth</b><span>0x7a2f…34f1 · Solana</span>
+              <b>{{ walletLabel }}</b><span>{{ walletMeta }}</span>
             </div>
-            <span class="ok">{{ t("connected") }}</span>
+            <span v-if="walletConnected" class="ok">{{ t("connected") }}</span>
           </div>
           <p
             style="
@@ -398,7 +453,9 @@ async function confirm(): Promise<void> {
           >
             {{ t("noDeposit") }}
           </p>
-          <button class="mcta" @click="goStep1">{{ t("continueBtn") }}</button>
+          <button class="mcta" @click="goStep1">
+            {{ walletConnected ? t("continueBtn") : t("connectWallet") }}
+          </button>
         </div>
         <!-- étape 2 -->
         <div class="mstep" :class="{ on: step === 1 }">

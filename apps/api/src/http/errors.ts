@@ -17,6 +17,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidAddressError: 400,
   InvalidMemoError: 400,
   InvalidMetricError: 400,
+  LiveExecError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,

@@ -22,6 +22,22 @@ import {
 import { InMemoryAccountStore } from "../store/account-store";
 import type { AccountStore } from "../store/account-store";
 
+/** Ligne de portefeuille : une devise détenue, valorisée en devise de référence. */
+export interface Holding {
+  readonly currency: string;
+  readonly amount: number;
+  /** Valeur en devise de référence (amount × prix ; = amount pour la devise de réf). */
+  readonly value: number;
+}
+
+/** Portefeuille agrégé d'un compte : soldes valorisés, equity et PnL. */
+export interface Portfolio {
+  readonly balances: Balances;
+  readonly holdings: Holding[];
+  readonly equity: number;
+  readonly pnl: number;
+}
+
 /**
  * Service de paper trading : gère les comptes virtuels, applique les ordres (via
  * le moteur pur `@tide/core`) et produit le classement. La persistance est
@@ -56,6 +72,18 @@ export class PaperService {
     this.store.open(userId, { [QUOTE_CURRENCY]: this.startingEquity });
   }
 
+  /** Ouvre le compte s'il n'existe pas déjà. Retourne vrai si un compte a été créé. */
+  ensureAccount(userId: string): boolean {
+    if (userId.trim() === "") {
+      throw new InvalidUserError("userId vide");
+    }
+    if (this.store.has(userId)) {
+      return false;
+    }
+    this.store.open(userId, { [QUOTE_CURRENCY]: this.startingEquity });
+    return true;
+  }
+
   /** Applique un ordre marché et l'enregistre atomiquement. Retourne le fill. */
   placeOrder(userId: string, order: MarketOrderInput): Fill {
     const balances = this.requireBalances(userId);
@@ -86,6 +114,27 @@ export class PaperService {
   /** PnL du compte vs capital de départ. */
   pnlOf(userId: string, prices: PriceMap): number {
     return pnl(this.equityOf(userId, prices), this.startingEquity);
+  }
+
+  /**
+   * Portefeuille agrégé : chaque devise détenue valorisée en devise de référence,
+   * plus l'equity totale et le PnL. La valorisation réutilise `equity` du domaine
+   * (par devise puis sur l'ensemble) → une seule règle de prix, pas de duplication.
+   */
+  portfolioOf(userId: string, prices: PriceMap): Portfolio {
+    const balances = this.requireBalances(userId);
+    const holdings = Object.entries(balances).map(([currency, amount]) => ({
+      currency,
+      amount,
+      value: equity({ [currency]: amount }, prices, QUOTE_CURRENCY),
+    }));
+    const equityValue = equity(balances, prices, QUOTE_CURRENCY);
+    return {
+      balances,
+      holdings,
+      equity: equityValue,
+      pnl: pnl(equityValue, this.startingEquity),
+    };
   }
 
   /** Classement de tous les comptes (réutilise le leaderboard du domaine). */

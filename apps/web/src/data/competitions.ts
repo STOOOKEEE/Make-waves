@@ -113,8 +113,8 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: 4,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$100,000",
-    leverage: { en: "up to 20×", fr: "jusqu'à 20×" },
-    markets: { en: "200+ spot & perp pairs", fr: "200+ paires spot & perp" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
+    markets: { en: "Top 250 spot markets", fr: "Top 250 marchés spot" },
     duration: { en: "6 weeks", fr: "6 semaines" },
     prizes: [
       { pos: { en: "1st place", fr: "1ʳᵉ place" }, amt: "$15,000" },
@@ -157,7 +157,7 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: 0,
     format: { en: "Intraday return (%)", fr: "Rendement intraday (%)" },
     capital: "$25,000",
-    leverage: { en: "up to 10×", fr: "jusqu'à 10×" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
     markets: { en: "Majors only", fr: "Majors uniquement" },
     duration: { en: "24 hours", fr: "24 heures" },
     prizes: [
@@ -185,12 +185,12 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     name: { en: "Whale League", fr: "Whale League" },
     status: "live",
     desc: {
-      en: "Top 500 all-time only. $500,000 capital, max 5× leverage.",
-      fr: "Réservé au top 500 all-time. Capital $500 000, levier max 5×.",
+      en: "Top 500 all-time only. $500,000 capital, risk-adjusted scoring.",
+      fr: "Réservé au top 500 all-time. Capital $500 000, scoring ajusté au risque.",
     },
     long: {
-      en: "The heavyweights' arena. Only TIDE's 500 best all-time traders get in. Big capital, low leverage: here, risk management is what separates the champions.",
-      fr: "L'arène des poids lourds. Seuls les 500 meilleurs traders de l'historique TIDE y accèdent. Gros capital, faible levier : ici, c'est la gestion du risque qui sépare les champions.",
+      en: "The heavyweights' arena. Only TIDE's 500 best all-time traders get in. Big capital, spot-only rules: here, risk management is what separates the champions.",
+      fr: "L'arène des poids lourds. Seuls les 500 meilleurs traders de l'historique TIDE y accèdent. Gros capital, règles spot-only : ici, c'est la gestion du risque qui sépare les champions.",
     },
     pot: "$20,000",
     fee: { en: "Invite-only", fr: "Sur invitation" },
@@ -200,8 +200,8 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: 9,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$500,000",
-    leverage: { en: "up to 5×", fr: "jusqu'à 5×" },
-    markets: { en: "200+ pairs", fr: "200+ paires" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
+    markets: { en: "Top 250 spot markets", fr: "Top 250 marchés spot" },
     duration: { en: "2 weeks", fr: "2 semaines" },
     prizes: [
       { pos: { en: "1st place", fr: "1ʳᵉ place" }, amt: "$8,000" },
@@ -243,7 +243,7 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: 6,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$100,000",
-    leverage: { en: "up to 10×", fr: "jusqu'à 10×" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
     markets: { en: "DeFi & L2 only", fr: "DeFi & L2 uniquement" },
     duration: { en: "3 weeks", fr: "3 semaines" },
     prizes: [
@@ -287,8 +287,8 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     startsIn: true,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$100,000",
-    leverage: { en: "up to 20×", fr: "jusqu'à 20×" },
-    markets: { en: "200+ spot & perp pairs", fr: "200+ paires spot & perp" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
+    markets: { en: "Top 250 spot markets", fr: "Top 250 marchés spot" },
     duration: { en: "6 weeks", fr: "6 semaines" },
     prizes: [
       { pos: { en: "1st place", fr: "1ʳᵉ place" }, amt: "$22,000" },
@@ -325,7 +325,7 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     startsIn: true,
     format: { en: "Night-session return (%)", fr: "Rendement sessions nuit (%)" },
     capital: "$50,000",
-    leverage: { en: "up to 10×", fr: "jusqu'à 10×" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
     markets: { en: "Majors & L1", fr: "Majors & L1" },
     duration: { en: "10 nights", fr: "10 nuits" },
     prizes: [
@@ -344,15 +344,15 @@ const COMPETITIONS_RAW: RawCompetition[] = [
   {
     id: "solana-summer",
     ico: "◎",
-    name: { en: "Solana Summer · sponsored", fr: "Solana Summer · sponsorisé" },
+    name: { en: "RLUSD Summer · sponsored", fr: "RLUSD Summer · sponsorisé" },
     status: "soon",
     desc: {
-      en: "Solana-sponsored challenge. Rewards in SOL + exclusive NFTs.",
-      fr: "Défi sponsorisé Solana. Récompenses en SOL + NFT exclusifs.",
+      en: "Stablecoin challenge. Rewards in RLUSD + exclusive NFTs.",
+      fr: "Défi stablecoin. Récompenses en RLUSD + NFT exclusifs.",
     },
     long: {
-      en: "A competition sponsored by the Solana ecosystem. Trade SOL pairs and earn your rewards directly in SOL, plus a collection of exclusive NFTs reserved for the top 100.",
-      fr: "Compétition sponsorisée par l'écosystème Solana. Trade les paires SOL et gagne tes récompenses directement en SOL, plus une collection de NFT exclusifs réservés aux 100 premiers.",
+      en: "A competition focused on spot discipline around liquid markets. Trade paper positions and earn rewards in RLUSD, plus exclusive NFTs reserved for the top 100.",
+      fr: "Compétition centrée sur la discipline spot autour des marchés liquides. Trade en paper et gagne des récompenses en RLUSD, plus des NFT exclusifs réservés aux 100 premiers.",
     },
     pot: "$30,000",
     fee: { en: "Free", fr: "Gratuit" },
@@ -363,8 +363,8 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     startsIn: true,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$100,000",
-    leverage: { en: "up to 15×", fr: "jusqu'à 15×" },
-    markets: { en: "Solana ecosystem", fr: "Écosystème Solana" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
+    markets: { en: "Liquid spot markets", fr: "Marchés spot liquides" },
     duration: { en: "4 weeks", fr: "4 semaines" },
     prizes: [
       { pos: { en: "1st place", fr: "1ʳᵉ place" }, amt: "$10,000" },
@@ -400,8 +400,8 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: -1,
     format: { en: "Net return (%)", fr: "Rendement net (%)" },
     capital: "$100,000",
-    leverage: { en: "up to 20×", fr: "jusqu'à 20×" },
-    markets: { en: "200+ pairs", fr: "200+ paires" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
+    markets: { en: "Top 250 spot markets", fr: "Top 250 marchés spot" },
     duration: { en: "6 weeks", fr: "6 semaines" },
     prizes: [
       { pos: { en: "1st place", fr: "1ʳᵉ place" }, amt: "$15,000" },
@@ -443,7 +443,7 @@ const COMPETITIONS_RAW: RawCompetition[] = [
     daysLeft: -1,
     format: { en: "Minimal drawdown", fr: "Drawdown minimal" },
     capital: "$100,000",
-    leverage: { en: "up to 5×", fr: "jusqu'à 5×" },
+    leverage: { en: "Spot only", fr: "Spot uniquement" },
     markets: { en: "Majors", fr: "Majors" },
     duration: { en: "72 hours", fr: "72 heures" },
     prizes: [

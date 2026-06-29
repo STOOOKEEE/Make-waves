@@ -28,7 +28,10 @@ describe("usePaper", () => {
   it("connecte et charge soldes + ordres", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: "a", created: true },
+        },
         "GET /accounts/a/balances": { status: 200, body: { RLUSD: 10000 } },
         "GET /accounts/a/orders": { status: 200, body: [] },
       }),
@@ -39,10 +42,13 @@ describe("usePaper", () => {
     expect(paper.balances.value).toEqual({ RLUSD: 10000 });
   });
 
-  it("tolère un compte déjà existant (409)", async () => {
+  it("tolère un compte déjà existant via ensureAccount", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 409, body: { error: "déjà ouvert" } },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: "a", created: false },
+        },
         "GET /accounts/a/balances": { status: 200, body: { RLUSD: 5 } },
         "GET /accounts/a/orders": { status: 200, body: [] },
       }),
@@ -63,7 +69,10 @@ describe("usePaper", () => {
   it("place un ordre puis rafraîchit", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: "a", created: true },
+        },
         "GET /accounts/a/balances": { status: 200, body: { RLUSD: 9950, XRP: 100 } },
         "GET /accounts/a/orders": { status: 200, body: [FILL] },
         "POST /accounts/a/orders": { status: 201, body: FILL },
@@ -84,7 +93,10 @@ describe("usePaper", () => {
   it("expose le message d'erreur serveur", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: "a", created: true },
+        },
         "GET /accounts/a/balances": { status: 500, body: { error: "Erreur interne" } },
         "GET /accounts/a/orders": { status: 200, body: [] },
       }),

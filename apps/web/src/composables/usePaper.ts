@@ -1,13 +1,15 @@
 import { ref } from "vue";
-import { TideApiError, type TideClient } from "@tide/client";
+import type { TideClient } from "@tide/client";
 import type { Balances, Fill, MarketOrderInput } from "@tide/core";
 import { errorMessage } from "./messages";
-
-const ACCOUNT_EXISTS = 409;
+import { useSession } from "./useSession";
 
 /** Logique du terminal paper : connexion, soldes, ordres. État réactif Vue. */
 export function usePaper(client: TideClient) {
-  const userId = ref("");
+  // L'identifiant vit dans la session partagée : connecter le terminal renseigne
+  // l'identité de toute l'app (portfolio et compétitions ciblent le même compte).
+  const session = useSession();
+  const { userId } = session;
   const connected = ref(false);
   const balances = ref<Balances | null>(null);
   const orders = ref<readonly Fill[]>([]);
@@ -25,16 +27,10 @@ export function usePaper(client: TideClient) {
       return;
     }
     try {
-      try {
-        await client.openAccount(userId.value);
-      } catch (e) {
-        // 409 = compte déjà ouvert : on continue. Toute autre erreur remonte.
-        if (!(e instanceof TideApiError && e.status === ACCOUNT_EXISTS)) {
-          throw e;
-        }
-      }
+      await client.ensureAccount(userId.value);
       await refresh();
       connected.value = true;
+      session.setUserId(userId.value); // persiste l'identité après une connexion réussie
     } catch (e) {
       error.value = errorMessage(e);
     }

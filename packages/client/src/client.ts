@@ -5,6 +5,7 @@ import type {
   LeaderboardEntry,
   MarketOrderInput,
   Payout,
+  PriceMap,
 } from "@tide/core";
 import type { ApiRequest, ApiTransport } from "./transport";
 import { extractErrorMessage, TideApiError } from "./errors";
@@ -13,6 +14,36 @@ import { extractErrorMessage, TideApiError } from "./errors";
 export interface CloseResult {
   readonly payouts: Payout[];
   readonly undistributed: number;
+}
+
+/**
+ * Vue live d'une compétition (état dynamique exposé par l'API) : paramètres
+ * économiques + participants réels, pot courant et clôture. Le front la fusionne
+ * avec son catalogue de présentation par `id`.
+ */
+export interface CompetitionSummary {
+  readonly id: string;
+  readonly buyIn: number;
+  readonly rakeRatio: number;
+  readonly payoutWeights: readonly number[];
+  readonly participants: number;
+  readonly pot: number;
+  readonly closed: boolean;
+}
+
+/** Ligne de portefeuille valorisée en devise de référence. */
+export interface Holding {
+  readonly currency: string;
+  readonly amount: number;
+  readonly value: number;
+}
+
+/** Portefeuille agrégé d'un compte : soldes valorisés, equity et PnL. */
+export interface Portfolio {
+  readonly balances: Balances;
+  readonly holdings: Holding[];
+  readonly equity: number;
+  readonly pnl: number;
 }
 
 /**
@@ -29,6 +60,63 @@ export interface SignRequest {
   readonly uuid: string;
   readonly signUrl: string;
   readonly qrPng: string;
+}
+
+/** État d'un payload Xaman (suivi de signature / connexion). */
+export interface PayloadStatus {
+  readonly resolved: boolean;
+  readonly signed: boolean;
+  readonly account: string | null;
+  readonly txid: string | null;
+}
+
+/** Config publique pour la signature côté client (GemWallet). */
+export interface PublicConfig {
+  /** SourceTag d'attribution (entier public) ; null si Live non configuré. */
+  readonly sourceTag: number | null;
+  /** Symbole du token de cotation Live (ex. "RLUSD") ; null si Live non configuré. */
+  readonly quoteSymbol: string | null;
+}
+
+/** Sens d'un swap côté base : acheter (payer en quote) ou vendre (recevoir en quote). */
+export type ExecSide = "buy" | "sell";
+
+/** `OfferCreate` taggé prêt à signer (miroir du type d'xrpl.js, découplé du bundle). */
+export interface ApiOfferCreate {
+  readonly TransactionType: "OfferCreate";
+  readonly Account: string;
+  readonly TakerGets: ApiAmount;
+  readonly TakerPays: ApiAmount;
+  readonly SourceTag: number;
+}
+
+/**
+ * Plan d'exécution d'un swap Live calculé côté serveur : l'`OfferCreate` borné
+ * (best execution + slippage, attribution incluse) plus les prix indicatifs. Le
+ * client le signe via l'extension (GemWallet) ou le présente à Xaman.
+ */
+export interface ExecutionPlanDto {
+  readonly offer: ApiOfferCreate;
+  readonly referencePrice: number;
+  readonly limitPrice: number;
+  readonly venue: "amm" | "book";
+}
+
+/** Ligne de marché de la watchlist (top N coins : symbole, nom, prix, %24h). */
+export interface MarketRow {
+  readonly symbol: string;
+  readonly name: string;
+  readonly price: number;
+  readonly change24h: number;
+}
+
+/** Bougie OHLC (historique réel pour le chart). */
+export interface Candle {
+  readonly t: number;
+  readonly o: number;
+  readonly h: number;
+  readonly l: number;
+  readonly c: number;
 }
 
 /** Métriques d'attribution du hackathon (miroir de `@tide/xrpl`). */
@@ -59,6 +147,13 @@ export class TideClient {
     );
   }
 
+  async ensureAccount(userId: string): Promise<{ userId: string; created: boolean }> {
+    return this.call(
+      { path: "/accounts/ensure", method: "POST", body: { userId } },
+      200,
+    );
+  }
+
   async balances(userId: string): Promise<Balances> {
     return this.call({ path: path("accounts", userId, "balances"), method: "GET" }, 200);
   }
@@ -78,7 +173,56 @@ export class TideClient {
     return this.call({ path: "/leaderboard", method: "GET" }, 200);
   }
 
+  /** Portefeuille agrégé d'un compte (soldes valorisés, equity, PnL). */
+  async portfolio(userId: string): Promise<Portfolio> {
+    return this.call({ path: path("accounts", userId, "portfolio"), method: "GET" }, 200);
+  }
+
+  // --- Prix ---
+
+  /** Carte de prix courante du feed off-chain (devise → prix en référence). */
+  async prices(): Promise<PriceMap> {
+    return this.call({ path: "/prices", method: "GET" }, 200);
+  }
+
+  /** Liste des marchés (top N coins : symbole, nom, prix, %24h) pour la watchlist. */
+  async markets(): Promise<MarketRow[]> {
+    return this.call({ path: "/markets", method: "GET" }, 200);
+  }
+
+  /** Config publique (SourceTag) pour la signature côté client. */
+  async config(): Promise<PublicConfig> {
+    return this.call({ path: "/config", method: "GET" }, 200);
+  }
+
+  /** Historique OHLC réel d'un symbole (Binance), par intervalle de bougie. */
+  async history(
+    symbol: string,
+    interval: string,
+    limit = 120,
+  ): Promise<Candle[]> {
+    return this.call(
+      {
+        path:
+          `${path("history", symbol)}` +
+          `?interval=${encodeURIComponent(interval)}&limit=${String(limit)}`,
+        method: "GET",
+      },
+      200,
+    );
+  }
+
   // --- Compétitions ---
+
+  /** Liste publique des compétitions avec leur état live. */
+  async competitions(): Promise<CompetitionSummary[]> {
+    return this.call({ path: "/competitions", method: "GET" }, 200);
+  }
+
+  /** État live d'une compétition. */
+  async competition(competitionId: string): Promise<CompetitionSummary> {
+    return this.call({ path: path("competitions", competitionId), method: "GET" }, 200);
+  }
 
   async createCompetition(competition: Competition): Promise<{ id: string }> {
     return this.call(
@@ -125,6 +269,16 @@ export class TideClient {
   // Le sourceTag (attribution) et la destination du prize pool sont ajoutés CÔTÉ
   // SERVEUR : le client ne les fournit jamais.
 
+  /** Connexion de wallet : payload SignIn à présenter (QR/deeplink). */
+  async connectWallet(): Promise<SignRequest> {
+    return this.call({ path: "/sign/connect", method: "POST" }, 201);
+  }
+
+  /** État d'un payload Xaman (polling de signature/connexion). */
+  async signStatus(uuid: string): Promise<PayloadStatus> {
+    return this.call({ path: path("sign", "status", uuid), method: "GET" }, 200);
+  }
+
   async signBuyIn(
     account: string,
     amount: ApiAmount,
@@ -140,16 +294,43 @@ export class TideClient {
     );
   }
 
+  /**
+   * Swap Live via Xaman : envoie l'INTENTION (base/side/quantité/slippage), le
+   * serveur calcule l'`OfferCreate` borné et injecte l'attribution + l'issuer.
+   */
   async signLiveOffer(
     account: string,
-    gives: ApiAmount,
-    wants: ApiAmount,
+    base: string,
+    side: ExecSide,
+    amountBase: number,
+    slippageTolerance: number,
   ): Promise<SignRequest> {
     return this.call(
       {
         path: "/sign/live-offer",
         method: "POST",
-        body: { account, gives, wants },
+        body: { account, base, side, amountBase, slippageTolerance },
+      },
+      201,
+    );
+  }
+
+  /**
+   * Plan d'exécution d'un swap Live (best execution + slippage) calculé serveur,
+   * pour signature côté extension (GemWallet). Même intention que `signLiveOffer`.
+   */
+  async planLiveOffer(
+    account: string,
+    base: string,
+    side: ExecSide,
+    amountBase: number,
+    slippageTolerance: number,
+  ): Promise<ExecutionPlanDto> {
+    return this.call(
+      {
+        path: "/exec/plan",
+        method: "POST",
+        body: { account, base, side, amountBase, slippageTolerance },
       },
       201,
     );

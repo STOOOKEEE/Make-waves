@@ -1,5 +1,5 @@
-import { buildBuyInPayment, buildLiveOffer } from "@tide/xrpl";
-import type { BuyInPaymentParams, LiveOfferParams } from "@tide/xrpl";
+import { buildBuyInPayment } from "@tide/xrpl";
+import type { BuyInPaymentParams } from "@tide/xrpl";
 
 /** Échec côté Xaman (création de payload refusée ou réponse inexploitable). */
 export class XamanError extends Error {
@@ -16,6 +16,18 @@ export interface XamanCreatedPayload {
   readonly refs: { readonly qr_png: string };
 }
 
+/** État d'un payload après consultation (résolu/signé + adresse signataire). */
+export interface PayloadStatus {
+  /** L'utilisateur a répondu (signé OU rejeté). */
+  readonly resolved: boolean;
+  /** Signé (vs rejeté). */
+  readonly signed: boolean;
+  /** Adresse XRPL du signataire, une fois résolu (sinon null). */
+  readonly account: string | null;
+  /** Hash de la transaction soumise, le cas échéant. */
+  readonly txid: string | null;
+}
+
 /**
  * Sous-ensemble INJECTÉ de l'API XUMM (`sdk.payload`). Les clés API/secret vivent
  * dans l'instance du SDK construite côté runtime (depuis l'env), jamais lues ni
@@ -23,6 +35,8 @@ export interface XamanCreatedPayload {
  */
 export interface XamanPayloadApi {
   create(payload: { txjson: object }): Promise<XamanCreatedPayload | null>;
+  /** État d'un payload (suivi de signature). `null` si introuvable. */
+  get(uuid: string): Promise<PayloadStatus | null>;
 }
 
 /** Requête de signature non-custodiale à présenter à l'utilisateur. */
@@ -78,10 +92,25 @@ export async function createBuyInSignRequest(
   return createSignRequest(api, buildBuyInPayment(params));
 }
 
-/** Requête de signature d'un swap Live (OfferCreate taggé). */
-export async function createLiveOfferSignRequest(
+/**
+ * Requête de connexion de wallet : un payload `SignIn` (aucune transaction, juste
+ * une preuve de contrôle de l'adresse). Une fois signé dans Xaman, on récupère
+ * l'adresse XRPL via `getPayloadStatus`.
+ */
+export async function createConnectSignRequest(
   api: XamanPayloadApi,
-  params: LiveOfferParams,
 ): Promise<SignRequest> {
-  return createSignRequest(api, buildLiveOffer(params));
+  return createSignRequest(api, { TransactionType: "SignIn" });
+}
+
+/** État d'un payload (suivi de signature). Lève `XamanError` s'il est introuvable. */
+export async function getPayloadStatus(
+  api: XamanPayloadApi,
+  uuid: string,
+): Promise<PayloadStatus> {
+  const status = await api.get(uuid);
+  if (status === null) {
+    throw new XamanError(`Payload introuvable: ${uuid}`);
+  }
+  return status;
 }

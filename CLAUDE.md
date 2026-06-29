@@ -16,7 +16,7 @@ Un seul produit, deux modes partageant feed de prix / UI / leaderboard :
 
 ## Stack
 
-- Frontend : **Nuxt + TypeScript** (terminal de trading, leaderboard, compétitions).
+- Frontend : **Vue 3 + Vite + TypeScript** (terminal de trading, leaderboard, compétitions).
 - Backend : **Node + TS + DB** (état Paper, compétitions, leaderboard, métriques taggées).
 - XRPL : **`xrpl.js`** (`OfferCreate`/`Payment` avec `SourceTag`/`Memos`, lecture AMM + carnet).
 - Wallet : **Xaman (XUMM SDK)** — signature non-custodial.
@@ -52,7 +52,7 @@ make-waves/
 
 ```bash
 pnpm install                   # dépendances
-pnpm test                      # tests (vitest) — 384 tests
+pnpm test                      # tests (vitest) — 406 tests
 pnpm typecheck                 # types (tsc/vue-tsc strict, par-package)
 pnpm lint                      # eslint (no-explicit-any en erreur)
 pnpm --filter @tide/api start  # API (PORT=3000, persistance TIDE_DB_PATH=tide.db)
@@ -62,19 +62,24 @@ pnpm --filter @tide/web build  # build du front
 
 ## Où on en est
 
-**MVP vertical complet (off-chain) + couche d'intégration on-chain écrite, testée ET câblée au runtime (activable par config, OFF par défaut).** 384 tests, ~25 audits sous-agents. `dev` poussé sur `origin`, `main` = MVP off-chain + front (PR #1 mergée).
+**MVP vertical complet (off-chain) + couche on-chain câblée au runtime (activable par config, OFF par défaut) + front refondu RELIÉ au backend + mode Live réel (connexion wallet + swap spot signé) avec moteur d'exécution (best execution + slippage).** 406 tests. `dev` = tout (back F1-F15 + front design + câblage). ⚠️ Travail F11→F15 **non commit**.
 
 - **Domaine pur** (`packages/core`) : moteur Paper (ordres, equity/PnL), compétitions (pool, rake, classement, **split-pot** ex-aequo, reliquat), leaderboard.
 - **Backend off-chain** (`apps/api`) : services + **Fastify** + feed CEX + cache + **persistance SQLite** (survie au redémarrage) + lecteur AMM, runnable. Client `@tide/client` typé.
-- **Front** (`apps/web`) : Vue 3 + Vite, refonte **style Analogue** (hero light-tunnel animé en canvas, achromatie stricte). Build OK.
+- **Front** (`apps/web`) : Vue 3 + Vite, refonte **« terminal éditorial » bilingue FR/EN** (vues Landing/Dashboard/Portfolio/Leaderboard/Competitions/Competition/Arena). Consomme `@tide/client`. Build OK.
+- **Intégration front↔back (F11)** : front et back **reliés et vérifiés end-to-end**. Session partagée (`useSession`, userId persistant). Vues branchées sur l'API : Dashboard (ordres XRP/RLUSD réels + prix live), Leaderboard, Compétitions (liste/détail **live** fusionnés au catalogue de présentation), Portfolio (holdings valorisés + equity/pnl/rang + activité = ordres réels). Nouvelles routes back : **`GET /competitions`**, **`GET /competitions/:id`**, **`GET /prices`**, **`GET /accounts/:id/portfolio`** ; **seed** de compétitions de démo (ids alignés sur le catalogue front). Décor assumé (pas de donnée back) : courbe d'équité, win-rate, carnet/chart simulés. `useMarket.ts` = code mort (non importé).
 - **Intégration XRPL on-chain** (`packages/xrpl` + `apps/api`), F1→F9, chacune auditée :
   - **F1** `XrplClient` (connexion injectable + `ammSpotPrice`) · **F2** lecteur de carnet `book_offers` · **F3** feed double source CEX+on-chain (garde de divergence) · **F4** **indexeur d'attribution** (tx taggées réussies, fenêtre figée, store idempotent — la métrique reine) · **F5** best execution + bornage slippage · **F6** **multisig** (`SignerListSet`) + **payouts** plus grand reste · **F7** soumission tx + classification `engine_result` · **F8** **Xaman** (payload non-custodial, SDK injecté) · **F9** moteur de volume conditionnel + garde-fou anti wash-trading (OFF par défaut).
-- **F10 — câblage runtime + HTTP** (`apps/api/src/main.ts`, `config/env.ts`, `http/server.ts`, `xaman/sdk.ts`, `@tide/xrpl` `connectXrplClient`) : `main.ts` est un **assembleur** ; feed on-chain, indexeur (+ sync) et Xaman sont **activés par config env**, OFF par défaut. Routes **`POST /sign/buy-in`**, **`POST /sign/live-offer`** (sourceTag + prize pool injectés **côté serveur**), **`GET /metrics`**. `xumm-sdk` ajouté. Client `@tide/client` étendu (`metrics`/`signBuyIn`/`signLiveOffer`). **Config** : voir `.env.example` (`XRPL_WSS_URL`, `TIDE_SOURCE_TAG`, `TIDE_INDEXED_ACCOUNTS`, `TIDE_PRIZE_POOL_ADDRESS`, `XUMM_API_KEY`/`SECRET`).
+- **F10 — câblage runtime + HTTP** (`apps/api/src/main.ts`, `config/env.ts`, `http/server.ts`, `xaman/sdk.ts`, `@tide/xrpl` `connectXrplClient`) : `main.ts` est un **assembleur** ; feed on-chain, indexeur (+ sync) et Xaman sont **activés par config env**, OFF par défaut. Routes **`POST /sign/buy-in`**, **`GET /metrics`**. `xumm-sdk` ajouté. **Config** : voir `.env.example`.
+- **F12 — mode Live (wallet + swap réel)** : connexion non-custodiale **Xaman** (QR/polling) **et GemWallet** (extension) ; `useWallet` (singleton) + `SignModal` ; toggle Paper/Live dans le ticket. Routes `POST /sign/connect`, `GET /sign/status/:uuid`, `GET /config`. Chart trading réel (**Binance klines**, timeframes `5m/15m/1H/4H/1D`, axe des dates).
+- **F13 — moteur d'exécution Live spot** (`apps/api/src/exec/plan-live.ts`) : le front envoie une **intention** (base/side/quantité/slippage), le serveur calcule l'`OfferCreate` borné via `planExecution` (best execution + **slippage**, `sourceTag` + issuer du quote injectés serveur). Routes **`POST /exec/plan`** (GemWallet) et **`POST /sign/live-offer`** (Xaman). Quote Live = **RLUSD mainnet par défaut** dès que `TIDE_SOURCE_TAG` est défini ; `TIDE_RLUSD_ISSUER` ne sert qu'à surcharger. `@tide/client` : `planLiveOffer`/`signLiveOffer` (intention). **Vérifié au runtime** : OFF par défaut, `live:on` avec SourceTag → `/exec/plan` rend un `OfferCreate` réel (prix XRP live, bornage +slippage, `SourceTag`).
+- **F14 — refonte UX du terminal** : **barre de mode Paper↔Live** en tête (`DashboardView`, `.main` flex → `.deck` 3 colonnes), transformation visuelle ambre en Live (token `--live`), contexte wallet/solde, bascule Live qui **ouvre la connexion wallet** si besoin. Nettoyage spot (carnet RLUSD, retrait Funding/Stop/Limit, CSS/i18n morts). Recherche watchlist câblée. Vérifié headless (Paper + Live).
+- **F15 — feed « markets » top 250** : watchlist **dynamique** via CoinGecko **`/coins/markets`** (`feed/coingecko-markets.ts`, route `GET /markets`, `client.markets()`) — prix + %24h réels + nom, sans mapping manuel (remplace `SYMBOL_TO_ID`/9 coins). `PriceMap` couvre les 250 (ordres/equity OK). Recherche locale dedans (HYPE & co). Live reste XRP/RLUSD.
 
 **Frontière restante — demande l'environnement d'Armand (non vérifiable ici) :**
 - **Chemin critique mainnet** : exécuter le spike d'attribution (1 swap taggé → compteur orga), réserver/déclarer le `SourceTag`, trancher les questions orga (active account, volume self-généré → conditionne F9), spike multisig prize pool.
-- **Activation runtime** (le code est câblé, il manque les **valeurs réelles** — non vérifié tant que pas testé sur ton mainnet/tes clés) : remplir le `.env` (clés XUMM secrètes, `XRPL_WSS_URL`, `SourceTag` réservé, comptes indexés) et **`ONCHAIN_POOLS`** dans `main.ts` (issuers réels, ex. RLUSD, vide par défaut).
-- **Front Xaman** : déclencher la signature depuis l'UI (`@tide/client` expose déjà `signBuyIn`/`signLiveOffer` ; composables/vues à brancher).
+- **Activation runtime** (le code est câblé, il manque les **valeurs réelles**) : `.env` (clés XUMM, `XRPL_WSS_URL`, `SourceTag` réservé, comptes indexés). Le **quote Live = RLUSD mainnet par défaut** (`DEFAULT_LIVE_QUOTE`, émetteur vérifié) → Live s'active dès que `TIDE_SOURCE_TAG` est défini ; `TIDE_RLUSD_ISSUER` ne sert qu'à surcharger. **`ONCHAIN_POOLS`** dans `main.ts` reste vide (prix d'exécution depuis le CEX).
+- **Swap Live de bout en bout** : le moteur produit un `OfferCreate` borné correct (vérifié), reste à voir la **signature wallet réelle + le remplissage on-chain** sur mainnet (1 swap taggé → compteur d'attribution). UI Xaman/GemWallet déjà branchée (`useWallet`/`SignModal`).
 
 Dette tracée (DEVLOG) : montants en `number` → BigInt/drops au règlement (garde `MAX_SAFE_INTEGER` posée) ; prix on-chain clé par `currency` sans issuer (homonymes) ; curseur indexeur non persisté (rescan au boot, store idempotent).
 

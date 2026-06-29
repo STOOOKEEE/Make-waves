@@ -11,9 +11,11 @@
     "spike:tx": "tsx src/scripts/build-spike-tx.ts"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
     "@tide/client": "workspace:*",
     "@tide/core": "workspace:*",
     "@tide/xrpl": "workspace:*",
+    "dotenv": "^17.4.2",
     "fastify": "^5.2.0",
     "xumm-sdk": "^1.11.2"
   }

@@ -15,14 +15,14 @@ export interface Market {
 }
 
 export const MARKETS: Market[] = [
-  { s: "SOL", full: "Solana", pair: "SOL / USDC", p: 184.2, c: 5.42, hi: 188.04, lo: 172.6 },
-  { s: "BTC", full: "Bitcoin", pair: "BTC / USDC", p: 67412, c: 1.82, hi: 68120, lo: 65900 },
-  { s: "ETH", full: "Ethereum", pair: "ETH / USDC", p: 3188, c: -0.62, hi: 3240, lo: 3140 },
-  { s: "AVAX", full: "Avalanche", pair: "AVAX / USDC", p: 38.1, c: 2.2, hi: 39.4, lo: 36.8 },
-  { s: "LINK", full: "Chainlink", pair: "LINK / USDC", p: 17.85, c: 3.04, hi: 18.2, lo: 16.9 },
-  { s: "ARB", full: "Arbitrum", pair: "ARB / USDC", p: 1.042, c: -1.1, hi: 1.08, lo: 1.01 },
-  { s: "DOGE", full: "Dogecoin", pair: "DOGE / USDC", p: 0.158, c: 6.71, hi: 0.163, lo: 0.147 },
-  { s: "OP", full: "Optimism", pair: "OP / USDC", p: 2.31, c: -0.41, hi: 2.39, lo: 2.27 },
+  { s: "SOL", full: "Solana", pair: "SOL / RLUSD", p: 184.2, c: 5.42, hi: 188.04, lo: 172.6 },
+  { s: "BTC", full: "Bitcoin", pair: "BTC / RLUSD", p: 67412, c: 1.82, hi: 68120, lo: 65900 },
+  { s: "ETH", full: "Ethereum", pair: "ETH / RLUSD", p: 3188, c: -0.62, hi: 3240, lo: 3140 },
+  { s: "AVAX", full: "Avalanche", pair: "AVAX / RLUSD", p: 38.1, c: 2.2, hi: 39.4, lo: 36.8 },
+  { s: "LINK", full: "Chainlink", pair: "LINK / RLUSD", p: 17.85, c: 3.04, hi: 18.2, lo: 16.9 },
+  { s: "ARB", full: "Arbitrum", pair: "ARB / RLUSD", p: 1.042, c: -1.1, hi: 1.08, lo: 1.01 },
+  { s: "DOGE", full: "Dogecoin", pair: "DOGE / RLUSD", p: 0.158, c: 6.71, hi: 0.163, lo: 0.147 },
+  { s: "OP", full: "Optimism", pair: "OP / RLUSD", p: 2.31, c: -0.41, hi: 2.39, lo: 2.27 },
 ];
 
 export interface Holding {

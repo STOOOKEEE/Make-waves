@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import { InvalidAddressError } from "@tide/xrpl";
 import {
   createBuyInSignRequest,
-  createLiveOfferSignRequest,
   createSignRequest,
   XamanError,
 } from "../src/xaman/sign-request";
@@ -15,7 +14,6 @@ import type {
 // apps/api ne dépend pas directement d'xrpl).
 const ACCOUNT = "rPh1pu5PSEPBv45NWPYTN7gUEMmaGNePGY";
 const POOL = "r3ZrdNvM99kxJjtYXL7twctbexdeCyD9hp";
-const ISSUER = "rBHYF7U1FLhG9ZWcyhRL9Rytrvx5ARBAUK";
 const TAG = 7777;
 
 const PAYLOAD: XamanCreatedPayload = {
@@ -30,6 +28,9 @@ class FakeApi implements XamanPayloadApi {
   async create(payload: { txjson: object }): Promise<XamanCreatedPayload | null> {
     this.lastTxjson = payload.txjson;
     return this.result;
+  }
+  async get(): Promise<null> {
+    return null;
   }
 }
 
@@ -86,20 +87,5 @@ describe("createBuyInSignRequest", () => {
       }),
     ).rejects.toBeInstanceOf(InvalidAddressError);
     expect(api.lastTxjson).toBeUndefined();
-  });
-});
-
-describe("createLiveOfferSignRequest", () => {
-  it("construit le swap taggé et le passe à Xaman", async () => {
-    const api = new FakeApi(PAYLOAD);
-    const req = await createLiveOfferSignRequest(api, {
-      account: ACCOUNT,
-      gives: "10000000",
-      wants: { currency: "USD", issuer: ISSUER, value: "5" },
-      sourceTag: TAG,
-    });
-    expect(req.signUrl).toBe("https://xumm.app/sign/u-1");
-    const sent = api.lastTxjson as { TransactionType: string };
-    expect(sent.TransactionType).toBe("OfferCreate");
   });
 });

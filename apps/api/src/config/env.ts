@@ -1,4 +1,6 @@
 import { assertAttributionTag, assertValidAddress } from "@tide/xrpl";
+import { RLUSD_CURRENCY, RLUSD_SYMBOL } from "../exec/plan-live";
+import type { LiveQuote } from "../exec/plan-live";
 
 /**
  * Lecture et validation des variables d'environnement. Un lecteur renvoie
@@ -110,6 +112,20 @@ export function readPrizePoolAddress(): string | undefined {
   }
   assertValidAddress(raw, "TIDE_PRIZE_POOL_ADDRESS");
   return raw;
+}
+
+/**
+ * Quote des swaps Live : RLUSD émis par l'adresse `TIDE_RLUSD_ISSUER` (validée).
+ * Active le moteur d'exécution Live (le seul actif tradé est XRP contre ce quote).
+ * `undefined` si l'issuer n'est pas configuré → Live non exposé.
+ */
+export function readLiveQuote(): LiveQuote | undefined {
+  const issuer = optional("TIDE_RLUSD_ISSUER");
+  if (issuer === undefined) {
+    return undefined;
+  }
+  assertValidAddress(issuer, "TIDE_RLUSD_ISSUER");
+  return { currency: RLUSD_CURRENCY, issuer, symbol: RLUSD_SYMBOL };
 }
 
 export interface XamanCredentials {

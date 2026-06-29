@@ -44,6 +44,24 @@ describe("comptes", () => {
     expect(res.statusCode).toBe(409);
   });
 
+  it("assure un compte sans erreur si déjà existant (200)", async () => {
+    const first = await app.inject({
+      method: "POST",
+      url: "/accounts/ensure",
+      payload: { userId: "a" },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({ userId: "a", created: true });
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/accounts/ensure",
+      payload: { userId: "a" },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toEqual({ userId: "a", created: false });
+  });
+
   it("rejette un corps invalide (400)", async () => {
     const res = await app.inject({
       method: "POST",
