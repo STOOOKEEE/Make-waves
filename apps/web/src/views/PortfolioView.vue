@@ -19,7 +19,7 @@ const { t } = useI18n({
   en: {
     title: "Portfolio",
     subtitle: "Current paper account · balances, positions and activity from the backend.",
-    connectPrompt: "Connect the terminal to load your real portfolio.",
+    connectPrompt: "Connect an XRP wallet to load your paper portfolio.",
     tf24H: "24H",
     tf7J: "7D",
     tf30J: "30D",
@@ -56,7 +56,7 @@ const { t } = useI18n({
   fr: {
     title: "Portefeuille",
     subtitle: "Compte paper courant · soldes, positions et activité issus du backend.",
-    connectPrompt: "Connecte le terminal pour charger ton portefeuille réel.",
+    connectPrompt: "Connecte un wallet XRP pour charger ton portefeuille paper.",
     tf24H: "24H",
     tf7J: "7J",
     tf30J: "30J",

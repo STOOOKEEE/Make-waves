@@ -145,6 +145,9 @@ watch(session.walletConnected, (connectedNow) => {
     mode.value = "live";
     pendingLive.value = false;
   }
+  if (connectedNow) {
+    void paper.connect();
+  }
 });
 
 /** Adresse XRPL raccourcie pour l'affichage (rXXXX…abcd). */
@@ -159,8 +162,6 @@ function walletKind(): string {
 // ---------- état réactif (équivalent du <script> source) ----------
 // Devise de référence du moteur paper (les comptes sont fondés en RLUSD).
 const REFERENCE_QUOTE = "RLUSD";
-// Identité de démo si le terminal est utilisé sans connexion explicite.
-const DEMO_USER = "pilote";
 
 // Watchlist réactive : part du catalogue mock, enrichie des prix réels du backend.
 const markets = ref<Market[]>([...MARKETS]);
@@ -577,6 +578,9 @@ function placeLabel(): string {
     if (cur.value.s !== "XRP") return t("liveXrpOnly");
     return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s }) + " · Live";
   }
+  if (!session.walletConnected.value) {
+    return t("connectToTrade");
+  }
   return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s });
 }
 async function placeOrderBackground(): Promise<void> {
@@ -587,10 +591,11 @@ async function placeOrderBackground(): Promise<void> {
     if (livePrices.value[cur.value.s] === undefined) {
       return;
     }
+    if (!session.walletConnected.value) {
+      wallet.connect();
+      return;
+    }
     if (!paper.connected.value) {
-      if (paper.userId.value.trim() === "") {
-        paper.userId.value = DEMO_USER;
-      }
       await paper.connect();
     }
     // Spot pur : on dépense `amount` en devise de référence ; le moteur paper
@@ -620,6 +625,10 @@ async function placeLiveOrder(): Promise<void> {
 function onPlace(): void {
   if (mode.value === "live") {
     void placeLiveOrder();
+    return;
+  }
+  if (!session.walletConnected.value) {
+    wallet.connect();
     return;
   }
   placeOverride.value = t("orderSent");
@@ -671,13 +680,12 @@ async function loadLiveConfig(): Promise<void> {
   }
 }
 
-// Init : prix réels puis connexion (auto-démo si aucune session) → balances peuplés.
+// Init : prix réels puis connexion du compte paper si un wallet XRPL est déjà lié.
 async function initDashboard(): Promise<void> {
   await Promise.all([loadMarkets(), loadLiveConfig()]);
-  if (paper.userId.value.trim() === "") {
-    paper.userId.value = DEMO_USER;
+  if (session.walletConnected.value) {
+    await paper.connect();
   }
-  await paper.connect();
 }
 
 // ---------- cycle de vie ----------

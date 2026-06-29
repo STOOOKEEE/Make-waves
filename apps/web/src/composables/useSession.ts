@@ -1,6 +1,5 @@
 import { computed, ref } from "vue";
 
-const USER_KEY = "tide.userId";
 const WALLET_KEY = "tide.liveAddress";
 const WALLET_TYPE_KEY = "tide.walletType";
 
@@ -27,30 +26,26 @@ function persist(key: string, value: string): void {
   }
 }
 
-// État partagé au niveau module : une SEULE identité pour toute l'application.
-// `userId` = compte paper (terminal) ; `liveAddress` = adresse XRPL connectée via
-// Xaman (mode Live). Portfolio/compétitions/header les lisent.
+// État partagé au niveau module : l'adresse XRPL connectée est l'identité
+// utilisateur unique. Même le paper trading utilise cette adresse comme compte,
+// afin que les participants restent comptabilisables par wallet.
 function loadWalletType(): WalletType {
   const v = load(WALLET_TYPE_KEY);
   return v === "xaman" || v === "gem" ? v : "";
 }
 
-const userId = ref(load(USER_KEY));
 const liveAddress = ref(load(WALLET_KEY));
+const userId = ref(liveAddress.value);
 const walletType = ref<WalletType>(loadWalletType());
 
 /** Session courante : compte paper + wallet Live, partagés et persistants. */
 export function useSession() {
-  const connected = computed(() => userId.value.trim() !== "");
+  const connected = computed(() => liveAddress.value.trim() !== "");
   const walletConnected = computed(() => liveAddress.value.trim() !== "");
-
-  function setUserId(id: string): void {
-    userId.value = id.trim();
-    persist(USER_KEY, userId.value);
-  }
 
   function setWallet(address: string, type: WalletType): void {
     liveAddress.value = address.trim();
+    userId.value = liveAddress.value;
     walletType.value = type;
     persist(WALLET_KEY, liveAddress.value);
     persist(WALLET_TYPE_KEY, type);
@@ -66,7 +61,6 @@ export function useSession() {
     walletType,
     connected,
     walletConnected,
-    setUserId,
     setWallet,
     disconnectWallet,
   };

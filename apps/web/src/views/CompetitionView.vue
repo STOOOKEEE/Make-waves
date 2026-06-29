@@ -288,10 +288,13 @@ const walletInitial = computed(() =>
 
 // Confirmation : passe au succès puis inscrit réellement le compte de session.
 async function confirm(): Promise<void> {
-  step.value = 2;
-  if (userId.value.trim() === "") {
-    return; // pas de session : on garde l'écran de succès, sans inscription réelle
+  if (!walletConnected.value || userId.value.trim() === "") {
+    resumeAfterWallet.value = true;
+    showModal.value = false;
+    wallet.connect();
+    return;
   }
+  step.value = 2;
   // Hybride : l'appel réseau ne bloque jamais l'UX de succès (erreurs captées
   // dans comps.error par le composable). On rafraîchit la liste des inscrits.
   await comps.join(c.value.id, userId.value);

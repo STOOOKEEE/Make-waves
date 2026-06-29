@@ -6,8 +6,8 @@ import { useSession } from "./useSession";
 
 /** Logique du terminal paper : connexion, soldes, ordres. État réactif Vue. */
 export function usePaper(client: TideClient) {
-  // L'identifiant vit dans la session partagée : connecter le terminal renseigne
-  // l'identité de toute l'app (portfolio et compétitions ciblent le même compte).
+  // L'identifiant vit dans la session partagée et correspond à l'adresse XRPL
+  // connectée. Portfolio et compétitions ciblent donc le même wallet comptable.
   const session = useSession();
   const { userId } = session;
   const connected = ref(false);
@@ -22,15 +22,15 @@ export function usePaper(client: TideClient) {
 
   async function connect(): Promise<void> {
     error.value = "";
-    if (userId.value.trim() === "") {
-      error.value = "Entre un identifiant";
+    if (!session.walletConnected.value || session.liveAddress.value.trim() === "") {
+      error.value = "Connecte ton wallet XRP";
       return;
     }
+    userId.value = session.liveAddress.value;
     try {
       await client.ensureAccount(userId.value);
       await refresh();
       connected.value = true;
-      session.setUserId(userId.value); // persiste l'identité après une connexion réussie
     } catch (e) {
       error.value = errorMessage(e);
     }
