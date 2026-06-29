@@ -248,6 +248,9 @@ const bookError = ref<string | null>(null);
 let bookRequestSeq = 0;
 const BOOK_REFRESH_MS = 1_500;
 let bookRefreshTimer: ReturnType<typeof setInterval> | null = null;
+const askRows = computed(() => book.value?.asks.slice().reverse() ?? []);
+const askMaxTotal = computed(() => book.value?.asks[book.value.asks.length - 1]?.total ?? 0);
+const bidMaxTotal = computed(() => book.value?.bids[book.value.bids.length - 1]?.total ?? 0);
 
 // Réf du <svg> du chart pour staggerer le fade-in des bougies.
 const chartSvg = ref<SVGSVGElement | null>(null);
@@ -446,6 +449,19 @@ function fmtBookSize(value: number): string {
     return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
   }
   return value.toLocaleString("en-US", { maximumFractionDigits: 6 });
+}
+
+function fmtBookPrice(value: number): string {
+  if (value >= 1000) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  }
+  if (value >= 100) {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  }
+  if (value >= 1) {
+    return value.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  }
+  return value.toLocaleString("en-US", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
 }
 
 function fmtSpread(spread: number): string {
@@ -932,23 +948,23 @@ onUnmounted(() => {
         <div class="bk-head"><div>{{ t('price') }}</div><div>{{ t('size') }}</div><div>{{ t('total') }}</div></div>
         <template v-if="book !== null">
           <div
-            v-for="row in book.asks"
+            v-for="row in askRows"
             :key="`ask-${row.price}-${row.total}`"
             class="bk ask"
           >
-            <span class="depth" :style="{ width: rowWidth(row.total, book.asks[book.asks.length - 1]?.total ?? row.total) }"></span>
-            <span class="px">{{ fmt(row.price) }}</span>
+            <span class="depth" :style="{ width: rowWidth(row.total, askMaxTotal) }"></span>
+            <span class="px">{{ fmtBookPrice(row.price) }}</span>
             <span class="d">{{ fmtBookSize(row.size) }}</span>
             <span class="d">{{ fmtBookSize(row.total) }}</span>
           </div>
-          <div class="bk-spread">{{ fmt(book.mid) }} &nbsp;·&nbsp; spread {{ fmtSpread(book.spread) }}</div>
+          <div class="bk-spread">{{ fmtBookPrice(book.mid) }} &nbsp;·&nbsp; spread {{ fmtSpread(book.spread) }}</div>
           <div
             v-for="row in book.bids"
             :key="`bid-${row.price}-${row.total}`"
             class="bk bid"
           >
-            <span class="depth" :style="{ width: rowWidth(row.total, book.bids[book.bids.length - 1]?.total ?? row.total) }"></span>
-            <span class="px">{{ fmt(row.price) }}</span>
+            <span class="depth" :style="{ width: rowWidth(row.total, bidMaxTotal) }"></span>
+            <span class="px">{{ fmtBookPrice(row.price) }}</span>
             <span class="d">{{ fmtBookSize(row.size) }}</span>
             <span class="d">{{ fmtBookSize(row.total) }}</span>
           </div>
