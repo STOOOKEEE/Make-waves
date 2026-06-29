@@ -57,6 +57,7 @@ describe("TideClient", () => {
     const depth = {
       symbol: "XRP",
       quoteSymbol: "USDT",
+      source: "Binance",
       asks: [{ price: 0.5, size: 100, total: 100 }],
       bids: [{ price: 0.49, size: 120, total: 120 }],
       mid: 0.495,

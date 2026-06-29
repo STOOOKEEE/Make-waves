@@ -130,6 +130,7 @@ export interface BookLevel {
 export interface BookDepth {
   readonly symbol: string;
   readonly quoteSymbol: string;
+  readonly source: string;
   readonly asks: readonly BookLevel[];
   readonly bids: readonly BookLevel[];
   readonly mid: number;

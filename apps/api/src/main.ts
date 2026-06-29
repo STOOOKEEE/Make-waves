@@ -8,6 +8,7 @@ import type { FeedLogger, OnchainPriceProvider } from "./feed/compose-price";
 import { PriceFeedError } from "./feed/errors";
 import { AmmOnchainPriceProvider } from "./feed/onchain-price";
 import { fetchBinanceBookDepth } from "./feed/binance-book-feed";
+import { fetchHyperliquidBookDepth } from "./feed/hyperliquid-book-feed";
 import type { SymbolPoolMap } from "./feed/onchain-price";
 import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
@@ -60,6 +61,25 @@ const fetchJson: FetchJson = async (url) => {
   }
   return response.json();
 };
+
+const postJson = async (url: string, body: unknown): Promise<unknown> => {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new PriceFeedError(`HTTP POST ${String(response.status)}`);
+  }
+  return response.json();
+};
+
+function fetchBookDepth(symbol: string, limit: number) {
+  if (symbol.toUpperCase() === "HYPE") {
+    return fetchHyperliquidBookDepth(symbol, limit, postJson);
+  }
+  return fetchBinanceBookDepth(symbol, limit, fetchJson);
+}
 
 /** Source de prix on-chain : seulement si un client ET des pools sont configurés. */
 function buildOnchainProvider(
@@ -216,7 +236,7 @@ async function main(): Promise<void> {
     accountStore,
     competitionStore,
     onchainPrices,
-    getBookDepth: (symbol, limit) => fetchBinanceBookDepth(symbol, limit, fetchJson),
+    getBookDepth: fetchBookDepth,
     sign,
     exec,
     metrics,

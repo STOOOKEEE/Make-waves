@@ -12,6 +12,7 @@ export interface BookLevel {
 export interface BookDepth {
   readonly symbol: string;
   readonly quoteSymbol: string;
+  readonly source: string;
   readonly asks: readonly BookLevel[];
   readonly bids: readonly BookLevel[];
   readonly mid: number;
@@ -75,6 +76,7 @@ export async function fetchBinanceBookDepth(
   return {
     symbol: base,
     quoteSymbol: "USDT",
+    source: "Binance",
     asks,
     bids,
     mid: (bid + ask) / 2,

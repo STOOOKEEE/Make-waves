@@ -25,6 +25,7 @@ describe("fetchBinanceBookDepth", () => {
     expect(depth).toEqual({
       symbol: "XRP",
       quoteSymbol: "USDT",
+      source: "Binance",
       asks: [
         { price: 0.5, size: 100, total: 100 },
         { price: 0.53, size: 150, total: 250 },

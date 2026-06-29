@@ -428,7 +428,9 @@ function bookSourceLabel(): string {
   if (bookStatus.value === "error") {
     return bookError.value ?? t("bookUnavailable");
   }
-  return `${t("bookLive")} · ${bookPairLabel()}`;
+  return book.value !== null
+    ? `${book.value.source} live · ${bookPairLabel()}`
+    : `${t("bookLive")} · ${bookPairLabel()}`;
 }
 
 function rowWidth(total: number, max: number): string {
