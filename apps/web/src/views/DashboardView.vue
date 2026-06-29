@@ -22,7 +22,7 @@ const { t } = useI18n({
     chartSource: "Chart source",
     liveFeed: "Live feed",
     priceFeed: "Price feed",
-    fallbackFeed: "Synthetic fallback",
+    chartUnavailable: "Real chart unavailable",
     candles: "Candles",
     candlesUnavailable: "Candles unavailable for price-only history",
     line: "Line",
@@ -67,7 +67,7 @@ const { t } = useI18n({
     chartSource: "Source graphique",
     liveFeed: "Flux live",
     priceFeed: "Flux prix",
-    fallbackFeed: "Repli synthétique",
+    chartUnavailable: "Graphique réel indisponible",
     candles: "Chandeliers",
     candlesUnavailable: "Chandeliers indisponibles pour un historique de prix",
     line: "Ligne",
@@ -202,32 +202,13 @@ const TF_QUERY: Readonly<Record<string, { interval: string; limit: number }>> = 
   "4H": { interval: "4h", limit: 120 },
   "1D": { interval: "5m", limit: 288 },
 };
-// Volatilité du repli synthétique (si Binance indisponible) par intervalle.
-const TF_VOL: Readonly<Record<string, number>> = {
-  "5m": 0.25,
-  "15m": 0.35,
-  "1H": 0.5,
-  "4H": 0.7,
-  "1D": 1,
-};
-// Durée d'une bougie par intervalle (ms) — horodate le repli synthétique pour que
-// l'axe des dates s'affiche même quand Binance ne cote pas l'actif (ex. HYPE).
-const MINUTE_MS = 60_000;
-const TF_MS: Readonly<Record<string, number>> = {
-  "5m": 5 * MINUTE_MS,
-  "15m": 15 * MINUTE_MS,
-  "1H": 60 * MINUTE_MS,
-  "4H": 240 * MINUTE_MS,
-  "1D": 25 * MINUTE_MS,
-};
 const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
 const tf = ref<string>("1D");
 const chartType = ref<"candles" | "line">("candles");
-const STABLE_SYMBOLS = new Set(["USDT", "USDC", "USDS", "DAI", "RLUSD", "PYUSD", "FDUSD", "TUSD"]);
 
-// Historique marché chargé depuis le backend ; vide → repli synthétique.
+// Historique marché chargé depuis le backend. Si vide, on n'affiche pas de faux chart.
 const realCandles = ref<Candle[]>([]);
-const historyMode = ref<"ohlc" | "price" | "synthetic">("synthetic");
+const historyMode = ref<"ohlc" | "price" | "unavailable">("unavailable");
 
 // Stats 24h FIXES (variation / haut / bas) — indépendantes de la taille de bougie
 // du chart. Calculées sur les 24 dernières bougies 1h (= 24h), pas sur la fenêtre
@@ -241,7 +222,7 @@ const chartSourceLabel = computed(() => {
   if (source !== undefined) {
     return source;
   }
-  return historyMode.value === "price" ? t("priceFeed") : t("fallbackFeed");
+  return historyMode.value === "price" ? t("priceFeed") : t("chartUnavailable");
 });
 
 // Prix réels du feed off-chain (devise → prix). Détermine ce que le backend peut
@@ -277,24 +258,6 @@ function spark(up: boolean): string {
   return `<svg viewBox="0 0 60 22" preserveAspectRatio="none" style="width:56px;height:22px"><path d="${d}" fill="none" stroke="${up ? "var(--up)" : "var(--down)"}" stroke-width="1.6"/></svg>`;
 }
 
-/** Hash d'une chaîne en entier (seed déterministe distinct par marché+timeframe). */
-function hashSeed(text: string): number {
-  let h = 7;
-  for (let i = 0; i < text.length; i++) {
-    h = (h * 31 + text.charCodeAt(i)) >>> 0;
-  }
-  return h;
-}
-
-/** PRNG déterministe (LCG) seedé — chart/carnet stables par marché. */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a * 1664525 + 1013904223) >>> 0;
-    return a / 4294967296;
-  };
-}
-
 /** Libellé d'axe temporel : heure (intraday) ou date selon l'intervalle. */
 function fmtAxisDate(ts: number): string {
   const d = new Date(ts);
@@ -318,43 +281,10 @@ interface ChartCandle {
   t?: number;
 }
 
-function isStableMarket(m: Market): boolean {
-  return STABLE_SYMBOLS.has(m.s) || (m.p > 0.92 && m.p < 1.08 && /usd|tether|stable/i.test(m.full));
-}
-
-/** Bougies à tracer : vraies (Binance) si dispo, sinon repli synthétique. */
+/** Bougies à tracer : uniquement des données réelles fournies par le backend. */
 function chartCandles(): ChartCandle[] {
   const real = realCandles.value;
-  if (real.length > 0) {
-    return real.map((k) => ({ o: k.o, c: k.c, hi: k.h, lo: k.l, t: k.t }));
-  }
-  // Repli (Binance indisponible) : bougies seedées autour du prix courant,
-  // horodatées (pas de l'intervalle, finissant « maintenant ») → axe des dates OK.
-  const m = cur.value;
-  const stable = isStableMarket(m);
-  const vol = stable ? 0.015 : TF_VOL[tf.value] ?? 1;
-  const r = rng(hashSeed(m.s + "|" + tf.value));
-  const count = Math.min(TF_QUERY[tf.value]?.limit ?? 120, stable ? 120 : 80);
-  const step = TF_MS[tf.value] ?? 60 * MINUTE_MS;
-  const now = Date.now();
-  let price = m.p * (stable ? 1 - 0.001 * vol : 1 - 0.06 * vol);
-  const out: ChartCandle[] = [];
-  for (let i = 0; i < count; i++) {
-    const drift = ((m.p - price) / (count - i)) * 0.6;
-    const o = price;
-    const ch = (r() - 0.45) * m.p * 0.018 * vol + drift;
-    const c = o + ch;
-    const wick = stable ? m.p * 0.00015 * vol : m.p * 0.01 * vol;
-    const hi = Math.max(o, c) + r() * wick;
-    const lo = Math.min(o, c) - r() * wick;
-    out.push({ o, c, hi, lo, t: now - (count - 1 - i) * step });
-    price = c;
-  }
-  const last = out[count - 1];
-  if (last !== undefined) {
-    last.c = m.p;
-  }
-  return out;
+  return real.map((k) => ({ o: k.o, c: k.c, hi: k.h, lo: k.l, t: k.t }));
 }
 
 // ---------- chart ----------
@@ -365,6 +295,14 @@ function renderChart(): void {
   const m = cur.value;
   const candles = chartCandles();
   const n = candles.length;
+  if (n === 0) {
+    chartHtml.value =
+      `<line x1="0" y1="${H / 2}" x2="${W - pad}" y2="${H / 2}" stroke="var(--line)" stroke-width="1"/>` +
+      `<text class="axis" x="${(W - pad) / 2}" y="${H / 2 - 10}" text-anchor="middle">${t("chartUnavailable")}</text>` +
+      `<rect x="${W - pad}" y="${H / 2 - 9}" width="${pad}" height="18" fill="var(--blue)" rx="3"/>` +
+      `<text class="axis" x="${W - pad + 5}" y="${H / 2 + 3}" fill="#fff" style="font-weight:700">${fmt(m.p)}</text>`;
+    return;
+  }
   let mx = -1e9;
   let mn = 1e9;
   candles.forEach((k) => {
@@ -548,13 +486,13 @@ function setChartType(value: "candles" | "line"): void {
   renderChart();
 }
 
-function inferHistoryMode(candles: readonly Candle[]): "ohlc" | "price" | "synthetic" {
+function inferHistoryMode(candles: readonly Candle[]): "ohlc" | "price" | "unavailable" {
   const firstMode = candles[0]?.mode;
   if (firstMode === "ohlc" || firstMode === "price") {
     return firstMode;
   }
   if (candles.length === 0) {
-    return "synthetic";
+    return "unavailable";
   }
   const flat = candles.filter((k) => k.o === k.h && k.h === k.l && k.l === k.c).length;
   return flat / candles.length > 0.8 ? "price" : "ohlc";
@@ -568,8 +506,8 @@ async function loadHistory(): Promise<void> {
     realCandles.value = await props.client.history(symbol, query.interval, query.limit);
     historyMode.value = inferHistoryMode(realCandles.value);
   } catch {
-    realCandles.value = []; // Binance indisponible → repli synthétique
-    historyMode.value = "synthetic";
+    realCandles.value = [];
+    historyMode.value = "unavailable";
   }
   renderChart();
 }

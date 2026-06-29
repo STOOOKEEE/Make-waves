@@ -10,6 +10,7 @@ import type { MarketRow, MarketsFeedConfig } from "./feed/coingecko-markets";
 import { composePriceMap } from "./feed/compose-price";
 import { fetchKlines, isKlineInterval } from "./feed/klines";
 import type { Candle } from "./feed/klines";
+import { fetchGateCandles } from "./feed/gate-history";
 import { fetchCoinGeckoOhlc } from "./feed/coingecko-ohlc";
 import { fetchCoinGeckoHistory } from "./feed/coingecko-history";
 import type { BookDepth } from "./feed/binance-book-feed";
@@ -115,7 +116,7 @@ export function createApp(config: AppConfig): App {
     if (hit !== undefined && now - hit.at < HISTORY_TTL_MS) {
       return hit.data;
     }
-    const data = fetchKlines(symbol, interval, limit, config.fetchJson).catch((error: unknown) => {
+    const marketFallbackHistory = (error: unknown): Promise<Candle[]> => {
       const row = marketRows.find((market) => market.symbol === symbol.toUpperCase());
       if (config.markets === undefined || row === undefined) {
         throw error;
@@ -140,11 +141,14 @@ export function createApp(config: AppConfig): App {
             config.fetchJson,
           ),
         );
+      const gateHistory = () =>
+        fetchGateCandles(symbol, interval, limit, config.fetchJson).catch(coinGeckoHistory);
       if (dexHistory === undefined) {
-        return coinGeckoHistory();
+        return gateHistory();
       }
-      return dexHistory.then((candles) => candles ?? coinGeckoHistory()).catch(coinGeckoHistory);
-    });
+      return dexHistory.then((candles) => candles ?? gateHistory()).catch(gateHistory);
+    };
+    const data = fetchKlines(symbol, interval, limit, config.fetchJson).catch(marketFallbackHistory);
     historyCache.set(key, { at: now, data });
     data.catch(() => historyCache.delete(key));
     return data;

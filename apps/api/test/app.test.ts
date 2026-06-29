@@ -175,6 +175,52 @@ describe("createApp", () => {
     expect(urls.some((url) => url.includes("/coins/rain/market_chart"))).toBe(false);
   });
 
+  it("préfère les chandeliers Gate à CoinGecko quand Binance ne cote pas le symbole", async () => {
+    const urls: string[] = [];
+    const fetchJson: FetchJson = (url) => {
+      urls.push(url);
+      if (url.includes("/coins/markets")) {
+        return Promise.resolve([
+          {
+            id: "canton",
+            symbol: "cc",
+            name: "Canton",
+            current_price: 0.146,
+            price_change_percentage_24h: -3,
+          },
+        ]);
+      }
+      if (url.includes("/klines")) {
+        return Promise.reject(new Error("Binance ne cote pas CC"));
+      }
+      if (url.includes("/spot/candlesticks")) {
+        return Promise.resolve([
+          ["1782752400", "2592.64777000", "0.14518", "0.14521", "0.14501", "0.14502", "17874.00000000", "true"],
+        ]);
+      }
+      return Promise.reject(new Error(`URL inattendue: ${url}`));
+    };
+    const { app, refreshPrices } = createApp({
+      markets: { baseUrl: "https://api.example.com/api/v3", vsCurrency: "usd", perPage: 250 },
+      fetchJson,
+    });
+    await refreshPrices();
+    const res = await app.inject({ method: "GET", url: "/history/CC?interval=5m&limit=120" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      {
+        t: 1_782_752_400_000,
+        o: 0.14502,
+        h: 0.14521,
+        l: 0.14501,
+        c: 0.14518,
+        source: "Gate",
+        mode: "ohlc",
+      },
+    ]);
+    expect(urls.some((url) => url.includes("/coins/canton/ohlc"))).toBe(false);
+  });
+
   it("préfère l'historique DEX quand il est disponible pour le symbole", async () => {
     const urls: string[] = [];
     const fetchJson: FetchJson = (url) => {
