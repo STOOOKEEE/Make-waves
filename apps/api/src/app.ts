@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { PriceMap } from "@tide/core";
+import type { BookDepth } from "@tide/client";
 import { PaperService } from "./services/paper-service";
 import { CompetitionService } from "./services/competition-service";
 import { PriceCache } from "./feed/price-cache";
@@ -53,6 +54,12 @@ export interface AppConfig {
   readonly exec?: ExecDeps;
   /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
   readonly metrics?: MetricsDeps;
+  /** Carnet XRPL réel (route /book) — absent si client XRPL non câblé. */
+  readonly getBookDepth?: (
+    base: string,
+    quote: string,
+    limit: number,
+  ) => Promise<BookDepth>;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -117,6 +124,7 @@ export function createApp(config: AppConfig): App {
     getPrices: () => cache.current(),
     getMarkets: config.markets !== undefined ? () => marketRows : undefined,
     getHistory,
+    getBookDepth: config.getBookDepth,
     sign: config.sign,
     exec: config.exec,
     metrics: config.metrics,

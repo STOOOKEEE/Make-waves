@@ -1,8 +1,8 @@
 import { assertValidAddress } from "../tx/address";
 import type { AmmInfoClient, XrplCurrency } from "../price/amm-reader";
 import { readAmmSpotPrice } from "../price/amm-reader";
-import type { BookOffersClient, BookQuote } from "../price/book-reader";
-import { readBookQuote } from "../price/book-reader";
+import type { BookDepth, BookOffersClient, BookQuote } from "../price/book-reader";
+import { readBookDepth, readBookQuote } from "../price/book-reader";
 import type {
   XrplConnection,
   XrplRequestEnvelope,
@@ -143,6 +143,21 @@ export class XrplClient {
       request: (request) => this.request(request, parseBookOffersResult),
     };
     return readBookQuote(bookClient, base, quote);
+  }
+
+  /**
+   * Profondeur du carnet natif XRPL, limitée à `limit` niveaux par côté.
+   * Utilise les mêmes garde-fous que `bookQuote`.
+   */
+  async bookDepth(
+    base: XrplCurrency,
+    quote: XrplCurrency,
+    limit = 8,
+  ): Promise<BookDepth> {
+    const bookClient: BookOffersClient = {
+      request: (request) => this.request(request, parseBookOffersResult),
+    };
+    return readBookDepth(bookClient, base, quote, limit);
   }
 
   /**

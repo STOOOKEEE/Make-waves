@@ -119,6 +119,21 @@ export interface Candle {
   readonly c: number;
 }
 
+/** Niveau du carnet retourné par l'API : prix, taille et total cumulés. */
+export interface BookLevel {
+  readonly price: number;
+  readonly size: number;
+  readonly total: number;
+}
+
+/** Carnet d'ordres XRPL réel exposé au dashboard. */
+export interface BookDepth {
+  readonly asks: readonly BookLevel[];
+  readonly bids: readonly BookLevel[];
+  readonly mid: number;
+  readonly spread: number;
+}
+
 /** Métriques d'attribution du hackathon (miroir de `@tide/xrpl`). */
 export interface AttributionMetrics {
   readonly totalVolume: number;
@@ -206,6 +221,23 @@ export class TideClient {
         path:
           `${path("history", symbol)}` +
           `?interval=${encodeURIComponent(interval)}&limit=${String(limit)}`,
+        method: "GET",
+      },
+      200,
+    );
+  }
+
+  /** Profondeur réelle du carnet XRPL pour une paire base/quote. */
+  async bookDepth(
+    base: string,
+    quote: string,
+    limit = 8,
+  ): Promise<BookDepth> {
+    return this.call(
+      {
+        path:
+          `${path("book", base, quote)}` +
+          `?limit=${String(limit)}`,
         method: "GET",
       },
       200,

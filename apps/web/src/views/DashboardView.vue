@@ -2,7 +2,7 @@
 // Terminal de trading — porté depuis design_site/dashboard.html.
 // Bento 3 colonnes : watchlist, chart + positions, ticket + carnet d'ordres.
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import type { Candle, TideClient } from "@tide/client";
+import type { BookDepth, Candle, TideClient } from "@tide/client";
 import type { MarketOrderInput } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
@@ -27,7 +27,6 @@ const { t } = useI18n({
     positionsTab: "Positions",
     market: "Market",
     side: "Side",
-    size: "Size",
     entryToMarket: "Entry → Market",
     close: "Close",
     closed: "Closed",
@@ -41,8 +40,12 @@ const { t } = useI18n({
     sellAsset: "Sell {asset}",
     orderSent: "✓ Paper order sent",
     orderBook: "Order book",
-    indicativeBook: "Indicative depth",
+    bookLive: "XRPL live",
+    bookLoading: "Loading...",
+    bookUnavailable: "Real book unavailable",
+    bookOnlyXrp: "XRP/RLUSD only",
     price: "Price",
+    size: "Size",
     total: "Total",
     modePaper: "Paper",
     modeLive: "Live",
@@ -68,7 +71,6 @@ const { t } = useI18n({
     positionsTab: "Positions",
     market: "Marché",
     side: "Sens",
-    size: "Taille",
     entryToMarket: "Entrée → Marché",
     close: "Fermer",
     closed: "Fermée",
@@ -82,8 +84,12 @@ const { t } = useI18n({
     sellAsset: "Vendre {asset}",
     orderSent: "✓ Ordre simulé envoyé",
     orderBook: "Carnet d'ordres",
-    indicativeBook: "Profondeur indicative",
+    bookLive: "Flux XRPL réel",
+    bookLoading: "Chargement...",
+    bookUnavailable: "Carnet réel indisponible",
+    bookOnlyXrp: "Disponible sur XRP/RLUSD",
     price: "Prix",
+    size: "Taille",
     total: "Total",
     modePaper: "Paper",
     modeLive: "Live",
@@ -238,8 +244,9 @@ const pctIdx = ref(-1);
 
 // Markup SVG injecté via v-html (chart + carnet).
 const chartHtml = ref("");
-const asksHtml = ref("");
-const bidsHtml = ref("");
+const book = ref<BookDepth | null>(null);
+const bookStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
+const bookError = ref<string | null>(null);
 
 // Réf du <svg> du chart pour staggerer le fade-in des bougies.
 const chartSvg = ref<SVGSVGElement | null>(null);
@@ -404,32 +411,47 @@ function renderChart(): void {
   });
 }
 
-// ---------- carnet d'ordres (port exact de renderBook) ----------
-function renderBook(): void {
-  const m = cur.value;
-  const r = rng(m.s.length * 13 + 5);
-  const p = m.p;
-  const step = p * 0.0006;
-  const rowsA: { px: number; sz: number }[] = [];
-  for (let i = 8; i >= 1; i--) rowsA.push({ px: p + step * i, sz: r() * 60 + 5 });
-  const at = rowsA.reduce((a, o) => a + o.sz, 0);
-  let cum = 0;
-  let asks = "";
-  rowsA.forEach((o) => {
-    cum += o.sz;
-    asks += `<div class="bk ask"><span class="depth" style="width:${(cum / at) * 100}%"></span><span class="px">${fmt(o.px)}</span><span class="d">${o.sz.toFixed(2)}</span><span class="d">${cum.toFixed(1)}</span></div>`;
-  });
-  const rowsB: { px: number; sz: number }[] = [];
-  for (let i = 1; i <= 8; i++) rowsB.push({ px: p - step * i, sz: r() * 60 + 5 });
-  const bt = rowsB.reduce((a, o) => a + o.sz, 0);
-  cum = 0;
-  let bids = "";
-  rowsB.forEach((o) => {
-    cum += o.sz;
-    bids += `<div class="bk bid"><span class="depth" style="width:${(cum / bt) * 100}%"></span><span class="px">${fmt(o.px)}</span><span class="d">${o.sz.toFixed(2)}</span><span class="d">${cum.toFixed(1)}</span></div>`;
-  });
-  asksHtml.value = asks;
-  bidsHtml.value = bids;
+function bookPairLabel(): string {
+  return liveQuoteSymbol.value !== null ? `XRP/${liveQuoteSymbol.value}` : "XRP/RLUSD";
+}
+
+function bookSourceLabel(): string {
+  if (!liveConfigured()) {
+    return t("liveNotConfigured");
+  }
+  if (cur.value.s !== "XRP") {
+    return t("bookOnlyXrp");
+  }
+  if (bookStatus.value === "loading") {
+    return t("bookLoading");
+  }
+  return `${t("bookLive")} · ${bookPairLabel()}`;
+}
+
+function rowWidth(total: number, max: number): string {
+  if (max <= 0) {
+    return "0%";
+  }
+  return `${Math.max(0, Math.min(100, (total / max) * 100))}%`;
+}
+
+async function loadBook(): Promise<void> {
+  if (!liveConfigured() || cur.value.s !== "XRP") {
+    book.value = null;
+    bookStatus.value = "idle";
+    bookError.value = null;
+    return;
+  }
+  bookStatus.value = "loading";
+  bookError.value = null;
+  try {
+    book.value = await props.client.bookDepth("XRP", liveQuoteSymbol.value ?? "RLUSD", 8);
+    bookStatus.value = "ready";
+  } catch {
+    book.value = null;
+    bookStatus.value = "error";
+    bookError.value = t("bookUnavailable");
+  }
 }
 
 // ---------- sélection de marché ----------
@@ -484,7 +506,11 @@ async function loadStats24h(): Promise<void> {
 watch(cur, () => {
   void loadHistory();
   void loadStats24h();
-  renderBook();
+  void loadBook();
+});
+
+watch(liveQuoteSymbol, () => {
+  void loadBook();
 });
 
 // ---------- ticket : valeurs dérivées (spot pur, sans levier) ----------
@@ -691,7 +717,7 @@ async function initDashboard(): Promise<void> {
 // ---------- cycle de vie ----------
 onMounted(() => {
   renderChart();
-  renderBook();
+  void loadBook();
   window.addEventListener("resize", renderChart);
   void initDashboard();
 });
@@ -865,11 +891,44 @@ onUnmounted(() => {
       </div>
 
       <div class="card book">
-        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ t('indicativeBook') }} · {{ cur.s }}/RLUSD</span></div>
+        <div class="bh"><span class="t">{{ t('orderBook') }}</span><span class="lab">{{ bookSourceLabel() }}</span></div>
         <div class="bk-head"><div>{{ t('price') }}</div><div>{{ t('size') }}</div><div>{{ t('total') }}</div></div>
-        <div v-html="asksHtml"></div>
-        <div class="bk-spread">{{ fmt(cur.p) }} &nbsp;·&nbsp; spread {{ (cur.p * 0.0001).toFixed(cur.p < 1 ? 4 : 2) }}</div>
-        <div v-html="bidsHtml"></div>
+        <template v-if="book !== null">
+          <div
+            v-for="row in book.asks"
+            :key="`ask-${row.price}-${row.total}`"
+            class="bk ask"
+          >
+            <span class="depth" :style="{ width: rowWidth(row.total, book.asks[book.asks.length - 1]?.total ?? row.total) }"></span>
+            <span class="px">{{ fmt(row.price) }}</span>
+            <span class="d">{{ fmt(row.size) }}</span>
+            <span class="d">{{ fmt(row.total) }}</span>
+          </div>
+          <div class="bk-spread">{{ fmt(book.mid) }} &nbsp;·&nbsp; spread {{ book.spread.toFixed(4) }}</div>
+          <div
+            v-for="row in book.bids"
+            :key="`bid-${row.price}-${row.total}`"
+            class="bk bid"
+          >
+            <span class="depth" :style="{ width: rowWidth(row.total, book.bids[book.bids.length - 1]?.total ?? row.total) }"></span>
+            <span class="px">{{ fmt(row.price) }}</span>
+            <span class="d">{{ fmt(row.size) }}</span>
+            <span class="d">{{ fmt(row.total) }}</span>
+          </div>
+        </template>
+        <div v-else class="book-empty">
+          {{
+            bookStatus === 'loading'
+              ? t('bookLoading')
+              : bookStatus === 'error'
+                ? (bookError ?? t('bookUnavailable'))
+                : liveConfigured()
+                ? cur.s === 'XRP'
+                  ? t('bookUnavailable')
+                  : t('bookOnlyXrp')
+                : t('liveNotConfigured')
+          }}
+        </div>
       </div>
     </aside>
     </div>
@@ -1550,8 +1609,8 @@ onUnmounted(() => {
 .bk-head div:nth-child(3) {
   text-align: right;
 }
-/* Lignes du carnet injectées via v-html (#asks/#bids) → :deep() obligatoire. */
-.book :deep(.bk) {
+/* Lignes du carnet réelles, rendues en boucle Vue. */
+.book .bk {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
@@ -1560,11 +1619,11 @@ onUnmounted(() => {
   font-family: var(--mono);
   font-size: 11.5px;
 }
-.book :deep(.bk .d) {
+.book .bk .d {
   text-align: right;
   color: var(--soft);
 }
-.book :deep(.bk .depth) {
+.book .bk .depth {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1572,16 +1631,16 @@ onUnmounted(() => {
   opacity: 0.12;
   border-radius: 2px;
 }
-.book :deep(.bk.ask .depth) {
+.book .bk.ask .depth {
   background: var(--down);
 }
-.book :deep(.bk.bid .depth) {
+.book .bk.bid .depth {
   background: var(--up);
 }
-.book :deep(.bk.ask .px) {
+.book .bk.ask .px {
   color: var(--down);
 }
-.book :deep(.bk.bid .px) {
+.book .bk.bid .px {
   color: var(--up);
 }
 .bk-spread {
@@ -1591,5 +1650,12 @@ onUnmounted(() => {
   font-weight: 700;
   padding: 9px 0;
   color: var(--soft);
+}
+.book-empty {
+  padding: 18px 0 8px;
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
 }
 </style>

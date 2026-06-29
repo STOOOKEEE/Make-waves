@@ -9,6 +9,7 @@ import { PriceFeedError } from "./feed/errors";
 import { AmmOnchainPriceProvider } from "./feed/onchain-price";
 import type { SymbolPoolMap } from "./feed/onchain-price";
 import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
+import { BadRequestError } from "./http/parse";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
 import { PaperService } from "./services/paper-service";
@@ -215,6 +216,15 @@ async function main(): Promise<void> {
     accountStore,
     competitionStore,
     onchainPrices,
+    getBookDepth:
+      xrpl !== undefined && exec !== undefined
+        ? (base, quote, limit) => {
+            if (base !== "XRP" || quote !== exec.quote.symbol) {
+              throw new BadRequestError("Carnet XRPL disponible uniquement pour XRP/RLUSD");
+            }
+            return xrpl.bookDepth({ currency: "XRP" }, exec.quote, limit);
+          }
+        : undefined,
     sign,
     exec,
     metrics,

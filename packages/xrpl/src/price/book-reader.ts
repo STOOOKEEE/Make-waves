@@ -1,5 +1,6 @@
 import type { Amount } from "xrpl";
 import { ammSpotPrice, midPrice, relativeSpread } from "./spot";
+import { amountToQuantity } from "./quantity";
 import type { XrplCurrency } from "./amm-reader";
 import { InvalidPriceError } from "../errors";
 
@@ -49,6 +50,21 @@ export interface BookQuote {
   readonly spread: number;
 }
 
+/** Niveau du carnet d'ordres. Taille et total sont exprimés en base. */
+export interface BookDepthLevel {
+  readonly price: number;
+  readonly size: number;
+  readonly total: number;
+}
+
+/** Profondeur du carnet d'ordres autour du meilleur prix. */
+export interface BookDepth {
+  readonly asks: readonly BookDepthLevel[];
+  readonly bids: readonly BookDepthLevel[];
+  readonly mid: number;
+  readonly spread: number;
+}
+
 /**
  * Montants réellement disponibles d'une offre (funded si présent). Les deux
  * `*_funded` sont émis ENSEMBLE par rippled (même facteur de réduction, prix
@@ -67,6 +83,26 @@ function offerAmounts(offer: BookOffer): { gets: Amount; pays: Amount } {
   return {
     gets: getsFunded ?? offer.TakerGets,
     pays: paysFunded ?? offer.TakerPays,
+  };
+}
+
+function bookLevelForAsk(offer: BookOffer): BookDepthLevel {
+  const { gets, pays } = offerAmounts(offer);
+  const size = amountToQuantity(gets, "book ask size");
+  return {
+    price: ammSpotPrice(gets, pays),
+    size,
+    total: size,
+  };
+}
+
+function bookLevelForBid(offer: BookOffer): BookDepthLevel {
+  const { gets, pays } = offerAmounts(offer);
+  const size = amountToQuantity(pays, "book bid size");
+  return {
+    price: ammSpotPrice(pays, gets),
+    size,
+    total: size,
   };
 }
 
@@ -138,6 +174,66 @@ export async function readBookQuote(
   return {
     ask,
     bid,
+    mid: midPrice(bid, ask),
+    spread: relativeSpread(bid, ask),
+  };
+}
+
+/**
+ * Profondeur du carnet sur `limit` niveaux par côté. Les totaux sont cumulés en
+ * base. Le carnet est lu dans les deux sens natifs XRPL :
+ * - asks : vendeurs qui fournissent la base contre la quote ;
+ * - bids : vendeurs qui fournissent la quote contre la base.
+ */
+export async function readBookDepth(
+  client: BookOffersClient,
+  base: XrplCurrency,
+  quote: XrplCurrency,
+  limit = 8,
+): Promise<BookDepth> {
+  const askResponse = await client.request({
+    command: "book_offers",
+    taker_gets: base,
+    taker_pays: quote,
+    limit,
+  });
+  const bidResponse = await client.request({
+    command: "book_offers",
+    taker_gets: quote,
+    taker_pays: base,
+    limit,
+  });
+  const asksRaw = askResponse.result.offers;
+  const bidsRaw = bidResponse.result.offers;
+  if (asksRaw.length === 0 || bidsRaw.length === 0) {
+    throw new InvalidPriceError("Carnet vide");
+  }
+
+  let total = 0;
+  const asks = asksRaw.map((offer) => {
+    const level = bookLevelForAsk(offer);
+    total += level.size;
+    return { ...level, total };
+  });
+
+  total = 0;
+  const bids = bidsRaw.map((offer) => {
+    const level = bookLevelForBid(offer);
+    total += level.size;
+    return { ...level, total };
+  });
+
+  const ask = asks[0]?.price;
+  const bid = bids[0]?.price;
+  if (ask === undefined || bid === undefined) {
+    throw new InvalidPriceError("Carnet vide");
+  }
+  if (ask < bid) {
+    throw new InvalidPriceError(`Carnet croisé: ask (${String(ask)}) < bid (${String(bid)})`);
+  }
+  return {
+    asks,
+    bids,
     mid: midPrice(bid, ask),
     spread: relativeSpread(bid, ask),
   };

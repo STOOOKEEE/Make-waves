@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import type { FastifyInstance } from "fastify";
 import type { PriceMap } from "@tide/core";
+import type { BookDepth } from "@tide/client";
 import type { AttributionMetrics } from "@tide/xrpl";
 import type { Candle } from "../feed/klines";
 import type { MarketRow } from "../feed/coingecko-markets";
@@ -74,6 +75,12 @@ export interface ServerDeps {
     interval: string,
     limit: number,
   ) => Promise<Candle[]>;
+  /** Carnet XRPL réel. Absent → /book non monté. */
+  readonly getBookDepth?: (
+    base: string,
+    quote: string,
+    limit: number,
+  ) => Promise<BookDepth>;
   /** Signature Xaman (routes /sign/*) — absente si XUMM non configuré. */
   readonly sign?: SignDeps;
   /** Moteur d'exécution Live (/exec/plan, /sign/live-offer) — absent si quote non configuré. */
@@ -200,6 +207,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       const parsed = Number(request.query.limit);
       const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 300) : 120;
       return getHistory(request.params.symbol, interval, limit);
+    });
+  }
+
+  if (deps.getBookDepth !== undefined) {
+    const getBookDepth = deps.getBookDepth;
+    app.get<{
+      Params: { base: string; quote: string };
+      Querystring: { limit?: string };
+    }>("/book/:base/:quote", (request) => {
+      const parsed = Number(request.query.limit);
+      const limit = Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 20) : 8;
+      return getBookDepth(request.params.base, request.params.quote, limit);
     });
   }
 

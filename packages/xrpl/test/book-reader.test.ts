@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   readBestAsk,
   readBestBid,
+  readBookDepth,
   readBookQuote,
 } from "../src/price/book-reader";
 import type {
@@ -127,5 +128,35 @@ describe("book-reader", () => {
     await expect(
       readBookQuote(fakeBook({ ask: cheapAsk, bid: richBid }), XRP, USD),
     ).rejects.toBeInstanceOf(InvalidPriceError);
+  });
+
+  it("readBookDepth retourne les niveaux cumulés en base", async () => {
+    const asks: BookOffersResult = {
+      result: {
+        offers: [
+          { TakerGets: "100000000", TakerPays: { currency: "USD", issuer: ISSUER, value: "50" } },
+          { TakerGets: "150000000", TakerPays: { currency: "USD", issuer: ISSUER, value: "79.5" } },
+        ],
+      },
+    };
+    const bids: BookOffersResult = {
+      result: {
+        offers: [
+          { TakerGets: { currency: "USD", issuer: ISSUER, value: "49" }, TakerPays: "100000000" },
+          { TakerGets: { currency: "USD", issuer: ISSUER, value: "56.4" }, TakerPays: "120000000" },
+        ],
+      },
+    };
+    const depth = await readBookDepth(fakeBook({ ask: asks, bid: bids }), XRP, USD, 2);
+    expect(depth.asks).toEqual([
+      { price: 0.5, size: 100, total: 100 },
+      { price: 0.53, size: 150, total: 250 },
+    ]);
+    expect(depth.bids).toEqual([
+      { price: 0.49, size: 100, total: 100 },
+      { price: 0.47, size: 120, total: 220 },
+    ]);
+    expect(depth.mid).toBe(0.495);
+    expect(depth.spread).toBeCloseTo(0.0202, 4);
   });
 });

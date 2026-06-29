@@ -135,6 +135,30 @@ describe("leaderboard", () => {
   });
 });
 
+describe("book", () => {
+  it("retourne un carnet réel si le fournisseur est câblé", async () => {
+    const depth = {
+      asks: [{ price: 0.5, size: 100, total: 100 }],
+      bids: [{ price: 0.49, size: 120, total: 120 }],
+      mid: 0.495,
+      spread: 0.0202,
+    };
+    const bookApp = buildServer({
+      paper,
+      competition,
+      getPrices: () => prices,
+      getBookDepth: async () => depth,
+    });
+    try {
+      const res = await bookApp.inject({ method: "GET", url: "/book/XRP/RLUSD" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual(depth);
+    } finally {
+      await bookApp.close();
+    }
+  });
+});
+
 describe("compétitions", () => {
   const comp = {
     id: "c1",
