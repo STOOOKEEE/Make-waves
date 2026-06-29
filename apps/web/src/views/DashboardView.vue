@@ -223,6 +223,7 @@ const TF_MS: Readonly<Record<string, number>> = {
 const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
 const tf = ref<string>("1D");
 const chartType = ref<"candles" | "line">("candles");
+const STABLE_SYMBOLS = new Set(["USDT", "USDC", "USDS", "DAI", "RLUSD", "PYUSD", "FDUSD", "TUSD"]);
 
 // Historique marché chargé depuis le backend ; vide → repli synthétique.
 const realCandles = ref<Candle[]>([]);
@@ -317,6 +318,10 @@ interface ChartCandle {
   t?: number;
 }
 
+function isStableMarket(m: Market): boolean {
+  return STABLE_SYMBOLS.has(m.s) || (m.p > 0.92 && m.p < 1.08 && /usd|tether|stable/i.test(m.full));
+}
+
 /** Bougies à tracer : vraies (Binance) si dispo, sinon repli synthétique. */
 function chartCandles(): ChartCandle[] {
   const real = realCandles.value;
@@ -326,20 +331,22 @@ function chartCandles(): ChartCandle[] {
   // Repli (Binance indisponible) : bougies seedées autour du prix courant,
   // horodatées (pas de l'intervalle, finissant « maintenant ») → axe des dates OK.
   const m = cur.value;
-  const vol = TF_VOL[tf.value] ?? 1;
+  const stable = isStableMarket(m);
+  const vol = stable ? 0.015 : TF_VOL[tf.value] ?? 1;
   const r = rng(hashSeed(m.s + "|" + tf.value));
-  const count = 58;
+  const count = Math.min(TF_QUERY[tf.value]?.limit ?? 120, stable ? 120 : 80);
   const step = TF_MS[tf.value] ?? 60 * MINUTE_MS;
   const now = Date.now();
-  let price = m.p * (1 - 0.06 * vol);
+  let price = m.p * (stable ? 1 - 0.001 * vol : 1 - 0.06 * vol);
   const out: ChartCandle[] = [];
   for (let i = 0; i < count; i++) {
     const drift = ((m.p - price) / (count - i)) * 0.6;
     const o = price;
     const ch = (r() - 0.45) * m.p * 0.018 * vol + drift;
     const c = o + ch;
-    const hi = Math.max(o, c) + r() * m.p * 0.01 * vol;
-    const lo = Math.min(o, c) - r() * m.p * 0.01 * vol;
+    const wick = stable ? m.p * 0.00015 * vol : m.p * 0.01 * vol;
+    const hi = Math.max(o, c) + r() * wick;
+    const lo = Math.min(o, c) - r() * wick;
     out.push({ o, c, hi, lo, t: now - (count - 1 - i) * step });
     price = c;
   }
@@ -371,7 +378,9 @@ function renderChart(): void {
   mn -= padY;
   mx += padY;
   const Y = (v: number): number => pad + ((mx - v) / (mx - mn)) * (H - pad * 2);
-  const cw = (W - pad - 12) / n;
+  const querySlots = TF_QUERY[tf.value]?.limit ?? n;
+  const slots = Math.max(n, Math.min(querySlots, 140));
+  const cw = (W - pad - 12) / slots;
   const bw = cw * 0.62;
   let g = "";
   for (let i = 0; i <= 4; i++) {
@@ -379,7 +388,8 @@ function renderChart(): void {
     const v = mx - ((mx - mn) * i) / 4;
     g += `<line class="gridln" x1="0" y1="${y}" x2="${W - pad}" y2="${y}"/><text class="axis" x="${W - pad + 6}" y="${y + 3}">${fmt(v)}</text>`;
   }
-  const cx = (i: number): number => 8 + i * cw + cw / 2;
+  const startX = 8 + (slots - n) * cw;
+  const cx = (i: number): number => startX + i * cw + cw / 2;
   const effectiveChartType = historyMode.value === "price" ? "line" : chartType.value;
   if (effectiveChartType === "line") {
     // Vue en ligne : polyligne des clôtures + aire dégradée.
