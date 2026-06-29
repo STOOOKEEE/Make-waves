@@ -66,4 +66,43 @@ describe("createApp", () => {
     // a: 9950 RLUSD + 100 XRP @0.6 -> 10010 (capital défaut 10000) -> pnl +10
     expect(res.json()[0].pnl).toBeCloseTo(10);
   });
+
+  it("retombe sur l'historique CoinGecko quand Binance ne cote pas le symbole", async () => {
+    const fetchJson: FetchJson = (url) => {
+      if (url.includes("/coins/markets")) {
+        return Promise.resolve([
+          {
+            id: "rain",
+            symbol: "rain",
+            name: "Rain",
+            current_price: 0.016,
+            price_change_percentage_24h: 2,
+          },
+        ]);
+      }
+      if (url.includes("/klines")) {
+        return Promise.reject(new Error("Binance ne cote pas RAIN"));
+      }
+      if (url.includes("/coins/rain/market_chart")) {
+        return Promise.resolve({
+          prices: [
+            [0, 0.01],
+            [60 * 60_000, 0.02],
+          ],
+        });
+      }
+      return Promise.reject(new Error(`URL inattendue: ${url}`));
+    };
+    const { app, refreshPrices } = createApp({
+      markets: { baseUrl: "https://api.example.com/api/v3", vsCurrency: "usd", perPage: 250 },
+      fetchJson,
+    });
+    await refreshPrices();
+    const res = await app.inject({ method: "GET", url: "/history/RAIN?interval=1h&limit=2" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([
+      { t: 0, o: 0.01, h: 0.01, l: 0.01, c: 0.01 },
+      { t: 60 * 60_000, o: 0.02, h: 0.02, l: 0.02, c: 0.02 },
+    ]);
+  });
 });

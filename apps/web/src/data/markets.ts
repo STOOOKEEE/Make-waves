@@ -5,6 +5,7 @@
  */
 
 export interface Market {
+  id?: string;
   s: string;
   full: string;
   pair: string;

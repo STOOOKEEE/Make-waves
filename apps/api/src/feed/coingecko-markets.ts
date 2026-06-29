@@ -7,6 +7,7 @@ import type { FetchJson } from "./cex-price-feed";
  * pour les top N coins par capitalisation — pas de mapping manuel par coin).
  */
 export interface MarketRow {
+  readonly id: string;
   readonly symbol: string;
   readonly name: string;
   readonly price: number;
@@ -61,10 +62,11 @@ export async function fetchMarkets(
       continue;
     }
     const entry = item as Record<string, unknown>;
+    const id = nonEmptyString(entry["id"]);
     const symbolRaw = nonEmptyString(entry["symbol"]);
     const name = nonEmptyString(entry["name"]);
     const price = num(entry["current_price"]);
-    if (symbolRaw === undefined || name === undefined || price === undefined || price <= 0) {
+    if (id === undefined || symbolRaw === undefined || name === undefined || price === undefined || price <= 0) {
       continue;
     }
     const symbol = symbolRaw.toUpperCase();
@@ -72,7 +74,7 @@ export async function fetchMarkets(
       continue; // homonyme moins capitalisé : on garde le premier (plus gros)
     }
     seen.add(symbol);
-    rows.push({ symbol, name, price, change24h: num(entry["price_change_percentage_24h"]) ?? 0 });
+    rows.push({ id, symbol, name, price, change24h: num(entry["price_change_percentage_24h"]) ?? 0 });
   }
 
   if (rows.length === 0) {

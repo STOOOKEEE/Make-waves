@@ -104,6 +104,7 @@ export interface ExecutionPlanDto {
 
 /** Ligne de marché de la watchlist (top N coins : symbole, nom, prix, %24h). */
 export interface MarketRow {
+  readonly id: string;
   readonly symbol: string;
   readonly name: string;
   readonly price: number;

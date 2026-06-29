@@ -42,7 +42,7 @@ const { t } = useI18n({
     orderBook: "Order book",
     bookLive: "Binance live",
     bookLoading: "Loading...",
-    bookUnavailable: "Real book unavailable",
+    bookUnavailable: "No central order book source",
     price: "Price",
     size: "Size",
     total: "Total",
@@ -85,7 +85,7 @@ const { t } = useI18n({
     orderBook: "Carnet d'ordres",
     bookLive: "Flux Binance réel",
     bookLoading: "Chargement...",
-    bookUnavailable: "Carnet réel indisponible",
+    bookUnavailable: "Aucun carnet central disponible",
     price: "Prix",
     size: "Taille",
     total: "Total",
@@ -725,6 +725,7 @@ async function loadMarkets(): Promise<void> {
     // Watchlist dynamique : symbole, nom, prix et %24h réels. hi/lo dérivés du
     // prix (le chart/échelle a besoin de bornes ; l'amplitude exacte est décor).
     markets.value = rows.map((r) => ({
+      id: r.id,
       s: r.symbol,
       full: r.name,
       pair: `${r.symbol} / ${REFERENCE_QUOTE}`,

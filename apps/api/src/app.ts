@@ -10,6 +10,7 @@ import type { MarketRow, MarketsFeedConfig } from "./feed/coingecko-markets";
 import { composePriceMap } from "./feed/compose-price";
 import { fetchKlines, isKlineInterval } from "./feed/klines";
 import type { Candle } from "./feed/klines";
+import { fetchCoinGeckoHistory } from "./feed/coingecko-history";
 import type { BookDepth } from "./feed/binance-book-feed";
 import { PriceFeedError } from "./feed/errors";
 import type {
@@ -86,6 +87,8 @@ export function createApp(config: AppConfig): App {
   const paper = new PaperService(config.startingEquity, config.accountStore);
   const competition = new CompetitionService(config.competitionStore);
   const cache = new PriceCache();
+  // Lignes de marché (watchlist) du dernier rafraîchissement en mode `markets`.
+  let marketRows: readonly MarketRow[] = [];
 
   // Cache d'historique (TTL court) : dédoublonne les appels CoinGecko et borne
   // le rate-limit. On garde la promesse (les requêtes concurrentes la partagent) ;
@@ -105,14 +108,24 @@ export function createApp(config: AppConfig): App {
     if (hit !== undefined && now - hit.at < HISTORY_TTL_MS) {
       return hit.data;
     }
-    const data = fetchKlines(symbol, interval, limit, config.fetchJson);
+    const data = fetchKlines(symbol, interval, limit, config.fetchJson).catch((error: unknown) => {
+      const row = marketRows.find((market) => market.symbol === symbol.toUpperCase());
+      if (config.markets === undefined || row === undefined) {
+        throw error;
+      }
+      return fetchCoinGeckoHistory(
+        config.markets.baseUrl,
+        row.id,
+        config.markets.vsCurrency,
+        interval,
+        limit,
+        config.fetchJson,
+      );
+    });
     historyCache.set(key, { at: now, data });
     data.catch(() => historyCache.delete(key));
     return data;
   };
-
-  // Lignes de marché (watchlist) du dernier rafraîchissement en mode `markets`.
-  let marketRows: readonly MarketRow[] = [];
 
   const app = buildServer({
     paper,

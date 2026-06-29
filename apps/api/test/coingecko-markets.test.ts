@@ -35,8 +35,8 @@ describe("fetchMarkets", () => {
     ]);
     const rows = await fetchMarkets(CONFIG, fetchJson);
     expect(rows).toEqual([
-      { symbol: "BTC", name: "Bitcoin", price: 60000, change24h: 1.5 },
-      { symbol: "HYPE", name: "Hyperliquid", price: 63.5, change24h: -2 },
+      { id: "x", symbol: "BTC", name: "Bitcoin", price: 60000, change24h: 1.5 },
+      { id: "x", symbol: "HYPE", name: "Hyperliquid", price: 63.5, change24h: -2 },
     ]);
   });
 
