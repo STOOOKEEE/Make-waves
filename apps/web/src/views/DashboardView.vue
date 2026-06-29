@@ -40,10 +40,9 @@ const { t } = useI18n({
     sellAsset: "Sell {asset}",
     orderSent: "✓ Paper order sent",
     orderBook: "Order book",
-    bookLive: "XRPL live",
+    bookLive: "CEX live",
     bookLoading: "Loading...",
     bookUnavailable: "Real book unavailable",
-    bookOnlyXrp: "XRP/RLUSD only",
     price: "Price",
     size: "Size",
     total: "Total",
@@ -84,10 +83,9 @@ const { t } = useI18n({
     sellAsset: "Vendre {asset}",
     orderSent: "✓ Ordre simulé envoyé",
     orderBook: "Carnet d'ordres",
-    bookLive: "Flux XRPL réel",
+    bookLive: "Flux CEX réel",
     bookLoading: "Chargement...",
     bookUnavailable: "Carnet réel indisponible",
-    bookOnlyXrp: "Disponible sur XRP/RLUSD",
     price: "Prix",
     size: "Taille",
     total: "Total",
@@ -247,6 +245,7 @@ const chartHtml = ref("");
 const book = ref<BookDepth | null>(null);
 const bookStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
 const bookError = ref<string | null>(null);
+let bookRequestSeq = 0;
 
 // Réf du <svg> du chart pour staggerer le fade-in des bougies.
 const chartSvg = ref<SVGSVGElement | null>(null);
@@ -412,18 +411,17 @@ function renderChart(): void {
 }
 
 function bookPairLabel(): string {
-  return liveQuoteSymbol.value !== null ? `XRP/${liveQuoteSymbol.value}` : "XRP/RLUSD";
+  return book.value !== null
+    ? `${book.value.symbol}/${book.value.quoteSymbol}`
+    : `${cur.value.s}/USDT`;
 }
 
 function bookSourceLabel(): string {
-  if (!liveConfigured()) {
-    return t("liveNotConfigured");
-  }
-  if (cur.value.s !== "XRP") {
-    return t("bookOnlyXrp");
-  }
   if (bookStatus.value === "loading") {
     return t("bookLoading");
+  }
+  if (bookStatus.value === "error") {
+    return bookError.value ?? t("bookUnavailable");
   }
   return `${t("bookLive")} · ${bookPairLabel()}`;
 }
@@ -436,18 +434,20 @@ function rowWidth(total: number, max: number): string {
 }
 
 async function loadBook(): Promise<void> {
-  if (!liveConfigured() || cur.value.s !== "XRP") {
-    book.value = null;
-    bookStatus.value = "idle";
-    bookError.value = null;
-    return;
-  }
+  const seq = ++bookRequestSeq;
   bookStatus.value = "loading";
   bookError.value = null;
   try {
-    book.value = await props.client.bookDepth("XRP", liveQuoteSymbol.value ?? "RLUSD", 8);
+    const depth = await props.client.bookDepth(cur.value.s, 8);
+    if (seq !== bookRequestSeq) {
+      return;
+    }
+    book.value = depth;
     bookStatus.value = "ready";
   } catch {
+    if (seq !== bookRequestSeq) {
+      return;
+    }
     book.value = null;
     bookStatus.value = "error";
     bookError.value = t("bookUnavailable");
@@ -506,10 +506,6 @@ async function loadStats24h(): Promise<void> {
 watch(cur, () => {
   void loadHistory();
   void loadStats24h();
-  void loadBook();
-});
-
-watch(liveQuoteSymbol, () => {
   void loadBook();
 });
 
@@ -922,11 +918,7 @@ onUnmounted(() => {
               ? t('bookLoading')
               : bookStatus === 'error'
                 ? (bookError ?? t('bookUnavailable'))
-                : liveConfigured()
-                ? cur.s === 'XRP'
-                  ? t('bookUnavailable')
-                  : t('bookOnlyXrp')
-                : t('liveNotConfigured')
+                : t('bookUnavailable')
           }}
         </div>
       </div>

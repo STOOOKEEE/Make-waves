@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import type { PriceMap } from "@tide/core";
-import type { BookDepth } from "@tide/client";
 import { PaperService } from "./services/paper-service";
 import { CompetitionService } from "./services/competition-service";
 import { PriceCache } from "./feed/price-cache";
@@ -11,6 +10,7 @@ import type { MarketRow, MarketsFeedConfig } from "./feed/coingecko-markets";
 import { composePriceMap } from "./feed/compose-price";
 import { fetchKlines, isKlineInterval } from "./feed/klines";
 import type { Candle } from "./feed/klines";
+import type { BookDepth } from "./feed/binance-book-feed";
 import { PriceFeedError } from "./feed/errors";
 import type {
   ComposeOptions,
@@ -54,12 +54,8 @@ export interface AppConfig {
   readonly exec?: ExecDeps;
   /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
   readonly metrics?: MetricsDeps;
-  /** Carnet XRPL réel (route /book) — absent si client XRPL non câblé. */
-  readonly getBookDepth?: (
-    base: string,
-    quote: string,
-    limit: number,
-  ) => Promise<BookDepth>;
+  /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
+  readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */

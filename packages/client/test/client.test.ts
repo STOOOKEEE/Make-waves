@@ -55,15 +55,17 @@ describe("TideClient", () => {
 
   it("bookDepth -> GET /book/:base/:quote?limit=8 (200)", async () => {
     const depth = {
+      symbol: "XRP",
+      quoteSymbol: "USDT",
       asks: [{ price: 0.5, size: 100, total: 100 }],
       bids: [{ price: 0.49, size: 120, total: 120 }],
       mid: 0.495,
       spread: 0.0202,
     };
     const { client, requests } = stub(() => ({ status: 200, body: depth }));
-    expect(await client.bookDepth("XRP", "RLUSD")).toEqual(depth);
+    expect(await client.bookDepth("XRP")).toEqual(depth);
     expect(requests[0]).toEqual({
-      path: "/book/XRP/RLUSD?limit=8",
+      path: "/book/XRP?limit=8",
       method: "GET",
     });
   });

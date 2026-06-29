@@ -126,8 +126,10 @@ export interface BookLevel {
   readonly total: number;
 }
 
-/** Carnet d'ordres XRPL réel exposé au dashboard. */
+/** Carnet d'ordres réel exposé au dashboard. */
 export interface BookDepth {
+  readonly symbol: string;
+  readonly quoteSymbol: string;
   readonly asks: readonly BookLevel[];
   readonly bids: readonly BookLevel[];
   readonly mid: number;
@@ -227,17 +229,11 @@ export class TideClient {
     );
   }
 
-  /** Profondeur réelle du carnet XRPL pour une paire base/quote. */
-  async bookDepth(
-    base: string,
-    quote: string,
-    limit = 8,
-  ): Promise<BookDepth> {
+  /** Profondeur réelle du carnet pour un symbole coté en USDT. */
+  async bookDepth(symbol: string, limit = 8): Promise<BookDepth> {
     return this.call(
       {
-        path:
-          `${path("book", base, quote)}` +
-          `?limit=${String(limit)}`,
+        path: `${path("book", symbol)}?limit=${String(limit)}`,
         method: "GET",
       },
       200,
