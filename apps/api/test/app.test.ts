@@ -67,23 +67,33 @@ describe("createApp", () => {
     expect(res.json()[0].pnl).toBeCloseTo(10);
   });
 
-  it("retombe sur l'historique CoinGecko quand Binance ne cote pas le symbole", async () => {
+  it("retombe sur l'historique CoinGecko pour chaque symbole proposé par /markets", async () => {
+    const marketIds: Record<string, string> = {
+      RAIN: "rain",
+      HYPE: "hyperliquid",
+      FIGR_HELOC: "figure-heloc",
+    };
+    const historyCalls: string[] = [];
     const fetchJson: FetchJson = (url) => {
       if (url.includes("/coins/markets")) {
-        return Promise.resolve([
-          {
-            id: "rain",
-            symbol: "rain",
-            name: "Rain",
-            current_price: 0.016,
-            price_change_percentage_24h: 2,
-          },
-        ]);
+        return Promise.resolve(
+          Object.entries(marketIds).map(([symbol, id], index) => ({
+            id,
+            symbol: symbol.toLowerCase(),
+            name: symbol,
+            current_price: 1 + index,
+            price_change_percentage_24h: index,
+          })),
+        );
       }
       if (url.includes("/klines")) {
-        return Promise.reject(new Error("Binance ne cote pas RAIN"));
+        return Promise.reject(new Error("Binance ne cote pas ce symbole"));
       }
-      if (url.includes("/coins/rain/market_chart")) {
+      const matchedId = Object.values(marketIds).find((id) =>
+        url.includes(`/coins/${encodeURIComponent(id)}/market_chart`),
+      );
+      if (matchedId !== undefined) {
+        historyCalls.push(matchedId);
         return Promise.resolve({
           prices: [
             [0, 0.01],
@@ -98,11 +108,14 @@ describe("createApp", () => {
       fetchJson,
     });
     await refreshPrices();
-    const res = await app.inject({ method: "GET", url: "/history/RAIN?interval=1h&limit=2" });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual([
-      { t: 0, o: 0.01, h: 0.01, l: 0.01, c: 0.01 },
-      { t: 60 * 60_000, o: 0.02, h: 0.02, l: 0.02, c: 0.02 },
-    ]);
+    for (const symbol of Object.keys(marketIds)) {
+      const res = await app.inject({ method: "GET", url: `/history/${symbol}?interval=1h&limit=2` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual([
+        { t: 0, o: 0.01, h: 0.01, l: 0.01, c: 0.01 },
+        { t: 60 * 60_000, o: 0.02, h: 0.02, l: 0.02, c: 0.02 },
+      ]);
+    }
+    expect(historyCalls).toEqual(["rain", "hyperliquid", "figure-heloc"]);
   });
 });
