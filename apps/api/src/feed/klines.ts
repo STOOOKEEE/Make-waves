@@ -46,6 +46,8 @@ function parseKlines(raw: unknown): Candle[] {
       h: num(row[2]),
       l: num(row[3]),
       c: num(row[4]),
+      source: "Binance",
+      mode: "ohlc",
     };
   });
 }

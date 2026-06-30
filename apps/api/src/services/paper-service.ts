@@ -1,8 +1,16 @@
+import { randomUUID } from "node:crypto";
 import {
   applyMarketOrder,
+  availableMargin,
+  balanceOf,
   buildLeaderboard,
   equity,
+  equityWithPositions,
   pnl,
+  positionPnl,
+  validateOpenPosition,
+  InsufficientBalanceError,
+  MissingPriceError,
   PAPER_STARTING_EQUITY,
   QUOTE_CURRENCY,
 } from "@tide/core";
@@ -11,6 +19,8 @@ import type {
   Fill,
   LeaderboardEntry,
   MarketOrderInput,
+  OpenPositionInput,
+  Position,
   PriceMap,
 } from "@tide/core";
 import {
@@ -18,6 +28,7 @@ import {
   AccountNotFoundError,
   InvalidStartingEquityError,
   InvalidUserError,
+  PositionNotFoundError,
 } from "./errors";
 import { InMemoryAccountStore } from "../store/account-store";
 import type { AccountStore } from "../store/account-store";
@@ -38,11 +49,22 @@ export interface Portfolio {
   readonly pnl: number;
 }
 
+/** Résultat de la fermeture d'une position : la position fermée et le PnL réalisé. */
+export interface ClosedPosition {
+  readonly position: Position;
+  readonly realizedPnl: number;
+}
+
 /**
  * Service de paper trading : gère les comptes virtuels, applique les ordres (via
  * le moteur pur `@tide/core`) et produit le classement. La persistance est
  * déléguée à un `AccountStore` injecté (en mémoire par défaut, SQLite en option)
  * → le service ne contient que la logique métier.
+ *
+ * Deux modèles d'exposition coexistent : le **spot** modifie les soldes
+ * (`placeOrder`, le cash est réellement dépensé), le **perp** est une position
+ * à levier (`openPosition`/`closePosition`, la marge est réservée puis le PnL
+ * crédité). L'equity additionne les deux.
  */
 export class PaperService {
   private readonly startingEquity: number;
@@ -84,12 +106,65 @@ export class PaperService {
     return true;
   }
 
-  /** Applique un ordre marché et l'enregistre atomiquement. Retourne le fill. */
+  /** Applique un ordre marché spot et l'enregistre atomiquement. Retourne le fill. */
   placeOrder(userId: string, order: MarketOrderInput): Fill {
     const balances = this.requireBalances(userId);
     const result = applyMarketOrder(balances, order);
     this.store.applyOrder(userId, result.balances, result.fill);
     return result.fill;
+  }
+
+  /**
+   * Ouvre une position perp (marge réservée, frais débités du cash). Refuse si
+   * la marge + frais dépasse le cash disponible (marge déjà immobilisée déduite).
+   */
+  openPosition(userId: string, input: OpenPositionInput): Position {
+    validateOpenPosition(input);
+    const balances = this.requireBalances(userId);
+    const positions = this.store.getPositions(userId) ?? [];
+    const available = availableMargin(balances, positions, QUOTE_CURRENCY);
+    if (input.margin + input.fee > available) {
+      throw new InsufficientBalanceError(
+        `Marge + frais (${String(input.margin + input.fee)}) > disponible (${String(available)})`,
+      );
+    }
+    const cash = balanceOf(balances, QUOTE_CURRENCY);
+    const newBalances = { ...balances, [QUOTE_CURRENCY]: cash - input.fee };
+    const position: Position = { id: randomUUID(), ...input };
+    this.store.openPosition(userId, newBalances, position);
+    return position;
+  }
+
+  /**
+   * Ferme une position au prix de marché serveur (autoritatif). Crédite le PnL
+   * réalisé au cash, plancher à -marge (modèle isolated margin : on ne perd
+   * jamais plus que la marge engagée). Retourne la position fermée et le PnL.
+   */
+  closePosition(userId: string, positionId: string, prices: PriceMap): ClosedPosition {
+    const balances = this.requireBalances(userId);
+    const positions = this.store.getPositions(userId) ?? [];
+    const position = positions.find((p) => p.id === positionId);
+    if (position === undefined) {
+      throw new PositionNotFoundError(`Position introuvable: ${positionId}`);
+    }
+    const mark = prices[position.symbol];
+    if (mark === undefined) {
+      throw new MissingPriceError(`Prix manquant pour ${position.symbol}`);
+    }
+    const realizedPnl = Math.max(positionPnl(position, mark), -position.margin);
+    const cash = balanceOf(balances, QUOTE_CURRENCY);
+    const newBalances = { ...balances, [QUOTE_CURRENCY]: cash + realizedPnl };
+    this.store.closePosition(userId, newBalances, positionId);
+    return { position, realizedPnl };
+  }
+
+  /** Positions perp ouvertes du compte. */
+  positionsOf(userId: string): readonly Position[] {
+    const positions = this.store.getPositions(userId);
+    if (positions === undefined) {
+      throw new AccountNotFoundError(`Compte introuvable: ${userId}`);
+    }
+    return positions;
   }
 
   /** Soldes courants du compte. */
@@ -106,9 +181,11 @@ export class PaperService {
     return orders;
   }
 
-  /** Equity du compte en devise de référence. */
+  /** Equity du compte (soldes spot + PnL des positions ouvertes). */
   equityOf(userId: string, prices: PriceMap): number {
-    return equity(this.requireBalances(userId), prices, QUOTE_CURRENCY);
+    const balances = this.requireBalances(userId);
+    const positions = this.store.getPositions(userId) ?? [];
+    return equityWithPositions(balances, positions, prices, QUOTE_CURRENCY);
   }
 
   /** PnL du compte vs capital de départ. */
@@ -118,17 +195,18 @@ export class PaperService {
 
   /**
    * Portefeuille agrégé : chaque devise détenue valorisée en devise de référence,
-   * plus l'equity totale et le PnL. La valorisation réutilise `equity` du domaine
-   * (par devise puis sur l'ensemble) → une seule règle de prix, pas de duplication.
+   * plus l'equity totale (soldes + PnL des positions) et le PnL. La valorisation
+   * par devise réutilise `equity` du domaine → une seule règle de prix.
    */
   portfolioOf(userId: string, prices: PriceMap): Portfolio {
     const balances = this.requireBalances(userId);
+    const positions = this.store.getPositions(userId) ?? [];
     const holdings = Object.entries(balances).map(([currency, amount]) => ({
       currency,
       amount,
       value: equity({ [currency]: amount }, prices, QUOTE_CURRENCY),
     }));
-    const equityValue = equity(balances, prices, QUOTE_CURRENCY);
+    const equityValue = equityWithPositions(balances, positions, prices, QUOTE_CURRENCY);
     return {
       balances,
       holdings,

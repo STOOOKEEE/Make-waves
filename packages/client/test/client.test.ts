@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { TideClient } from "../src/client";
 import { extractErrorMessage } from "../src/errors";
 import type { ApiRequest, ApiResponse, ApiTransport } from "../src/transport";
-import type { MarketOrderInput } from "@tide/core";
+import type { MarketOrderInput, OpenPositionInput } from "@tide/core";
 
 function stub(responder: (request: ApiRequest) => ApiResponse): {
   client: TideClient;
@@ -91,6 +91,66 @@ describe("TideClient", () => {
       path: "/accounts/a/orders",
       method: "POST",
       body: order,
+    });
+  });
+
+  it("openPosition -> POST /accounts/:id/positions (201)", async () => {
+    const position = {
+      id: "p1",
+      product: "perp",
+      symbol: "XRP",
+      side: "long",
+      qty: 200,
+      entry: 0.5,
+      leverage: 5,
+      margin: 20,
+      fee: 0,
+    };
+    const { client, requests } = stub(() => ({ status: 201, body: position }));
+    const input: OpenPositionInput = {
+      product: "perp",
+      symbol: "XRP",
+      side: "long",
+      qty: 200,
+      entry: 0.5,
+      leverage: 5,
+      margin: 20,
+      fee: 0,
+    };
+    expect(await client.openPosition("a", input)).toEqual(position);
+    expect(requests[0]).toEqual({
+      path: "/accounts/a/positions",
+      method: "POST",
+      body: input,
+    });
+  });
+
+  it("positions -> GET /accounts/:id/positions (200)", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: [] }));
+    expect(await client.positions("a")).toEqual([]);
+    expect(requests[0]).toEqual({ path: "/accounts/a/positions", method: "GET" });
+  });
+
+  it("closePosition -> POST /accounts/:id/positions/:pid/close (200)", async () => {
+    const result = {
+      position: {
+        id: "p1",
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 200,
+        entry: 0.5,
+        leverage: 5,
+        margin: 20,
+        fee: 0,
+      },
+      realizedPnl: 20,
+    };
+    const { client, requests } = stub(() => ({ status: 200, body: result }));
+    expect(await client.closePosition("a", "p1")).toEqual(result);
+    expect(requests[0]).toEqual({
+      path: "/accounts/a/positions/p1/close",
+      method: "POST",
     });
   });
 

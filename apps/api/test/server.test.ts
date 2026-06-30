@@ -119,6 +119,80 @@ describe("ordres", () => {
   });
 });
 
+describe("positions perp", () => {
+  beforeEach(async () => {
+    await app.inject({ method: "POST", url: "/accounts", payload: { userId: "a" } });
+  });
+
+  function perp(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      product: "perp",
+      symbol: "XRP",
+      side: "long",
+      qty: 200,
+      entry: 0.5,
+      leverage: 5,
+      margin: 20,
+      fee: 0,
+      ...over,
+    };
+  }
+
+  it("ouvre une position (201) et la liste", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/accounts/a/positions",
+      payload: perp(),
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().symbol).toBe("XRP");
+
+    const list = await app.inject({ method: "GET", url: "/accounts/a/positions" });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(1);
+  });
+
+  it("inclut le PnL des positions dans l'equity du portfolio", async () => {
+    await app.inject({ method: "POST", url: "/accounts/a/positions", payload: perp() });
+    prices = { XRP: 0.6 }; // +0.1 * 200 = +20
+    const res = await app.inject({ method: "GET", url: "/accounts/a/portfolio" });
+    expect(res.json().equity).toBeCloseTo(START + 20);
+  });
+
+  it("ferme une position (200) et crédite le PnL réalisé", async () => {
+    const open = await app.inject({
+      method: "POST",
+      url: "/accounts/a/positions",
+      payload: perp(),
+    });
+    const id = open.json().id;
+    prices = { XRP: 0.6 };
+    const res = await app.inject({
+      method: "POST",
+      url: `/accounts/a/positions/${id}/close`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().realizedPnl).toBeCloseTo(20);
+  });
+
+  it("rejette un levier invalide (400)", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/accounts/a/positions",
+      payload: perp({ leverage: 0 }),
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("404 à la fermeture d'une position inconnue", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/accounts/a/positions/nope/close",
+    });
+    expect(res.statusCode).toBe(404);
+  });
+});
+
 describe("leaderboard", () => {
   it("classe les comptes (200)", async () => {
     await app.inject({ method: "POST", url: "/accounts", payload: { userId: "a" } });

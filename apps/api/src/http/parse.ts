@@ -1,4 +1,9 @@
-import type { Competition, MarketOrderInput, Side } from "@tide/core";
+import type {
+  Competition,
+  MarketOrderInput,
+  OpenPositionInput,
+  Side,
+} from "@tide/core";
 import type { Amount } from "@tide/xrpl";
 import type { LiveOfferIntent } from "../exec/plan-live";
 
@@ -116,6 +121,34 @@ export function parseLiveOfferRequest(body: unknown): LiveOfferIntent {
     side,
     amountBase: num(obj, "amountBase", "liveOffer"),
     slippageTolerance: num(obj, "slippageTolerance", "liveOffer"),
+  };
+}
+
+/**
+ * Corps d'ouverture de position : on valide la FORME (champs présents et bien
+ * typés, `product`/`side` dans leur domaine). La sémantique (qty/marge > 0,
+ * levier borné) est vérifiée par `validateOpenPosition` côté service, source
+ * unique de vérité.
+ */
+export function parseOpenPosition(body: unknown): OpenPositionInput {
+  const obj = asRecord(body, "position");
+  const product = str(obj, "product", "position");
+  if (product !== "spot" && product !== "perp") {
+    throw new BadRequestError('position: "product" doit valoir "spot" ou "perp"');
+  }
+  const side = str(obj, "side", "position");
+  if (side !== "long" && side !== "short") {
+    throw new BadRequestError('position: "side" doit valoir "long" ou "short"');
+  }
+  return {
+    product,
+    symbol: str(obj, "symbol", "position"),
+    side,
+    qty: num(obj, "qty", "position"),
+    entry: num(obj, "entry", "position"),
+    leverage: num(obj, "leverage", "position"),
+    margin: num(obj, "margin", "position"),
+    fee: num(obj, "fee", "position"),
   };
 }
 

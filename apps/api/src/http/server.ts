@@ -22,6 +22,7 @@ import {
   parseBuyInRequest,
   parseCompetition,
   parseLiveOfferRequest,
+  parseOpenPosition,
   parseOrder,
   parseUserId,
 } from "./parse";
@@ -171,6 +172,33 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       reply.code(201);
       return fill;
     },
+  );
+
+  app.get<{ Params: { userId: string } }>(
+    "/accounts/:userId/positions",
+    (request) => deps.paper.positionsOf(request.params.userId),
+  );
+
+  app.post<{ Params: { userId: string } }>(
+    "/accounts/:userId/positions",
+    (request, reply) => {
+      const input = parseOpenPosition(request.body);
+      const position = deps.paper.openPosition(request.params.userId, input);
+      reply.code(201);
+      return position;
+    },
+  );
+
+  // La fermeture valorise au prix serveur (autoritatif) : le client n'envoie
+  // jamais le prix de sortie, seulement l'id de la position.
+  app.post<{ Params: { userId: string; positionId: string } }>(
+    "/accounts/:userId/positions/:positionId/close",
+    (request) =>
+      deps.paper.closePosition(
+        request.params.userId,
+        request.params.positionId,
+        deps.getPrices(),
+      ),
   );
 
   app.get("/leaderboard", () => deps.paper.leaderboard(deps.getPrices()));

@@ -10,6 +10,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidStartingEquityError: 400,
   InvalidOrderError: 400,
   InvalidCompetitionError: 400,
+  InvalidPositionError: 400,
   InvalidPriceError: 400,
   MissingPriceError: 400,
   InvalidAmountError: 400,
@@ -21,6 +22,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
+  PositionNotFoundError: 404,
   // 409 — conflit d'état
   AccountExistsError: 409,
   AlreadyJoinedError: 409,

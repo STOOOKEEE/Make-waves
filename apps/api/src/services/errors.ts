@@ -32,6 +32,14 @@ export class InvalidStartingEquityError extends Error {
   }
 }
 
+/** Aucune position ouverte avec cet identifiant pour ce compte. */
+export class PositionNotFoundError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PositionNotFoundError";
+  }
+}
+
 /** Compétition déjà créée avec cet identifiant. */
 export class CompetitionExistsError extends Error {
   constructor(message: string) {

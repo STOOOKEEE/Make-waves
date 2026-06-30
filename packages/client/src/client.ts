@@ -4,7 +4,9 @@ import type {
   Fill,
   LeaderboardEntry,
   MarketOrderInput,
+  OpenPositionInput,
   Payout,
+  Position,
   PriceMap,
 } from "@tide/core";
 import type { ApiRequest, ApiTransport } from "./transport";
@@ -44,6 +46,12 @@ export interface Portfolio {
   readonly holdings: Holding[];
   readonly equity: number;
   readonly pnl: number;
+}
+
+/** Résultat de fermeture d'une position : la position fermée et le PnL réalisé. */
+export interface ClosedPosition {
+  readonly position: Position;
+  readonly realizedPnl: number;
 }
 
 /**
@@ -189,6 +197,27 @@ export class TideClient {
     return this.call(
       { path: path("accounts", userId, "orders"), method: "POST", body: order },
       201,
+    );
+  }
+
+  /** Positions perp ouvertes d'un compte. */
+  async positions(userId: string): Promise<readonly Position[]> {
+    return this.call({ path: path("accounts", userId, "positions"), method: "GET" }, 200);
+  }
+
+  /** Ouvre une position perp (marge réservée, frais débités du cash). */
+  async openPosition(userId: string, input: OpenPositionInput): Promise<Position> {
+    return this.call(
+      { path: path("accounts", userId, "positions"), method: "POST", body: input },
+      201,
+    );
+  }
+
+  /** Ferme une position ; le PnL est valorisé au prix serveur (autoritatif). */
+  async closePosition(userId: string, positionId: string): Promise<ClosedPosition> {
+    return this.call(
+      { path: path("accounts", userId, "positions", positionId, "close"), method: "POST" },
+      200,
     );
   }
 

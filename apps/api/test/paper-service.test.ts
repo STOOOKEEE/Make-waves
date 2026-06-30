@@ -5,11 +5,14 @@ import {
   AccountNotFoundError,
   InvalidStartingEquityError,
   InvalidUserError,
+  PositionNotFoundError,
 } from "../src/services/errors";
 import {
   InsufficientBalanceError,
+  InvalidPositionError,
   MissingPriceError,
   type MarketOrderInput,
+  type OpenPositionInput,
 } from "@tide/core";
 
 const PRICES = { XRP: 0.5 };
@@ -120,5 +123,67 @@ describe("PaperService — leaderboard", () => {
     service.openAccount("bob");
     service.placeOrder("bob", buy(100, 0.5)); // bob détient du XRP
     expect(() => service.leaderboard({})).toThrow(MissingPriceError);
+  });
+});
+
+describe("PaperService — positions perp", () => {
+  let service: PaperService;
+  beforeEach(() => {
+    service = new PaperService(START);
+    service.openAccount("alice");
+  });
+
+  function perp(overrides: Partial<OpenPositionInput> = {}): OpenPositionInput {
+    return {
+      product: "perp",
+      symbol: "XRP",
+      side: "long",
+      qty: 200,
+      entry: 0.5,
+      leverage: 5,
+      margin: 20,
+      fee: 0,
+      ...overrides,
+    };
+  }
+
+  it("ouvre une position et débite les frais du cash", () => {
+    const pos = service.openPosition("alice", perp({ fee: 2 }));
+    expect(pos.symbol).toBe("XRP");
+    expect(service.balancesOf("alice")).toEqual({ RLUSD: START - 2 });
+    expect(service.positionsOf("alice")).toHaveLength(1);
+  });
+
+  it("inclut le PnL non réalisé dans l'equity", () => {
+    service.openPosition("alice", perp()); // long 200 XRP @0.5
+    expect(service.equityOf("alice", { XRP: 0.6 })).toBeCloseTo(START + 20); // +0.1*200
+  });
+
+  it("ferme et crédite le PnL réalisé", () => {
+    const pos = service.openPosition("alice", perp());
+    const result = service.closePosition("alice", pos.id, { XRP: 0.6 });
+    expect(result.realizedPnl).toBeCloseTo(20);
+    expect(service.balancesOf("alice")).toEqual({ RLUSD: START + 20 });
+  });
+
+  it("valide l'entrée (levier hors bornes)", () => {
+    expect(() => service.openPosition("alice", perp({ leverage: 0 }))).toThrow(
+      InvalidPositionError,
+    );
+  });
+
+  it("lève sur fermeture d'une position inconnue", () => {
+    expect(() => service.closePosition("alice", "nope", { XRP: 0.5 })).toThrow(
+      PositionNotFoundError,
+    );
+  });
+
+  it("lève à la fermeture si le prix du symbole manque", () => {
+    const pos = service.openPosition("alice", perp());
+    expect(() => service.closePosition("alice", pos.id, {})).toThrow(MissingPriceError);
+  });
+
+  it("lève sur positions d'un compte inconnu", () => {
+    expect(() => service.positionsOf("bob")).toThrow(AccountNotFoundError);
   });
 });

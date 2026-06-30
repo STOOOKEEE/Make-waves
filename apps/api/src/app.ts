@@ -70,8 +70,8 @@ export interface AppConfig {
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
 const DEFAULT_COMPOSE: ComposeOptions = { maxDivergence: 0.05, prefer: "cex" };
 
-/** TTL du cache d'historique OHLC : borne les appels CoinGecko (rate-limit). */
-const HISTORY_TTL_MS = 60_000;
+/** TTL court du cache OHLC : laisse apparaître vite une nouvelle bougie clôturée. */
+const HISTORY_TTL_MS = 20_000;
 
 /** Logger par défaut : un repli de prix ne doit jamais être avalé silencieusement. */
 const DEFAULT_FEED_LOGGER: FeedLogger = {
