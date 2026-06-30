@@ -4,6 +4,26 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-30 — Perp v2 (P2, début) : module `@tide/evm` — settlement pur (number → unités de base) [piste v2]
+
+**Quoi.** Premier maillon **codable sans environnement** de la Phase 2 : un nouveau package pur **`@tide/evm`** qui traduit les mouvements de compta du domaine (PnL/marge/fee en `number`) en arguments entiers exacts (`bigint`, unités de base du token) pour `MarginVault`. C'est le **pont off-chain → vault** et le **point de règlement** où l'on quitte le flottant.
+- `units.ts` : `toBaseUnits`/`signedToBaseUnits` (montant décimal → unités de base, **troncature**), `fromBaseUnits` (affichage sans perte). Évite le piège `number * 10**decimals` (qui dépasse `MAX_SAFE_INTEGER` dès ~1e6 en 18 déc.) via décomposition de la chaîne décimale (`toFixed` + découpe).
+- `settlement.ts` : `computeOpenSettlement(margin, fee, decimals)` et `computeCloseSettlement(position, exitPrice, decimals)` (réutilise `positionPnl` de `@tide/core`, **cap isolated** PnL ≥ -marge, garde-fou entier `pnlBase ≥ -marginReleaseBase`).
+- 30 tests (23 units + 7 settlement) : 503 au total. typecheck + lint + tous les packages OK.
+
+**Pourquoi.** Paie la dette tracée « montants en `number` → BigInt au règlement » pour le chemin EVM : la conversion est centralisée, exacte au-delà de `MAX_SAFE_INTEGER`. Sépare la **sérialisation** (ce module) de la **soumission** on-chain (adaptateur viem à venir, `[env]`).
+
+**Cheminement.** Package parallèle à `@tide/xrpl` (même rôle : intégration d'une chaîne), dépend de `@tide/core` (workspace). Décimales **paramètre de config** (pas de valeur magique : RLUSD EVM non confirmé). Pas encore de viem (le module est pur, testable sans clés).
+
+**Audit (workflow adversarial, 2 lentilles + vérification).** 6 findings, **5 confirmés** se ramenant à **2 vrais défauts** (corroborés par les deux lentilles), tous deux corrigés :
+- 🟠 **La 1re implémentation n'était pas un vrai floor** (`toFixed(decimals+1)` arrondit, le carry remonte → sur-crédit d'1 unité dans ~5 % des cas). Mais le « vrai floor » testé ensuite **sous-créditait les saisies propres** (0,12 stocké 0,1199999… → 0.119999). Décision : **sémantique = arrondi au plus proche** (`toFixed(decimals)`), le bon choix face au bruit flottant (0,12 → 0,120000), symétrique/non biaisé, ≤ 0,5 unité, et qui préserve l'invariant `pnl ≥ -marge` (monotonie + re-plafonnement on-chain). Doc rendue honnête.
+- 🟡 `toFixed` **exponentiel ≥ 1e21** → `BigInt` levait une erreur brute (pas `SettlementError`) → borne `MAX_AMOUNT` + `SettlementError`, commentaire corrigé.
+- Finding « info » laissé : le garde-fou de `computeCloseSettlement` est sain mais inatteignable (défensif, cohérent avec le re-plafonnement du vault).
+
+**Bugs & fix.** Cf. l'audit ci-dessus (sémantique floor → arrondi au plus proche, borne `MAX_AMOUNT`). Tests de non-régression ajoutés aux frontières d'arrondi + entrées ≥ 1e21. 503 tests verts, typecheck + lint OK.
+
+---
+
 ## 2026-06-30 — Perp v2 (P1) : `MarginVault.sol` — coffre de collatéral on-chain (XRPL EVM) [piste v2, branche `feat/perp-v2-sidechain`]
 
 **Quoi.** Démarrage de l'implémentation de la **roadmap perp v2** (`docs/ROADMAP-PERP-V2.md`). Phase 1 = le cœur on-chain du **perp hybride** : nouveau package Foundry **`packages/contracts/`** (solc 0.8.24, EVM Paris, OpenZeppelin v5.0.2) et le contrat **`MarginVault.sol`**.

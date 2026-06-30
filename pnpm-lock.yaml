@@ -89,6 +89,12 @@ importers:
 
   packages/core: {}
 
+  packages/evm:
+    dependencies:
+      '@tide/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/xrpl:
     dependencies:
       xrpl:
