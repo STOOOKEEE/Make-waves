@@ -4,6 +4,29 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-30 — Perp v2 (P1) : `MarginVault.sol` — coffre de collatéral on-chain (XRPL EVM) [piste v2, branche `feat/perp-v2-sidechain`]
+
+**Quoi.** Démarrage de l'implémentation de la **roadmap perp v2** (`docs/ROADMAP-PERP-V2.md`). Phase 1 = le cœur on-chain du **perp hybride** : nouveau package Foundry **`packages/contracts/`** (solc 0.8.24, EVM Paris, OpenZeppelin v5.0.2) et le contrat **`MarginVault.sol`**.
+- **Contrat** : coffre de collatéral RLUSD. `deposit`/`withdraw` **permissionless** (retrait borné au **collatéral libre** = `collateral − lockedMargin`, saturant). Compta **opérateur** (clé Safe) : `openAccounting` (débit fee + verrou marge), `closeAccounting` (libère marge + applique le PnL), `applyFunding`. **Pool de garantie** (`protocolPool`) qui finance les gains et reçoit pertes/fees ; perte **plafonnée au collatéral** (jamais négatif). Gouvernance `Ownable2Step` + `Pausable` (pause bloque dépôts/compta mais **pas** les retraits du libre) + `skim` (récupère les dons hors compta).
+- **Tests** : 37 tests Foundry (unit + fuzz) + **3 invariants** (256 runs × 64 depth = 16384 appels, 0 revert) prouvant la **conservation** (`totalAccounted == Σ collateral + protocolPool`) et la **solvabilité** (`balanceOf(vault) >= totalAccounted`) ; le fuzzing d'invariant exerce aussi `skim` et `pause`/`unpause`.
+
+**Pourquoi.** L'archi retenue (cf. roadmap) est **hybride** : la chaîne ne fait que **custodier + régler**, le matching/funding/PnL/liquidation restent off-chain (moteur `position` F16/F17, mark price = feed CEX). Le contrat doit donc être **mince mais incassable côté fonds** : un trader ne retire jamais sa marge engagée, le système ne crée/détruit jamais de valeur, l'opérateur (de confiance par design, semi-custodial assumé) ne fait qu'appliquer des mouvements bornés.
+
+**Cheminement (décisions clés).**
+- **Compta interne stricte, jamais `balanceOf`** : tous les soldes viennent de `collateral`/`protocolPool`/`totalAccounted`, jamais du solde de tokens → un don direct ou un token à frais de transfert ne peut pas corrompre la compta (et `skim` récupère l'excédent). `deposit`/`fundPool` créditent le **montant réellement reçu** (delta de solde), robustes au fee-on-transfer.
+- **Gains payés depuis le pool** (revert `PoolInsolvent` si à sec → l'owner doit financer) ; **pertes plafonnées au collatéral** (ceinture de sécurité ; la sémantique *isolated* perte ≤ marge est garantie off-chain).
+- **Séparation owner (Safe froid) / operator (clé chaude rotatable)** : `setOperator` permet la rotation en cas de compromission, l'owner garde pause/pool/skim.
+- **Intégration monorepo** : package Foundry hors périmètre TS (ignore ESLint ajouté, pas de script `typecheck` → ignoré par `pnpm -r`), vitest matche `*.test.ts` donc n'y touche pas. Déps via submodules `forge install`. Monorepo vérifié intact (lint + typecheck + 473 tests vitest verts).
+
+**Audit (workflow adversarial, 5 lentilles + vérification par réfutation, 25 agents).** 20 findings, **11 confirmés** (0 incertain) ; la majorité sont des assertions positives « info » (reentrancy saine, conservation/arithmétique/ERC20 vérifiées). Le finding « medium » candidat (pause laisse `withdraw` ouvert) a été **réfuté** (withdraw ne sort que le libre, pas la marge ; pas de chemin d'exploitation). **3 corrections appliquées :**
+- 🟠 `renounceOwnership` héritée d'OZ pouvait briquer la gouvernance en un appel (plus de pause/rotation d'opérateur/alimentation du pool) → **override qui revert** (`RenounceDisabled`).
+- 🟡 Events loggaient les montants **demandés**, pas **appliqués** (le plafonnement perte/fee est silencieux) — or l'archi repose sur la réconciliation on-chain/off-chain → `_settle` retourne le montant **réellement appliqué**, `PositionOpened`/`PositionClosed`/`FundingApplied` l'émettent (+ tests dédiés).
+- 🟡 Couverture : `skim`/`pause` non fuzzés sous invariant → ajoutés au handler (`donateAndSkim`, `pauseToggle`).
+Notes « info » laissées (assumées) : fee prélevé sur le collatéral total (documenté en NatSpec), marge libérable seulement par l'opérateur (liveness du modèle semi-custodial, mitigée par `setOperator`), hypothèse token standard non-rebasing (collateralToken immuable = RLUSD).
+
+**Bugs & fix.** 1 test rouge corrigé (assertion `skim` ignorant le solde initial du destinataire → skim vers une adresse fraîche). Contrat de production **0 warning** (casts int↔uint de `_settle` suppressés avec justification, prouvés sûrs par les gardes `int256.min`/signe). `forge test` : **37 verts** ; monorepo intact (lint + typecheck + 473 tests vitest).
+
+
 ## 2026-06-30 — Terminal : placement d'ordre honnête (les ordres « disparaissaient ») [Phase 3, UI]
 
 **Quoi.** Bug rapporté (Armand) : un ordre placé n'apparaissait ni dans « ordres actifs » ni dans l'historique. **Backend vérifié OK** (curl : BUY spot → 201 et listé dans `/orders`, perp → 201 et listé dans `/positions`, SELL sans détenir → 409). La cause est **front** :

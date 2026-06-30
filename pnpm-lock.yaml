@@ -85,6 +85,8 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/contracts: {}
+
   packages/core: {}
 
   packages/xrpl:
