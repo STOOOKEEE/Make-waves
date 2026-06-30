@@ -3,7 +3,8 @@
 // Bento 3 colonnes : watchlist, chart + positions, ticket + carnet d'ordres.
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import type { BookDepth, Candle, TideClient } from "@tide/client";
-import type { MarketOrderInput } from "@tide/core";
+import { positionPnl as corePositionPnl, reservedMargin } from "@tide/core";
+import type { MarketOrderInput, Position } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
 import { useWallet } from "../composables/useWallet";
@@ -23,24 +24,52 @@ const { t } = useI18n({
     liveFeed: "Live feed",
     priceFeed: "Price feed",
     chartUnavailable: "Real chart unavailable",
+    priceAxisZoom: "Drag to zoom the price scale",
     candles: "Candles",
     candlesUnavailable: "Candles unavailable for price-only history",
     line: "Line",
     positionsTab: "Positions",
+    openOrdersTab: "Orders",
+    historyTab: "History",
     market: "Market",
     side: "Side",
     entryToMarket: "Entry → Market",
     close: "Close",
     closed: "Closed",
+    noPositions: "No open position",
+    noOrders: "No pending order",
+    noTrades: "No trades yet",
     buy: "Buy",
     sell: "Sell",
     amount: "Amount",
     available: "Avail.",
     estQty: "Est. quantity",
     estFees: "Est. fees",
+    product: "Product",
+    spot: "Spot",
+    perp: "Perp",
+    orderType: "Order",
+    marketOrder: "Market",
+    limitOrder: "Limit",
+    execution: "Execution",
+    maker: "Maker",
+    taker: "Taker",
+    limitPrice: "Limit price",
+    leverage: "Leverage",
+    takeProfit: "TP",
+    stopLoss: "SL",
+    margin: "Margin",
+    liqApprox: "Liq. approx",
+    cancel: "Cancel",
     buyAsset: "Buy {asset}",
     sellAsset: "Sell {asset}",
+    longAsset: "Long {asset}",
+    shortAsset: "Short {asset}",
     orderSent: "✓ Paper order sent",
+    orderQueued: "✓ Limit order queued",
+    orderNoAmount: "Enter an amount",
+    orderInsufficient: "Insufficient balance",
+    orderFailed: "Order rejected",
     orderBook: "Order book",
     bookLive: "Binance live",
     bookLoading: "Loading...",
@@ -68,24 +97,52 @@ const { t } = useI18n({
     liveFeed: "Flux live",
     priceFeed: "Flux prix",
     chartUnavailable: "Graphique réel indisponible",
+    priceAxisZoom: "Glisser pour zoomer l'échelle des prix",
     candles: "Chandeliers",
     candlesUnavailable: "Chandeliers indisponibles pour un historique de prix",
     line: "Ligne",
     positionsTab: "Positions",
+    openOrdersTab: "Ordres",
+    historyTab: "Historique",
     market: "Marché",
     side: "Sens",
     entryToMarket: "Entrée → Marché",
     close: "Fermer",
     closed: "Fermée",
+    noPositions: "Aucune position ouverte",
+    noOrders: "Aucun ordre en attente",
+    noTrades: "Aucun trade pour l'instant",
     buy: "Acheter",
     sell: "Vendre",
     amount: "Montant",
     available: "Dispo.",
     estQty: "Quantité estimée",
     estFees: "Frais estimés",
+    product: "Produit",
+    spot: "Spot",
+    perp: "Perp",
+    orderType: "Ordre",
+    marketOrder: "Marché",
+    limitOrder: "Limit",
+    execution: "Exécution",
+    maker: "Maker",
+    taker: "Taker",
+    limitPrice: "Prix limite",
+    leverage: "Levier",
+    takeProfit: "TP",
+    stopLoss: "SL",
+    margin: "Marge",
+    liqApprox: "Liq. approx",
+    cancel: "Annuler",
     buyAsset: "Acheter {asset}",
     sellAsset: "Vendre {asset}",
+    longAsset: "Long {asset}",
+    shortAsset: "Short {asset}",
     orderSent: "✓ Ordre simulé envoyé",
+    orderQueued: "✓ Ordre limit placé",
+    orderNoAmount: "Saisis un montant",
+    orderInsufficient: "Solde insuffisant",
+    orderFailed: "Ordre refusé",
     orderBook: "Carnet d'ordres",
     bookLive: "Flux Binance réel",
     bookLoading: "Chargement...",
@@ -180,6 +237,74 @@ if (!FIRST_MARKET) {
 const cur = ref<Market>(FIRST_MARKET);
 const side = ref<"buy" | "sell">("buy");
 const amount = ref(5000);
+const product = ref<"spot" | "perp">("spot");
+const orderKind = ref<"market" | "limit">("market");
+const liquidity = ref<"taker" | "maker">("taker");
+const leverage = ref(5);
+const limitPrice = ref("");
+const takeProfit = ref("");
+const stopLoss = ref("");
+const activeBlotter = ref<"positions" | "orders" | "history">("positions");
+
+const PAPER_MAKER_FEE = 0.0002;
+const PAPER_TAKER_FEE = 0.0006;
+const PAPER_STATE_KEY = "tide.paperTerminal";
+
+// Position d'affichage = position financière du domaine (@tide/core) + métadonnées
+// de trigger locales (cf. PositionMeta, défini plus bas).
+type PaperPosition = Position & PositionMeta;
+
+interface PaperPendingOrder {
+  readonly id: string;
+  readonly product: "spot" | "perp";
+  readonly symbol: string;
+  readonly side: "buy" | "sell";
+  readonly orderKind: "limit";
+  readonly liquidity: "maker" | "taker";
+  readonly qty: number;
+  readonly price: number;
+  readonly margin: number;
+  readonly leverage: number;
+  readonly takeProfit?: number;
+  readonly stopLoss?: number;
+  readonly createdAt: number;
+}
+
+interface PaperTrade {
+  readonly id: string;
+  readonly product: "spot" | "perp";
+  readonly symbol: string;
+  readonly side: "buy" | "sell";
+  readonly qty: number;
+  readonly price: number;
+  readonly fee: number;
+  readonly pnl: number;
+  readonly reason: "market" | "limit" | "tp" | "sl" | "close";
+  readonly at: number;
+}
+
+// Le backend est la source de vérité financière des positions (qty/entry/marge/PnL).
+// Il ne modélise PAS les déclencheurs : TP/SL et l'horodatage d'ouverture vivent
+// côté front, indexés par id de position backend, et pilotent `evaluatePaperTriggers`.
+interface PositionMeta {
+  readonly takeProfit?: number;
+  readonly stopLoss?: number;
+  readonly openedAt: number;
+}
+
+interface SavedPaperTerminal {
+  readonly positionMeta?: Record<string, PositionMeta>;
+  readonly pendingOrders?: PaperPendingOrder[];
+  readonly trades?: PaperTrade[];
+}
+
+const paperPositions = ref<PaperPosition[]>([]);
+const pendingOrders = ref<PaperPendingOrder[]>([]);
+const tradeHistory = ref<PaperTrade[]>([]);
+const positionMeta = ref<Record<string, PositionMeta>>({});
+// Positions en cours de fermeture : garde anti double-déclenchement pendant l'appel
+// réseau (TP/SL et fermeture manuelle pourraient sinon fermer deux fois la même).
+const closingPositions = new Set<string>();
 
 // Recherche de la watchlist : filtre par symbole ou nom (insensible à la casse).
 const search = ref("");
@@ -205,6 +330,27 @@ const TF_QUERY: Readonly<Record<string, { interval: string; limit: number }>> = 
 const TF_LIST = ["5m", "15m", "1H", "4H", "1D"] as const;
 const tf = ref<string>("1D");
 const chartType = ref<"candles" | "line">("candles");
+// Échelle des prix interactive : zoom (glissement sur l'axe) + déplacement vertical
+// (pan, glissement sur la zone du graphe). `priceOffset` = décalage en fraction du range.
+const priceZoom = ref(1);
+const priceOffset = ref(0);
+const MIN_PRICE_ZOOM = 0.25;
+const MAX_PRICE_ZOOM = 8;
+// Navigation horizontale : `visibleCount` = nombre de bougies affichées (molette pour
+// zoomer), `hOffset` = décalage en bougies vers le passé (0 = les plus récentes). On
+// n'affiche par défaut qu'une fraction des bougies chargées → il reste de quoi faire
+// défiler horizontalement dès le départ (réglé au chargement de l'historique).
+const MIN_VISIBLE_CANDLES = 12;
+const VISIBLE_FRACTION = 0.72;
+const visibleCount = ref(0);
+const hOffset = ref(0);
+const INTERVAL_MS: Readonly<Record<string, number>> = {
+  "5m": 5 * 60_000,
+  "15m": 15 * 60_000,
+  "1h": 60 * 60_000,
+  "4h": 4 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
+};
 
 // Historique marché chargé depuis le backend. Si vide, on n'affiche pas de faux chart.
 const realCandles = ref<Candle[]>([]);
@@ -239,7 +385,14 @@ const bookStatus = ref<"idle" | "loading" | "ready" | "error">("idle");
 const bookError = ref<string | null>(null);
 let bookRequestSeq = 0;
 const BOOK_REFRESH_MS = 1_500;
+const HISTORY_REFRESH_MS = 30_000;
 let bookRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let historyRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let historyRequestSeq = 0;
+let statsRequestSeq = 0;
+let lastPriceMove:
+  | { symbol: string; low: number; high: number; close: number; at: number }
+  | null = null;
 const askRows = computed(() => book.value?.asks.slice().reverse() ?? []);
 const askMaxTotal = computed(() => book.value?.asks[book.value.asks.length - 1]?.total ?? 0);
 const bidMaxTotal = computed(() => book.value?.bids[book.value.bids.length - 1]?.total ?? 0);
@@ -249,6 +402,40 @@ const chartSvg = ref<SVGSVGElement | null>(null);
 
 // ---------- helpers ----------
 const fmt = fmtNum;
+
+function newId(prefix: string): string {
+  return `${prefix}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function parsePositive(raw: string): number | undefined {
+  const n = Number(raw.replace(/,/g, "."));
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+// Ne conserve un TP/SL que s'il est du BON côté du prix d'entrée. Un niveau du
+// mauvais côté (ex. SL au-dessus du prix pour un long, ou une valeur sans rapport
+// avec l'échelle de l'actif) fermerait la position dès le premier tick — on
+// l'ignore plutôt que de le déclencher à tort.
+function coherentTpSl(
+  side: "buy" | "sell",
+  entry: number,
+  tp: number | undefined,
+  sl: number | undefined,
+): { tp: number | undefined; sl: number | undefined } {
+  const long = side === "buy";
+  return {
+    tp: tp !== undefined && (long ? tp > entry : tp < entry) ? tp : undefined,
+    sl: sl !== undefined && (long ? sl < entry : sl > entry) ? sl : undefined,
+  };
+}
+
+function paperFeeRate(): number {
+  return liquidity.value === "maker" ? PAPER_MAKER_FEE : PAPER_TAKER_FEE;
+}
+
+function notional(): number {
+  return product.value === "perp" ? amount.value * leverage.value : amount.value;
+}
 
 /** Sparkline inline pour une ligne de la watchlist. */
 function spark(up: boolean): string {
@@ -263,8 +450,9 @@ function fmtAxisDate(ts: number): string {
   const d = new Date(ts);
   const dd = String(d.getDate()).padStart(2, "0");
   const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const interval = TF_QUERY[tf.value]?.interval;
   const intraday =
-    tf.value === "5m" || tf.value === "15m" || tf.value === "1H" || tf.value === "4H";
+    interval === "5m" || interval === "15m" || interval === "1h" || interval === "4h";
   if (intraday) {
     const hh = String(d.getHours()).padStart(2, "0");
     const mi = String(d.getMinutes()).padStart(2, "0");
@@ -281,19 +469,185 @@ interface ChartCandle {
   t?: number;
 }
 
-/** Bougies à tracer : uniquement des données réelles fournies par le backend. */
-function chartCandles(): ChartCandle[] {
-  const real = realCandles.value;
-  return real.map((k) => ({ o: k.o, c: k.c, hi: k.h, lo: k.l, t: k.t }));
+/** Bougies à tracer (mémoïsé) : uniquement des données réelles fournies par le backend. */
+const chartCandles = computed<ChartCandle[]>(() =>
+  realCandles.value.map((k) => ({ o: k.o, c: k.c, hi: k.h, lo: k.l, t: k.t })),
+);
+
+// Nombre de bougies réellement affichables (borné par les données chargées).
+function visibleSpan(): number {
+  const total = chartCandles.value.length;
+  return Math.max(MIN_VISIBLE_CANDLES, Math.min(total, Math.round(visibleCount.value)));
+}
+
+function visibleChartCandles(): ChartCandle[] {
+  const all = chartCandles.value;
+  if (all.length === 0) {
+    return all;
+  }
+  const count = visibleSpan();
+  const maxStart = all.length - count;
+  const start = Math.max(0, Math.min(maxStart, maxStart - Math.round(hOffset.value)));
+  return all.slice(start, start + count);
+}
+
+function setVisibleCount(next: number): void {
+  const total = chartCandles.value.length;
+  visibleCount.value = Math.max(MIN_VISIBLE_CANDLES, Math.min(total, next));
+  renderChart(false);
+}
+
+// Molette sur le graphe : zoom horizontal (moins de bougies = zoom in).
+function onChartWheel(event: WheelEvent): void {
+  const delta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+  setVisibleCount(Math.round(visibleCount.value * (delta < 0 ? 1 / 1.15 : 1.15)));
+}
+
+function setPriceZoom(next: number): void {
+  priceZoom.value = Math.min(MAX_PRICE_ZOOM, Math.max(MIN_PRICE_ZOOM, next));
+  renderChart(false);
+}
+
+// Réinitialise l'échelle des prix : zoom auto + recentrage vertical (double-clic).
+function resetPriceView(): void {
+  priceZoom.value = 1;
+  priceOffset.value = 0;
+  visibleCount.value = Math.round(chartCandles.value.length * VISIBLE_FRACTION);
+  hOffset.value = 0;
+  renderChart(false);
+}
+
+// Démarre un glissement : enregistre les listeners window le temps du geste et les
+// retire au relâchement. `cancelDrag` coupe un drag encore actif (démontage, double down).
+let cancelDrag: (() => void) | null = null;
+
+function startDrag(onMove: (event: MouseEvent) => void): void {
+  cancelDrag?.();
+  function onUp(): void {
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    cancelDrag = null;
+  }
+  cancelDrag = onUp;
+  window.addEventListener("mousemove", onMove);
+  window.addEventListener("mouseup", onUp);
+}
+
+// Glissement vertical sur l'axe des prix : monter resserre l'échelle (zoom in),
+// descendre l'élargit (zoom out).
+let priceDragStartY = 0;
+let priceDragStartZoom = 1;
+
+function onPriceAxisMove(event: MouseEvent): void {
+  const delta = priceDragStartY - event.clientY; // pixels parcourus vers le haut
+  setPriceZoom(priceDragStartZoom * Math.pow(1.006, delta));
+}
+
+function onPriceAxisDown(event: MouseEvent): void {
+  event.preventDefault();
+  priceDragStartY = event.clientY;
+  priceDragStartZoom = priceZoom.value;
+  startDrag(onPriceAxisMove);
+}
+
+// Déplacement de la courbe (glissement sur la zone du graphe) : décale la fenêtre
+// de prix verticalement (fraction du range) ET temporellement (nombre de bougies).
+let panStartX = 0;
+let panStartY = 0;
+let panStartOffset = 0;
+let panStartHOffset = 0;
+
+function onChartPanMove(event: MouseEvent): void {
+  const svg = chartSvg.value;
+  const height = svg?.clientHeight ?? 400;
+  const width = svg?.clientWidth ?? 820;
+  // Vertical : décalage en fraction de la hauteur.
+  priceOffset.value = panStartOffset + (event.clientY - panStartY) / height;
+  // Horizontal : décalage en bougies (drag vers la droite = remonter le passé).
+  const count = visibleSpan();
+  const candlePx = width / Math.max(1, count);
+  const maxOffset = Math.max(0, chartCandles.value.length - count);
+  const maxRight = Math.floor(count * 0.5); // espace libre autorisé à droite (en bougies)
+  hOffset.value = Math.min(
+    maxOffset,
+    Math.max(-maxRight, panStartHOffset + (event.clientX - panStartX) / candlePx),
+  );
+  renderChart(false);
+}
+
+function onChartPanDown(event: MouseEvent): void {
+  event.preventDefault();
+  panStartX = event.clientX;
+  panStartY = event.clientY;
+  panStartOffset = priceOffset.value;
+  panStartHOffset = hOffset.value;
+  startDrag(onChartPanMove);
+}
+
+interface ChartTimeLabel {
+  readonly key: string;
+  readonly text: string;
+  readonly left: number;
+  readonly anchor: "start" | "middle" | "end";
+}
+
+const chartTimeLabels = computed<ChartTimeLabel[]>(() => {
+  const candles = visibleChartCandles();
+  const n = candles.length;
+  if (n === 0) {
+    return [];
+  }
+  // Même nombre de slots que le rendu SVG (espace à droite inclus) pour rester aligné.
+  const rightPad = Math.max(0, -Math.round(hOffset.value));
+  const cw = 100 / (n + rightPad);
+  const labelCount = 5;
+  const labels: ChartTimeLabel[] = [];
+  for (let i = 0; i < labelCount; i++) {
+    const idx = Math.round((i / (labelCount - 1)) * (n - 1));
+    const k = candles[idx];
+    if (k === undefined || k.t === undefined) {
+      continue;
+    }
+    labels.push({
+      key: `${String(idx)}:${String(k.t)}`,
+      text: fmtAxisDate(k.t),
+      left: Math.min(100, Math.max(0, idx * cw + cw / 2)),
+      anchor: i === 0 ? "start" : i === labelCount - 1 ? "end" : "middle",
+    });
+  }
+  return labels;
+});
+
+function axisLabelTransform(anchor: ChartTimeLabel["anchor"]): string {
+  if (anchor === "start") {
+    return "none";
+  }
+  return anchor === "end" ? "translateX(-100%)" : "translateX(-50%)";
+}
+
+function axisLabelAlign(anchor: ChartTimeLabel["anchor"]): "left" | "center" | "right" {
+  if (anchor === "start") {
+    return "left";
+  }
+  return anchor === "end" ? "right" : "center";
+}
+
+// Décimales de l'axe des prix adaptées au range visible : plus on zoome (range
+// petit), plus on affiche de décimales pour distinguer des niveaux rapprochés.
+function priceDecimals(range: number): number {
+  if (!(range > 0)) {
+    return 2;
+  }
+  return Math.min(8, Math.max(2, Math.ceil(-Math.log10(range / 50))));
 }
 
 // ---------- chart ----------
-function renderChart(): void {
+function renderChart(animate = true): void {
   const W = 820;
   const H = 400;
   const pad = 46;
   const m = cur.value;
-  const candles = chartCandles();
+  const candles = visibleChartCandles();
   const n = candles.length;
   if (n === 0) {
     chartHtml.value =
@@ -315,18 +669,30 @@ function renderChart(): void {
   const padY = range * 0.08;
   mn -= padY;
   mx += padY;
+  // Zoom vertical : resserre (zoom in) ou élargit (zoom out) la plage de prix
+  // autour de son centre, sans changer le nombre de bougies affichées.
+  const center = (mn + mx) / 2;
+  const half = (mx - mn) / 2 / priceZoom.value;
+  mn = center - half;
+  mx = center + half;
+  // Déplacement vertical (pan) : décale la fenêtre de prix d'une fraction du range.
+  const shift = (mx - mn) * priceOffset.value;
+  mn += shift;
+  mx += shift;
+  const decimals = priceDecimals(mx - mn);
   const Y = (v: number): number => pad + ((mx - v) / (mx - mn)) * (H - pad * 2);
-  const querySlots = TF_QUERY[tf.value]?.limit ?? n;
-  const slots = Math.max(n, Math.min(querySlots, 140));
+  // Espace libre à droite (déplacement de la courbe vers la gauche) : hOffset < 0.
+  const rightPad = Math.max(0, -Math.round(hOffset.value));
+  const slots = n + rightPad;
   const cw = (W - pad - 12) / slots;
   const bw = cw * 0.62;
   let g = "";
   for (let i = 0; i <= 4; i++) {
     const y = pad + (i * (H - pad * 2)) / 4;
     const v = mx - ((mx - mn) * i) / 4;
-    g += `<line class="gridln" x1="0" y1="${y}" x2="${W - pad}" y2="${y}"/><text class="axis" x="${W - pad + 6}" y="${y + 3}">${fmt(v)}</text>`;
+    g += `<line class="gridln" x1="0" y1="${y}" x2="${W - pad}" y2="${y}"/><text class="axis" x="${W - pad + 6}" y="${y + 3}">${v.toFixed(decimals)}</text>`;
   }
-  const startX = 8 + (slots - n) * cw;
+  const startX = 8;
   const cx = (i: number): number => startX + i * cw + cw / 2;
   const effectiveChartType = historyMode.value === "price" ? "line" : chartType.value;
   if (effectiveChartType === "line") {
@@ -348,8 +714,7 @@ function renderChart(): void {
   }
   const ly = Y(m.p);
   g += `<line x1="0" y1="${ly}" x2="${W - pad}" y2="${ly}" stroke="var(--blue)" stroke-width="1" stroke-dasharray="4 4" opacity=".8"/>`;
-  g += `<rect x="${W - pad}" y="${ly - 9}" width="${pad}" height="18" fill="var(--blue)" rx="3"/><text class="axis" x="${W - pad + 5}" y="${ly + 3}" fill="#fff" style="font-weight:700">${fmt(m.p)}</text>`;
-  // Axe des dates en bas (bougies réelles horodatées).
+  g += `<rect x="${W - pad}" y="${ly - 9}" width="${pad}" height="18" fill="var(--blue)" rx="3"/><text class="axis" x="${W - pad + 5}" y="${ly + 3}" fill="#fff" style="font-weight:700">${m.p.toFixed(decimals)}</text>`;
   const labelCount = 5;
   for (let i = 0; i < labelCount; i++) {
     const idx = Math.round((i / (labelCount - 1)) * (n - 1));
@@ -358,9 +723,12 @@ function renderChart(): void {
       continue;
     }
     const anchor = i === 0 ? "start" : i === labelCount - 1 ? "end" : "middle";
-    g += `<text class="axis" x="${cx(idx)}" y="${H - 8}" text-anchor="${anchor}">${fmtAxisDate(k.t)}</text>`;
+    g += `<text class="timeaxis" x="${cx(idx)}" y="${H - 12}" text-anchor="${anchor}">${fmtAxisDate(k.t)}</text>`;
   }
   chartHtml.value = g;
+  if (!animate) {
+    return;
+  }
   // Stagger du fade-in après que le DOM ait reçu le innerHTML.
   requestAnimationFrame(() => {
     const svg = chartSvg.value;
@@ -372,6 +740,10 @@ function renderChart(): void {
       }, i * 7);
     });
   });
+}
+
+function onResizeChart(): void {
+  renderChart(false);
 }
 
 function bookPairLabel(): string {
@@ -446,6 +818,9 @@ async function loadBook(silent = false): Promise<void> {
     }
     book.value = depth;
     bookStatus.value = "ready";
+    if (depth.symbol === cur.value.s) {
+      updateLiveCandle(depth.mid);
+    }
   } catch {
     if (seq !== bookRequestSeq) {
       return;
@@ -465,6 +840,18 @@ function startBookRefresh(): void {
       void loadBook(true);
     }
   }, BOOK_REFRESH_MS);
+}
+
+function startHistoryRefresh(): void {
+  if (historyRefreshTimer !== null) {
+    clearInterval(historyRefreshTimer);
+  }
+  historyRefreshTimer = setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void loadHistory(false); // refresh : ajoute/maj les bougies sans recadrer la vue
+      void loadStats24h();
+    }
+  }, HISTORY_REFRESH_MS);
 }
 
 // ---------- sélection de marché ----------
@@ -498,24 +885,114 @@ function inferHistoryMode(candles: readonly Candle[]): "ohlc" | "price" | "unava
   return flat / candles.length > 0.8 ? "price" : "ohlc";
 }
 
+function syncSelectedPrice(candles: readonly Candle[]): void {
+  const last = candles[candles.length - 1];
+  if (last === undefined || !Number.isFinite(last.c) || last.c <= 0) {
+    return;
+  }
+  const symbol = cur.value.s;
+  cur.value.p = last.c;
+  cur.value.hi = Math.max(cur.value.hi, last.h);
+  cur.value.lo = Math.min(cur.value.lo, last.l);
+  livePrices.value = { ...livePrices.value, [symbol]: last.c };
+  evaluatePaperTriggers();
+}
+
+function activeIntervalMs(): number {
+  const interval = TF_QUERY[tf.value]?.interval ?? "1h";
+  return INTERVAL_MS[interval] ?? 60_000;
+}
+
+function updateLiveCandle(price: number, at = Date.now()): void {
+  if (!Number.isFinite(price) || price <= 0 || realCandles.value.length === 0) {
+    return;
+  }
+  const intervalMs = activeIntervalMs();
+  const bucket = Math.floor(at / intervalMs) * intervalMs;
+  const last = realCandles.value[realCandles.value.length - 1];
+  if (last === undefined) {
+    return;
+  }
+  const query = TF_QUERY[tf.value] ?? { interval: "1h", limit: 120 };
+  const limit = query.limit;
+  const source = last.source;
+  const mode = last.mode;
+  lastPriceMove = {
+    symbol: cur.value.s,
+    low: Math.min(last.c, price),
+    high: Math.max(last.c, price),
+    close: price,
+    at,
+  };
+  if (bucket <= last.t) {
+    const next = [...realCandles.value];
+    next[next.length - 1] = {
+      ...last,
+      h: Math.max(last.h, price),
+      l: Math.min(last.l, price),
+      c: price,
+    };
+    realCandles.value = next;
+  } else {
+    realCandles.value = [
+      ...realCandles.value,
+      {
+        t: bucket,
+        o: last.c,
+        h: Math.max(last.c, price),
+        l: Math.min(last.c, price),
+        c: price,
+        source,
+        mode,
+      },
+    ].slice(-limit);
+  }
+  cur.value.p = price;
+  cur.value.hi = Math.max(cur.value.hi, price);
+  cur.value.lo = Math.min(cur.value.lo, price);
+  livePrices.value = { ...livePrices.value, [cur.value.s]: price };
+  evaluatePaperTriggers();
+  renderChart(false);
+}
+
 // Charge les vraies bougies (Binance) du marché/intervalle courant puis re-render.
-async function loadHistory(): Promise<void> {
+async function loadHistory(resetView = true): Promise<void> {
   const symbol = cur.value.s;
   const query = TF_QUERY[tf.value] ?? { interval: "1h", limit: 120 };
+  const requestId = ++historyRequestSeq;
   try {
-    realCandles.value = await props.client.history(symbol, query.interval, query.limit);
+    const candles = await props.client.history(symbol, query.interval, query.limit);
+    if (requestId !== historyRequestSeq || symbol !== cur.value.s) {
+      return;
+    }
+    realCandles.value = candles;
     historyMode.value = inferHistoryMode(realCandles.value);
+    if (resetView) {
+      // Changement d'actif/timeframe : on recadre (fenêtre par défaut). Un refresh
+      // périodique préserve le zoom et le déplacement (sinon le graphe « se recrée »).
+      visibleCount.value = Math.max(MIN_VISIBLE_CANDLES, Math.round(candles.length * VISIBLE_FRACTION));
+      hOffset.value = 0;
+    }
+    syncSelectedPrice(candles);
   } catch {
+    if (requestId !== historyRequestSeq || symbol !== cur.value.s) {
+      return;
+    }
     realCandles.value = [];
     historyMode.value = "unavailable";
   }
-  renderChart();
+  renderChart(resetView);
 }
 
 // Stats 24h du marché courant (24 bougies 1h) — indépendantes du timeframe du chart.
 async function loadStats24h(): Promise<void> {
+  const symbol = cur.value.s;
+  const requestId = ++statsRequestSeq;
   try {
-    const candles = await props.client.history(cur.value.s, "5m", 288);
+    const candles = await props.client.history(symbol, "5m", 288);
+    if (requestId !== statsRequestSeq || symbol !== cur.value.s) {
+      return;
+    }
     const first = candles[0];
     const last = candles[candles.length - 1];
     if (first === undefined || last === undefined || first.o <= 0) {
@@ -528,12 +1005,19 @@ async function loadStats24h(): Promise<void> {
       change: ((last.c - first.o) / first.o) * 100,
     };
   } catch {
+    if (requestId !== statsRequestSeq || symbol !== cur.value.s) {
+      return;
+    }
     stats24h.value = null;
   }
 }
 
 // Recharge l'historique + les stats 24h + re-render le carnet quand le marché change.
 watch(cur, () => {
+  // Nouvel actif : on repart en vue auto (le décalage horizontal et la fenêtre sont
+  // réinitialisés dans loadHistory une fois les bougies connues).
+  priceZoom.value = 1;
+  priceOffset.value = 0;
   void loadHistory();
   void loadStats24h();
   void loadBook();
@@ -541,14 +1025,36 @@ watch(cur, () => {
 
 // ---------- ticket : valeurs dérivées (spot pur, sans levier) ----------
 function estimatedQty(): number {
-  return amount.value / cur.value.p;
+  return notional() / cur.value.p;
 }
 function estQtyLabel(): string {
   return estimatedQty().toFixed(cur.value.p < 1 ? 0 : 2) + " " + cur.value.s;
 }
+function estFeeValue(): number {
+  return notional() * paperFeeRate();
+}
+function estMarginLabel(): string {
+  return "$" + fmt(product.value === "perp" ? amount.value : notional());
+}
+function reservedPaperCash(): number {
+  // Marge des positions (règle du domaine) + marge des ordres limit en attente.
+  const orderMargin = pendingOrders.value.reduce((sum, order) => sum + order.margin, 0);
+  return reservedMargin(paperPositions.value) + orderMargin;
+}
+function availablePaperCash(): number {
+  return Math.max(0, (paper.balances.value?.[REFERENCE_QUOTE] ?? 0) - reservedPaperCash());
+}
+function liquidationLabel(): string {
+  if (product.value !== "perp") {
+    return "—";
+  }
+  const dir = side.value === "buy" ? -1 : 1;
+  const liq = cur.value.p * (1 + dir / leverage.value);
+  return "$" + fmt(Math.max(0, liq));
+}
 /** Cash disponible réel du compte (devise de référence). */
 function availLabel(): string {
-  return "$" + fmt(paper.balances.value?.[REFERENCE_QUOTE] ?? 0);
+  return "$" + fmt(availablePaperCash());
 }
 
 // ---------- handlers ticket ----------
@@ -558,7 +1064,7 @@ function setSide(s: "buy" | "sell"): void {
 function setPct(i: number): void {
   pctIdx.value = i;
   const pct = [25, 50, 75, 100][i] ?? 100;
-  const cash = paper.balances.value?.[REFERENCE_QUOTE] ?? 0;
+  const cash = availablePaperCash();
   amount.value = Math.round((cash * pct) / 100);
 }
 function onAmountInput(e: Event): void {
@@ -566,14 +1072,26 @@ function onAmountInput(e: Event): void {
   amount.value = parseFloat(raw) || 0;
   pctIdx.value = -1;
 }
+function onLimitInput(e: Event): void {
+  limitPrice.value = (e.target as HTMLInputElement).value.replace(/[^0-9.,]/g, "");
+}
+function onTpInput(e: Event): void {
+  takeProfit.value = (e.target as HTMLInputElement).value.replace(/[^0-9.,]/g, "");
+}
+function onSlInput(e: Event): void {
+  stopLoss.value = (e.target as HTMLInputElement).value.replace(/[^0-9.,]/g, "");
+}
 
 // Valeur affichée du champ montant (séparateurs de milliers).
 function amountDisplay(): string {
   return amount.value.toLocaleString("en-US");
 }
 
-// ---------- positions = avoirs réels du compte (spot) ----------
+// ---------- positions / ordres / historique Paper ----------
 interface PosRow {
+  id: string;
+  product: "spot" | "perp";
+  symbol: string;
   pair: string;
   sideCls: "l" | "s";
   sideLabel: string;
@@ -583,31 +1101,379 @@ interface PosRow {
   pnlCls: "up" | "down";
   closed: boolean;
 }
-const positions = computed<PosRow[]>(() => {
-  const bal = paper.balances.value;
-  if (bal === null) {
-    return [];
+
+interface PendingRow {
+  id: string;
+  pair: string;
+  sideLabel: string;
+  sideCls: "l" | "s";
+  size: string;
+  price: string;
+  meta: string;
+}
+
+interface TradeRow {
+  id: string;
+  pair: string;
+  sideLabel: string;
+  sideCls: "l" | "s";
+  size: string;
+  price: string;
+  pnl: string;
+  pnlCls: "up" | "down";
+}
+
+function loadPaperTerminal(): void {
+  try {
+    const raw = localStorage.getItem(PAPER_STATE_KEY);
+    if (raw === null) {
+      return;
+    }
+    const parsed = JSON.parse(raw) as SavedPaperTerminal;
+    positionMeta.value = parsed.positionMeta ?? {};
+    pendingOrders.value = parsed.pendingOrders ?? [];
+    tradeHistory.value = parsed.trades ?? [];
+  } catch {
+    positionMeta.value = {};
+    pendingOrders.value = [];
+    tradeHistory.value = [];
   }
-  return Object.entries(bal)
-    .filter(([ccy, amt]) => ccy !== REFERENCE_QUOTE && amt > 0)
-    .map(([ccy, amt]) => {
-      const price = livePrices.value[ccy];
+}
+
+function savePaperTerminal(): void {
+  try {
+    localStorage.setItem(
+      PAPER_STATE_KEY,
+      JSON.stringify({
+        positionMeta: positionMeta.value,
+        pendingOrders: pendingOrders.value,
+        trades: tradeHistory.value.slice(0, 80),
+      } satisfies SavedPaperTerminal),
+    );
+  } catch {
+    // Stockage indisponible : l'état reste valable en mémoire.
+  }
+}
+
+/**
+ * Recharge les positions depuis le backend (vérité financière) et les enrichit
+ * des métadonnées de trigger locales (TP/SL/openedAt). Purge les métadonnées
+ * orphelines (positions fermées côté serveur).
+ */
+async function refreshPositions(): Promise<void> {
+  try {
+    const backend = await props.client.positions(paper.userId.value);
+    const liveIds = new Set(backend.map((p) => p.id));
+    for (const id of Object.keys(positionMeta.value)) {
+      if (!liveIds.has(id)) {
+        delete positionMeta.value[id];
+      }
+    }
+    paperPositions.value = backend.map((p) => {
+      const meta = positionMeta.value[p.id];
       return {
-        pair: `${ccy}/${REFERENCE_QUOTE}`,
-        sideCls: "l",
-        sideLabel: "SPOT",
-        size: fmt(amt),
-        px: price !== undefined ? fmt(price) : "—",
-        // Pas de prix d'entrée stocké (moteur sans cost-basis) → valeur de marché.
-        pnl: price !== undefined ? "$" + fmt(amt * price) : "—",
-        pnlCls: "up",
-        closed: false,
-      };
+        ...p,
+        takeProfit: meta?.takeProfit,
+        stopLoss: meta?.stopLoss,
+        openedAt: meta?.openedAt ?? Date.now(),
+      } satisfies PaperPosition;
     });
+    savePaperTerminal();
+  } catch {
+    // Backend indisponible : on conserve l'affichage courant.
+  }
+}
+
+function markPrice(symbol: string): number {
+  return livePrices.value[symbol] ?? (symbol === cur.value.s ? cur.value.p : 0);
+}
+
+function positionPnl(p: PaperPosition): number {
+  const mark = markPrice(p.symbol);
+  // PnL net affiché : formule du domaine (@tide/core) moins les frais d'ouverture.
+  return mark <= 0 ? 0 : corePositionPnl(p, mark) - p.fee;
+}
+
+function recordTrade(trade: PaperTrade): void {
+  tradeHistory.value = [trade, ...tradeHistory.value].slice(0, 80);
+}
+
+function latestRangeFor(symbol: string): { low: number; high: number; close: number } | undefined {
+  if (symbol !== cur.value.s) {
+    const price = markPrice(symbol);
+    return price > 0 ? { low: price, high: price, close: price } : undefined;
+  }
+  const last = realCandles.value[realCandles.value.length - 1];
+  if (last === undefined) {
+    const price = markPrice(symbol);
+    return price > 0 ? { low: price, high: price, close: price } : undefined;
+  }
+  return { low: last.l, high: last.h, close: last.c };
+}
+
+function limitOrderTouched(order: PaperPendingOrder): boolean {
+  const range = latestRangeFor(order.symbol);
+  if (range === undefined) {
+    return false;
+  }
+  const marketable =
+    order.side === "buy" ? order.price >= range.close : order.price <= range.close;
+  if (marketable) {
+    return true;
+  }
+  if (
+    lastPriceMove === null ||
+    lastPriceMove.symbol !== order.symbol ||
+    lastPriceMove.at < order.createdAt
+  ) {
+    return false;
+  }
+  return lastPriceMove.low <= order.price && order.price <= lastPriceMove.high;
+}
+
+function levelTouchedAfter(symbol: string, level: number, since: number): boolean {
+  const price = markPrice(symbol);
+  if (price === level) {
+    return true;
+  }
+  if (
+    lastPriceMove === null ||
+    lastPriceMove.symbol !== symbol ||
+    lastPriceMove.at < since
+  ) {
+    return false;
+  }
+  return lastPriceMove.low <= level && level <= lastPriceMove.high;
+}
+
+async function openPaperPosition(input: {
+  product: "spot" | "perp";
+  symbol: string;
+  side: "buy" | "sell";
+  qty: number;
+  price: number;
+  margin: number;
+  leverage: number;
+  fee: number;
+  takeProfit?: number;
+  stopLoss?: number;
+  reason: "market" | "limit";
+}): Promise<boolean> {
+  try {
+    const position = await props.client.openPosition(paper.userId.value, {
+      product: input.product,
+      symbol: input.symbol,
+      side: input.side === "buy" ? "long" : "short",
+      qty: input.qty,
+      entry: input.price,
+      leverage: input.leverage,
+      margin: input.margin,
+      fee: input.fee,
+    });
+    positionMeta.value[position.id] = {
+      takeProfit: input.takeProfit,
+      stopLoss: input.stopLoss,
+      openedAt: Date.now(),
+    };
+    recordTrade({
+      id: newId("trade"),
+      product: input.product,
+      symbol: input.symbol,
+      side: input.side,
+      qty: input.qty,
+      price: input.price,
+      fee: input.fee,
+      pnl: -input.fee,
+      reason: input.reason,
+      at: Date.now(),
+    });
+    await Promise.all([refreshPositions(), paper.refresh()]);
+    return true;
+  } catch {
+    // Ouverture refusée par le backend (marge/frais > disponible, etc.).
+    return false;
+  }
+}
+
+async function closePaperPosition(
+  pos: PaperPosition,
+  reason: PaperTrade["reason"] = "close",
+): Promise<void> {
+  if (closingPositions.has(pos.id)) {
+    return;
+  }
+  closingPositions.add(pos.id);
+  try {
+    const { realizedPnl } = await props.client.closePosition(paper.userId.value, pos.id);
+    delete positionMeta.value[pos.id];
+    const exitPrice = markPrice(pos.symbol);
+    recordTrade({
+      id: newId("trade"),
+      product: pos.product,
+      symbol: pos.symbol,
+      side: pos.side === "long" ? "sell" : "buy",
+      qty: pos.qty,
+      price: exitPrice > 0 ? exitPrice : pos.entry,
+      fee: pos.fee,
+      pnl: realizedPnl, // PnL réalisé calculé au prix serveur (autoritatif).
+      reason,
+      at: Date.now(),
+    });
+    await Promise.all([refreshPositions(), paper.refresh()]);
+  } catch {
+    // Fermeture refusée (déjà fermée, prix manquant) : sans effet.
+  } finally {
+    closingPositions.delete(pos.id);
+  }
+}
+
+function evaluatePaperTriggers(): void {
+  const stillPending: PaperPendingOrder[] = [];
+  for (const order of pendingOrders.value) {
+    if (!limitOrderTouched(order)) {
+      stillPending.push(order);
+      continue;
+    }
+    void openPaperPosition({
+      product: order.product,
+      symbol: order.symbol,
+      side: order.side,
+      qty: order.qty,
+      price: order.price,
+      margin: order.margin,
+      leverage: order.leverage,
+      fee:
+        order.margin *
+        order.leverage *
+        (order.liquidity === "maker" ? PAPER_MAKER_FEE : PAPER_TAKER_FEE),
+      takeProfit: order.takeProfit,
+      stopLoss: order.stopLoss,
+      reason: "limit",
+    });
+  }
+  pendingOrders.value = stillPending;
+
+  for (const pos of [...paperPositions.value]) {
+    const range = latestRangeFor(pos.symbol);
+    if (range === undefined) {
+      continue;
+    }
+    const close = range.close;
+    const hitTp =
+      pos.takeProfit !== undefined &&
+      ((pos.side === "long" &&
+        (close >= pos.takeProfit || levelTouchedAfter(pos.symbol, pos.takeProfit, pos.openedAt))) ||
+        (pos.side === "short" &&
+          (close <= pos.takeProfit || levelTouchedAfter(pos.symbol, pos.takeProfit, pos.openedAt))));
+    const hitSl =
+      pos.stopLoss !== undefined &&
+      ((pos.side === "long" &&
+        (close <= pos.stopLoss || levelTouchedAfter(pos.symbol, pos.stopLoss, pos.openedAt))) ||
+        (pos.side === "short" &&
+          (close >= pos.stopLoss || levelTouchedAfter(pos.symbol, pos.stopLoss, pos.openedAt))));
+    if (hitTp) {
+      void closePaperPosition(pos, "tp");
+    } else if (hitSl) {
+      void closePaperPosition(pos, "sl");
+    }
+  }
+  savePaperTerminal();
+}
+
+const positions = computed<PosRow[]>(() => {
+  const local = paperPositions.value.map((p) => {
+    const mark = markPrice(p.symbol);
+    const pnlValue = positionPnl(p);
+    return {
+      id: p.id,
+      product: p.product,
+      symbol: p.symbol,
+      pair: `${p.symbol}/${REFERENCE_QUOTE}`,
+      sideCls: p.side === "long" ? "l" : "s",
+      sideLabel:
+        `${p.product.toUpperCase()} ${p.side.toUpperCase()}` +
+        (p.product === "perp" ? ` ${String(p.leverage)}x` : ""),
+      size: fmt(p.qty),
+      px: `$${fmt(p.entry)} → $${fmt(mark > 0 ? mark : p.entry)}`,
+      pnl: (pnlValue >= 0 ? "+" : "") + "$" + fmt(pnlValue),
+      pnlCls: pnlValue >= 0 ? "up" : "down",
+      closed: false,
+    } satisfies PosRow;
+  });
+  const bal = paper.balances.value;
+  const backendSpot =
+    bal === null
+      ? []
+      : Object.entries(bal)
+        .filter(([ccy, amt]) => ccy !== REFERENCE_QUOTE && amt > 0)
+        .filter(([ccy]) => !paperPositions.value.some((p) => p.product === "spot" && p.symbol === ccy))
+        .map(([ccy, amt]) => {
+          const price = livePrices.value[ccy];
+          return {
+            id: `backend:${ccy}`,
+            product: "spot" as const,
+            symbol: ccy,
+            pair: `${ccy}/${REFERENCE_QUOTE}`,
+            sideCls: "l" as const,
+            sideLabel: "SPOT",
+            size: fmt(amt),
+            px: price !== undefined ? `$${fmt(price)}` : "—",
+            pnl: price !== undefined ? "$" + fmt(amt * price) : "—",
+            pnlCls: "up" as const,
+            closed: false,
+          };
+        });
+  return [...local, ...backendSpot];
 });
 
-/** Ferme une position = vend tout l'avoir de l'actif (ordre paper réel). */
+const openOrderRows = computed<PendingRow[]>(() =>
+  pendingOrders.value.map((row) => ({
+    id: row.id,
+    pair: `${row.symbol}/${REFERENCE_QUOTE}`,
+    sideLabel: `${row.product.toUpperCase()} ${row.side.toUpperCase()}`,
+    sideCls: row.side === "buy" ? "l" : "s",
+    size: fmt(row.qty),
+    price: "$" + fmt(row.price),
+    meta: `${row.liquidity.toUpperCase()} · ${String(row.leverage)}x`,
+  })),
+);
+
+const tradeRows = computed<TradeRow[]>(() =>
+  tradeHistory.value.map((row) => ({
+    id: row.id,
+    pair: `${row.symbol}/${REFERENCE_QUOTE}`,
+    sideLabel: `${row.product.toUpperCase()} ${row.side.toUpperCase()} · ${row.reason.toUpperCase()}`,
+    sideCls: row.side === "buy" ? "l" : "s",
+    size: fmt(row.qty),
+    price: "$" + fmt(row.price),
+    pnl: (row.pnl >= 0 ? "+" : "") + "$" + fmt(row.pnl),
+    pnlCls: row.pnl >= 0 ? "up" : "down",
+  })),
+);
+
+const activeBlotterCount = computed(() => {
+  if (activeBlotter.value === "positions") {
+    return positions.value.length;
+  }
+  return activeBlotter.value === "orders" ? openOrderRows.value.length : tradeRows.value.length;
+});
+
+function cancelPendingOrder(id: string): void {
+  pendingOrders.value = pendingOrders.value.filter((row) => row.id !== id);
+  savePaperTerminal();
+}
+
+function trackedPositionByRow(row: PosRow): PaperPosition | undefined {
+  return paperPositions.value.find((p) => p.id === row.id);
+}
+
+/** Ferme une position = close local Paper ou vend tout l'avoir spot backend. */
 async function closePos(row: PosRow): Promise<void> {
+  const tracked = trackedPositionByRow(row);
+  if (tracked !== undefined) {
+    await closePaperPosition(tracked);
+    return;
+  }
   const [ccy] = row.pair.split("/");
   const amt = ccy !== undefined ? paper.balances.value?.[ccy] : undefined;
   const price = ccy !== undefined ? livePrices.value[ccy] : undefined;
@@ -623,6 +1489,18 @@ async function closePos(row: PosRow): Promise<void> {
 
 // ---------- bouton placer (UX optimiste + ordre paper réel best-effort) ----------
 const placeOverride = ref("");
+let placeFlashTimer: ReturnType<typeof setTimeout> | null = null;
+// Message transitoire sur le bouton de placement (succès OU refus) : le feedback
+// n'est affiché qu'après le résultat réel de l'ordre, jamais de façon optimiste.
+function flashPlace(message: string): void {
+  placeOverride.value = message;
+  if (placeFlashTimer !== null) {
+    clearTimeout(placeFlashTimer);
+  }
+  placeFlashTimer = setTimeout(() => {
+    placeOverride.value = "";
+  }, 1600);
+}
 function placeLabel(): string {
   if (placeOverride.value) return placeOverride.value;
   if (mode.value === "live") {
@@ -630,37 +1508,115 @@ function placeLabel(): string {
     if (cur.value.s !== "XRP") return t("liveXrpOnly");
     return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s }) + " · Live";
   }
-  if (!session.walletConnected.value) {
-    return t("connectToTrade");
+  if (product.value === "perp") {
+    return t(side.value === "buy" ? "longAsset" : "shortAsset", { asset: cur.value.s });
   }
   return t(side.value === "buy" ? "buyAsset" : "sellAsset", { asset: cur.value.s });
 }
-async function placeOrderBackground(): Promise<void> {
-  // Ordre paper réel en arrière-plan ; les erreurs sont avalées par le composable.
+
+function queueLimitOrder(): void {
+  const price = parsePositive(limitPrice.value) ?? cur.value.p;
+  const qty = estimatedQty();
+  const { tp, sl } = coherentTpSl(
+    side.value,
+    price,
+    parsePositive(takeProfit.value),
+    parsePositive(stopLoss.value),
+  );
+  pendingOrders.value = [
+    {
+      id: newId("order"),
+      product: product.value,
+      symbol: cur.value.s,
+      side: side.value,
+      orderKind: "limit",
+      liquidity: liquidity.value,
+      qty,
+      price,
+      margin: product.value === "perp" ? amount.value : notional(),
+      leverage: product.value === "perp" ? leverage.value : 1,
+      takeProfit: tp,
+      stopLoss: sl,
+      createdAt: Date.now(),
+    },
+    ...pendingOrders.value,
+  ];
+  savePaperTerminal();
+  // Pas d'évaluation immédiate : l'ordre reste visible dans « ordres actifs » et
+  // sera déclenché aux ticks de prix suivants s'il devient exécutable.
+}
+
+async function placePaperOrder(): Promise<void> {
+  if (livePrices.value[cur.value.s] === undefined) {
+    return;
+  }
+  // Connexion (donc soldes) AVANT la garde de cash, sinon le 1er ordre est rejeté.
+  if (!paper.connected.value) {
+    await paper.connect();
+  }
+  if (amount.value <= 0) {
+    flashPlace(t("orderNoAmount"));
+    return;
+  }
+  if (amount.value > availablePaperCash()) {
+    flashPlace(t("orderInsufficient"));
+    return;
+  }
   try {
-    // On n'exécute un ordre réel que pour un actif que le backend sait coter :
-    // un actif non coté serait détenu sans prix et casserait le calcul d'équité.
-    if (livePrices.value[cur.value.s] === undefined) {
+    if (orderKind.value === "limit") {
+      queueLimitOrder();
+      flashPlace(t("orderQueued"));
       return;
     }
-    if (!session.walletConnected.value) {
-      wallet.connect();
+    const qty = estimatedQty();
+    const fee = estFeeValue();
+    const { tp, sl } = coherentTpSl(
+      side.value,
+      cur.value.p,
+      parsePositive(takeProfit.value),
+      parsePositive(stopLoss.value),
+    );
+    if (product.value === "perp") {
+      const ok = await openPaperPosition({
+        product: "perp",
+        symbol: cur.value.s,
+        side: side.value,
+        qty,
+        price: cur.value.p,
+        margin: amount.value,
+        leverage: leverage.value,
+        fee,
+        takeProfit: tp,
+        stopLoss: sl,
+        reason: "market",
+      });
+      flashPlace(ok ? t("orderSent") : t("orderFailed"));
       return;
     }
-    if (!paper.connected.value) {
-      await paper.connect();
-    }
-    // Spot pur : on dépense `amount` en devise de référence ; le moteur paper
-    // n'a pas de marge.
     const order: MarketOrderInput = {
       pair: { base: cur.value.s, quote: REFERENCE_QUOTE },
       side: side.value,
-      amount: amount.value / cur.value.p,
+      amount: qty,
       price: cur.value.p,
     };
     await paper.placeOrder(order);
+    recordTrade({
+      id: newId("trade"),
+      product: "spot",
+      symbol: cur.value.s,
+      side: side.value,
+      qty,
+      price: cur.value.p,
+      fee,
+      pnl: -fee,
+      reason: "market",
+      at: Date.now(),
+    });
+    savePaperTerminal();
+    flashPlace(t("orderSent"));
   } catch {
-    // API indisponible : sans effet sur l'UX.
+    // Ordre refusé par le backend (solde, compte) : feedback honnête, pas d'avalement muet.
+    flashPlace(t("orderFailed"));
   }
 }
 // Swap Live (réel) : envoie l'INTENTION au serveur (base/side/quantité/slippage).
@@ -679,15 +1635,9 @@ function onPlace(): void {
     void placeLiveOrder();
     return;
   }
-  if (!session.walletConnected.value) {
-    wallet.connect();
-    return;
-  }
-  placeOverride.value = t("orderSent");
-  setTimeout(() => {
-    placeOverride.value = "";
-  }, 1400);
-  void placeOrderBackground();
+  // Le feedback (envoyé / placé / refusé) est émis par placePaperOrder selon le
+  // résultat réel — plus de message optimiste qui masquait un échec silencieux.
+  void placePaperOrder();
 }
 
 // ---------- marchés réels du backend (top 250 CoinGecko) ----------
@@ -712,6 +1662,7 @@ async function loadMarkets(): Promise<void> {
     }));
     // Prix par symbole : gating des ordres Paper + valorisation (tous cotés).
     livePrices.value = Object.fromEntries(rows.map((r) => [r.symbol, r.price]));
+    evaluatePaperTriggers();
     // Sélection : XRP par défaut au 1er chargement (actif Live) ; ensuite on
     // conserve le marché choisi par l'utilisateur s'il existe toujours.
     const keep = markets.value.find((m) => m.s === cur.value.s);
@@ -736,25 +1687,35 @@ async function loadLiveConfig(): Promise<void> {
 // Init : prix réels puis connexion du compte paper si un wallet XRPL est déjà lié.
 async function initDashboard(): Promise<void> {
   await Promise.all([loadMarkets(), loadLiveConfig()]);
-  if (session.walletConnected.value) {
-    await paper.connect();
-  }
+  await Promise.all([loadHistory(), loadStats24h()]);
+  await paper.connect();
+  await refreshPositions();
 }
 
 // ---------- cycle de vie ----------
 onMounted(() => {
+  loadPaperTerminal();
   renderChart();
   void loadBook();
   startBookRefresh();
-  window.addEventListener("resize", renderChart);
+  startHistoryRefresh();
+  window.addEventListener("resize", onResizeChart);
   void initDashboard();
 });
 onUnmounted(() => {
+  cancelDrag?.();
+  if (placeFlashTimer !== null) {
+    clearTimeout(placeFlashTimer);
+  }
   if (bookRefreshTimer !== null) {
     clearInterval(bookRefreshTimer);
     bookRefreshTimer = null;
   }
-  window.removeEventListener("resize", renderChart);
+  if (historyRefreshTimer !== null) {
+    clearInterval(historyRefreshTimer);
+    historyRefreshTimer = null;
+  }
+  window.removeEventListener("resize", onResizeChart);
 });
 </script>
 
@@ -868,20 +1829,46 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-        <div class="chart-wrap">
+        <div class="chart-wrap" @mousedown="onChartPanDown" @dblclick="resetPriceView" @wheel.prevent="onChartWheel">
           <svg ref="chartSvg" viewBox="0 0 820 400" preserveAspectRatio="none" v-html="chartHtml"></svg>
+          <div
+            class="price-axis-zoom"
+            :title="t('priceAxisZoom')"
+            @mousedown.stop="onPriceAxisDown"
+            @dblclick.stop="resetPriceView"
+          ></div>
+          <div class="chart-time-axis" aria-hidden="true">
+            <span
+              v-for="label in chartTimeLabels"
+              :key="label.key"
+              :style="{
+                left: `${label.left}%`,
+                transform: axisLabelTransform(label.anchor),
+                textAlign: axisLabelAlign(label.anchor),
+              }"
+            >{{ label.text }}</span>
+          </div>
         </div>
       </div>
 
       <div class="card pos">
         <div class="pos-tabs">
-          <button class="on">{{ t('positionsTab') }} <span class="cnt">{{ positions.length }}</span></button>
+          <button :class="{ on: activeBlotter === 'positions' }" @click="activeBlotter = 'positions'">
+            {{ t('positionsTab') }} <span class="cnt">{{ positions.length }}</span>
+          </button>
+          <button :class="{ on: activeBlotter === 'orders' }" @click="activeBlotter = 'orders'">
+            {{ t('openOrdersTab') }} <span class="cnt">{{ openOrderRows.length }}</span>
+          </button>
+          <button :class="{ on: activeBlotter === 'history' }" @click="activeBlotter = 'history'">
+            {{ t('historyTab') }} <span class="cnt">{{ tradeRows.length }}</span>
+          </button>
         </div>
         <div class="ptable">
-          <div class="pthead">
+          <div v-if="activeBlotter === 'positions'" class="pthead">
             <div>{{ t('market') }}</div><div>{{ t('side') }}</div><div>{{ t('size') }}</div><div>{{ t('entryToMarket') }}</div><div>PnL</div><div></div>
           </div>
           <div
+            v-if="activeBlotter === 'positions'"
             v-for="(row, i) in positions"
             :key="i"
             class="ptrow"
@@ -898,6 +1885,45 @@ onUnmounted(() => {
               </button>
             </div>
           </div>
+          <div v-if="activeBlotter === 'positions' && activeBlotterCount === 0" class="empty-row">{{ t('noPositions') }}</div>
+
+          <div v-if="activeBlotter === 'orders'" class="pthead">
+            <div>{{ t('market') }}</div><div>{{ t('side') }}</div><div>{{ t('size') }}</div><div>{{ t('limitPrice') }}</div><div>{{ t('execution') }}</div><div></div>
+          </div>
+          <div
+            v-if="activeBlotter === 'orders'"
+            v-for="row in openOrderRows"
+            :key="row.id"
+            class="ptrow"
+          >
+            <div class="pair">{{ row.pair }}</div>
+            <div><span class="side" :class="row.sideCls">{{ row.sideLabel }}</span></div>
+            <div>{{ row.size }}</div>
+            <div>{{ row.price }}</div>
+            <div>{{ row.meta }}</div>
+            <div>
+              <button class="closebtn" @click="cancelPendingOrder(row.id)">{{ t('cancel') }}</button>
+            </div>
+          </div>
+          <div v-if="activeBlotter === 'orders' && activeBlotterCount === 0" class="empty-row">{{ t('noOrders') }}</div>
+
+          <div v-if="activeBlotter === 'history'" class="pthead trade-head">
+            <div>{{ t('market') }}</div><div>{{ t('side') }}</div><div>{{ t('size') }}</div><div>{{ t('price') }}</div><div>PnL</div><div></div>
+          </div>
+          <div
+            v-if="activeBlotter === 'history'"
+            v-for="row in tradeRows"
+            :key="row.id"
+            class="ptrow trade-head"
+          >
+            <div class="pair">{{ row.pair }}</div>
+            <div><span class="side" :class="row.sideCls">{{ row.sideLabel }}</span></div>
+            <div>{{ row.size }}</div>
+            <div>{{ row.price }}</div>
+            <div :class="row.pnlCls">{{ row.pnl }}</div>
+            <div></div>
+          </div>
+          <div v-if="activeBlotter === 'history' && activeBlotterCount === 0" class="empty-row">{{ t('noTrades') }}</div>
         </div>
       </div>
     </section>
@@ -905,9 +1931,38 @@ onUnmounted(() => {
     <!-- RIGHT -->
     <aside class="col">
       <div class="card ticket">
+        <div class="ticket-controls">
+          <div class="mini-field">
+            <span>{{ t('product') }}</span>
+            <div class="mini-seg">
+              <button :class="{ on: product === 'spot' }" @click="product = 'spot'">{{ t('spot') }}</button>
+              <button :class="{ on: product === 'perp' }" @click="product = 'perp'">{{ t('perp') }}</button>
+            </div>
+          </div>
+          <div class="mini-field">
+            <span>{{ t('orderType') }}</span>
+            <div class="mini-seg">
+              <button :class="{ on: orderKind === 'market' }" @click="orderKind = 'market'">{{ t('marketOrder') }}</button>
+              <button :class="{ on: orderKind === 'limit' }" @click="orderKind = 'limit'">{{ t('limitOrder') }}</button>
+            </div>
+          </div>
+          <div class="mini-field">
+            <span>{{ t('execution') }}</span>
+            <div class="mini-seg">
+              <button :class="{ on: liquidity === 'taker' }" @click="liquidity = 'taker'">{{ t('taker') }}</button>
+              <button :class="{ on: liquidity === 'maker' }" @click="liquidity = 'maker'">{{ t('maker') }}</button>
+            </div>
+          </div>
+        </div>
         <div class="bs">
           <button class="buy" :class="{ on: side === 'buy' }" @click="setSide('buy')">{{ t('buy') }}</button>
           <button class="sell" :class="{ on: side === 'sell' }" @click="setSide('sell')">{{ t('sell') }}</button>
+        </div>
+        <div v-if="orderKind === 'limit'" class="field compact-field">
+          <div class="fl"><span class="k">{{ t('limitPrice') }}</span><span class="b">${{ fmt(cur.p) }}</span></div>
+          <div class="inp">
+            <input type="text" :value="limitPrice" :placeholder="fmt(cur.p)" @input="onLimitInput" /><span class="suf">RLUSD</span>
+          </div>
         </div>
         <div class="field">
           <div class="fl"><span class="k">{{ t('amount') }}</span><span class="b">{{ t('available') }} {{ availLabel() }}</span></div>
@@ -915,16 +1970,44 @@ onUnmounted(() => {
             <input type="text" :value="amountDisplay()" @input="onAmountInput" /><span class="suf">RLUSD</span>
           </div>
         </div>
+        <div v-if="product === 'perp'" class="lev">
+          <div class="fl"><span class="k">{{ t('leverage') }}</span><span class="b">{{ leverage }}x</span></div>
+          <input v-model.number="leverage" type="range" min="1" max="20" step="1" />
+          <div class="lev-buttons">
+            <button v-for="v in [1, 2, 5, 10, 20]" :key="v" :class="{ on: leverage === v }" @click="leverage = v">{{ v }}x</button>
+          </div>
+        </div>
         <div class="pcts">
           <button v-for="(p, i) in [25, 50, 75, 100]" :key="p" :class="{ on: pctIdx === i }" @click="setPct(i)">
             {{ p }}%
           </button>
         </div>
+        <div class="risk-grid">
+          <div class="field compact-field">
+            <div class="fl"><span class="k">{{ t('takeProfit') }}</span></div>
+            <div class="inp">
+              <input type="text" :value="takeProfit" placeholder="—" @input="onTpInput" /><span class="suf">TP</span>
+            </div>
+          </div>
+          <div class="field compact-field">
+            <div class="fl"><span class="k">{{ t('stopLoss') }}</span></div>
+            <div class="inp">
+              <input type="text" :value="stopLoss" placeholder="—" @input="onSlInput" /><span class="suf">SL</span>
+            </div>
+          </div>
+        </div>
         <div class="summary">
           <div class="r"><span>{{ t('estQty') }}</span><b>{{ estQtyLabel() }}</b></div>
-          <div class="r"><span>{{ t('estFees') }}</span><b>$0.00</b></div>
+          <div class="r"><span>{{ t('margin') }}</span><b>{{ estMarginLabel() }}</b></div>
+          <div class="r"><span>{{ t('estFees') }}</span><b>${{ fmt(estFeeValue()) }}</b></div>
+          <div class="r"><span>{{ t('liqApprox') }}</span><b>{{ liquidationLabel() }}</b></div>
         </div>
-        <button class="placebtn" :class="{ sell: side === 'sell' }" :disabled="mode === 'live' && !liveTradable()" @click="onPlace">{{ placeLabel() }}</button>
+        <button
+          class="placebtn"
+          :class="{ sell: side === 'sell' }"
+          :disabled="(mode === 'live' && !liveTradable()) || (mode === 'paper' && (amount <= 0 || amount > availablePaperCash()))"
+          @click="onPlace"
+        >{{ placeLabel() }}</button>
       </div>
 
       <div class="card book">
@@ -1332,6 +2415,18 @@ onUnmounted(() => {
   background: var(--blue);
   color: #fff;
 }
+/* Zone de l'axe des prix : glissement vertical pour zoomer l'échelle (cf. onPriceAxisDown). */
+.price-axis-zoom {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  bottom: 24px;
+  width: 6%;
+  min-width: 40px;
+  cursor: ns-resize;
+  z-index: 2;
+  touch-action: none;
+}
 .ct-type {
   margin-left: auto;
   display: flex;
@@ -1358,11 +2453,36 @@ onUnmounted(() => {
   position: relative;
   min-height: 300px;
   padding: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+}
+.chart-wrap:active {
+  cursor: grabbing;
 }
 .chart-wrap svg {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: block;
+}
+.chart-time-axis {
+  position: relative;
+  height: 24px;
+  margin: 0 5.61% 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+}
+.chart-time-axis span {
+  position: absolute;
+  top: 7px;
+  min-width: 56px;
+  color: var(--mut2);
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
 }
 /* SVG injecté via v-html → percer le scope avec :deep(). */
 .chart-wrap :deep(.gridln) {
@@ -1374,12 +2494,19 @@ onUnmounted(() => {
   font-size: 9px;
   fill: var(--mut2);
 }
+.chart-wrap :deep(.timeaxis) {
+  font-family: var(--mono);
+  font-size: 10px;
+  fill: rgba(255, 255, 255, 0.55);
+}
 .chart-wrap :deep(.candle) {
   transition: opacity 0.5s var(--ease);
 }
 
 /* positions card */
 .pos {
+  display: flex;
+  flex-direction: column;
   max-height: 248px;
 }
 .pos-tabs {
@@ -1417,6 +2544,8 @@ onUnmounted(() => {
   margin-left: 5px;
 }
 .ptable {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 .pthead,
@@ -1444,9 +2573,19 @@ onUnmounted(() => {
   font-family: var(--mono);
   font-size: 12.5px;
 }
+.trade-head {
+  grid-template-columns: 1.3fr 1.2fr 1fr 1.1fr 1fr 0.3fr;
+}
 .ptrow .pair {
   font-family: var(--disp);
   font-weight: 700;
+}
+.empty-row {
+  padding: 22px 16px;
+  color: var(--mut2);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: center;
 }
 .side {
   font-family: var(--mono);
@@ -1481,8 +2620,47 @@ onUnmounted(() => {
 
 /* order ticket */
 .ticket {
-  padding: 16px;
+  padding: 12px 14px;
   flex-shrink: 0;
+  max-height: min(510px, 58%);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.ticket-controls {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.mini-field {
+  display: grid;
+  gap: 4px;
+}
+.mini-field > span {
+  color: var(--soft);
+  font-size: 10.5px;
+}
+.mini-seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.mini-seg button {
+  border: none;
+  background: none;
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-radius: 6px;
+}
+.mini-seg button.on {
+  background: var(--blue);
+  color: #fff;
 }
 .bs {
   display: grid;
@@ -1490,7 +2668,7 @@ onUnmounted(() => {
   border-radius: 11px;
   overflow: hidden;
   border: 1px solid var(--line);
-  margin-bottom: 16px;
+  margin-bottom: 11px;
 }
 .bs button {
   border: none;
@@ -1498,7 +2676,7 @@ onUnmounted(() => {
   color: var(--soft);
   font-weight: 800;
   font-size: 14px;
-  padding: 13px;
+  padding: 11px;
   transition: 0.2s;
 }
 .bs button.buy.on {
@@ -1510,12 +2688,15 @@ onUnmounted(() => {
   color: #2a0a06;
 }
 .field {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
+}
+.compact-field {
+  margin-bottom: 8px;
 }
 .field .fl {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 7px;
+  margin-bottom: 5px;
 }
 .field .fl .k {
   font-size: 11.5px;
@@ -1545,7 +2726,7 @@ onUnmounted(() => {
   font-family: var(--mono);
   font-size: 16px;
   font-weight: 600;
-  padding: 13px 0;
+  padding: 10px 0;
   outline: none;
   width: 100%;
 }
@@ -1555,10 +2736,48 @@ onUnmounted(() => {
   color: var(--soft);
   font-weight: 500;
 }
+.lev {
+  margin: -2px 0 10px;
+}
+.lev .fl {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.lev .k,
+.lev .b {
+  color: var(--soft);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.lev input[type="range"] {
+  width: 100%;
+  accent-color: var(--blue);
+}
+.lev-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+  margin-top: 5px;
+}
+.lev-buttons button {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--soft);
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 5px 0;
+}
+.lev-buttons button.on {
+  border-color: var(--blue);
+  background: rgba(79, 106, 255, 0.16);
+  color: #fff;
+}
 .pcts {
   display: flex;
   gap: 6px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .pcts button {
   flex: 1;
@@ -1568,7 +2787,7 @@ onUnmounted(() => {
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
-  padding: 8px 0;
+  padding: 7px 0;
   border-radius: 8px;
   transition: 0.15s;
 }
@@ -1578,14 +2797,29 @@ onUnmounted(() => {
   color: #fff;
   background: rgba(79, 106, 255, 0.16);
 }
+.risk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.risk-grid .inp {
+  padding: 0 9px;
+}
+.risk-grid .inp input {
+  font-size: 13px;
+  padding: 8px 0;
+}
+.risk-grid .inp .suf {
+  font-size: 10px;
+}
 .summary {
   font-size: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 .summary .r {
   display: flex;
   justify-content: space-between;
-  padding: 5px 0;
+  padding: 3px 0;
   color: var(--soft);
 }
 .summary .r b {
@@ -1597,7 +2831,7 @@ onUnmounted(() => {
   width: 100%;
   border: none;
   border-radius: 12px;
-  padding: 16px;
+  padding: 13px;
   font-weight: 800;
   font-size: 15px;
   color: #06231a;
@@ -1621,6 +2855,8 @@ onUnmounted(() => {
 .book {
   padding: 14px 16px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 220px;
 }
 .book .bh {
   display: flex;
