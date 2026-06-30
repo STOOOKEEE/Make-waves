@@ -4,6 +4,104 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-30 — Terminal : placement d'ordre honnête (les ordres « disparaissaient ») [Phase 3, UI]
+
+**Quoi.** Bug rapporté (Armand) : un ordre placé n'apparaissait ni dans « ordres actifs » ni dans l'historique. **Backend vérifié OK** (curl : BUY spot → 201 et listé dans `/orders`, perp → 201 et listé dans `/positions`, SELL sans détenir → 409). La cause est **front** :
+- `onPlace` affichait « ✓ Ordre envoyé » **avant** d'exécuter, alors que `placePaperOrder` pouvait retourner/échouer en silence (montant 0, solde insuffisant, vente sans détenir, soldes pas encore chargés, `try/catch` muet) → l'UX mentait et l'ordre n'était jamais enregistré.
+- Un ordre **limit** au prix courant s'exécutait **instantanément** (`evaluatePaperTriggers` appelé à la pose) → jamais visible dans « ordres actifs ».
+
+**Cheminement / fix.**
+- **Feedback réel** : le message (envoyé / placé / *solde insuffisant* / *ordre refusé*) provient du **résultat** de l'ordre — `openPaperPosition` renvoie un booléen, plus d'avalement muet, helper `flashPlace`. Nouvelles clés i18n.
+- **Ordre des gardes** : `paper.connect()` (donc soldes chargés) **avant** la garde de cash → le 1er ordre n'est plus rejeté à tort.
+- **Limit** : plus d'évaluation immédiate à la pose → l'ordre **reste dans « ordres actifs »** et se déclenche aux ticks de prix suivants s'il devient exécutable.
+
+**Suite — positions qui « s'ouvrent puis disparaissent ~0,5 s après » (History grimpe).** Backend revérifié OK (open perp → 201, position toujours présente après 600 ms). Cause front : `evaluatePaperTriggers` fermait la position via un **TP/SL du mauvais côté du prix** (ex. sur RAIN à 0,016, un SL saisi à une valeur ronde type `2` rend `close ≤ SL` vrai pour un long → fermeture au 1er tick ; chaque cycle ouvre+ferme = 2 entrées d'historique). Fix : `coherentTpSl(side, entry, tp, sl)` n'enregistre un TP/SL que s'il est **du bon côté** du prix d'entrée (TP côté profit, SL côté perte), sinon il est ignoré — appliqué à l'ouverture market (perp) et à la pose d'un ordre limit. Un niveau incohérent ne ferme plus instantanément.
+
+**Bugs & fix.** Cf. ci-dessus. `typecheck` + `lint` + build + 473 tests OK ; **vérif navigateur runtime à confirmer**. Note : l'historique du blotter (`tradeHistory`, local) reste distinct de l'historique backend des ordres (`paper.orders`, SQLite) — le blotter affiche le log local (market/perp/limit/tp/sl).
+
+---
+
+## 2026-06-30 — Chart : stabilité au refresh, espace à droite, décimales au zoom [Phase 3, UI]
+
+**Quoi.** Trois retours Armand sur le graphe :
+- **« le graphe se recrée »** : le refresh d'historique (30 s) rechargeait les bougies en **réinitialisant le zoom/déplacement** ET en **relançant l'animation de fade-in** → la vue sautait et tout clignotait. Fix : `loadHistory(resetView)` — le refresh périodique (`loadHistory(false)`) **préserve** `visibleCount`/`hOffset` et ne ré-anime pas ; seul un changement d'actif/timeframe recadre + anime. `onResizeChart` ne ré-anime plus non plus.
+- **« déplacer la courbe sur la gauche / dernières bougies bloquées »** : `hOffset` était borné à `[0, …]` (impossible de dégager à droite). Désormais `hOffset` peut être **négatif** (jusqu'à -50 % de la fenêtre) → on pousse les bougies vers la gauche et on obtient de l'**espace à droite** (façon TradingView). `renderChart` ajoute `rightPad` slots vides à droite ; `chartTimeLabels` aligné sur le même nombre de slots.
+- **« pas de nouvelles décimales au zoom »** : l'axe des prix utilisait un format fixe. `priceDecimals(range)` adapte le nombre de décimales au range visible → en zoomant (range plus petit), des décimales supplémentaires apparaissent (utile sur RAIN ≈ 0,016).
+- **Blotter non défilable** : la carte positions/ordres/historique (`.card` `overflow:hidden` + `max-height`) **coupait** les lignes au lieu de défiler. `.pos` passe en flex colonne et `.ptable` en `flex:1; min-height:0; overflow-y:auto` → la liste défile sous l'en-tête figé (History à 19+ lignes accessible).
+
+**Bugs & fix.** Cf. ci-dessus. typecheck + lint + build OK ; vérif navigateur runtime à confirmer.
+
+---
+
+## 2026-06-30 — Terminal : chart réel mal étiqueté + zoom vertical de l'axe des prix [Phase 3, UI]
+
+**Quoi.** Deux correctifs UX du terminal (retours Armand) :
+- **« Real chart unavailable » à tort.** Les bougies Binance (source principale, ex. XRP/RLUSD) s'affichaient bien, mais le label de source indiquait « indisponible ». Cause : le type client `Candle.source` est **requis**, or `parseKlines` (Binance) ne l'attachait pas → `chartSourceLabel` lisait `undefined` et retombait sur `chartUnavailable`. Fix : `parseKlines` attache `source: "Binance"` + `mode: "ohlc"` (les fallbacks coingecko/gate/geckoterminal le faisaient déjà). Le chart **était** réel, il est désormais correctement étiqueté.
+- **Zoom + navigation type TradingView.** Retrait du slider de zoom de la barre des timeframes. À la place, chart interactif : **zoom vertical** par glissement sur l'axe des prix (`.price-axis-zoom`, `priceZoom`) ; **zoom horizontal** à la molette sur le graphe (`hZoom`, nombre de bougies visibles) ; **pan 2D** par glissement sur la zone du graphe — vertical (`priceOffset`, fraction du range) **et** horizontal (`hOffset`, décalage en bougies vers le passé). `renderChart` applique le zoom puis l'offset vertical ; `visibleChartCandles` découpe la fenêtre horizontale (`visibleCount` bougies + `hOffset`). **Défaut = 72 % des bougies chargées** (`VISIBLE_FRACTION`), réglé au chargement de l'historique → il reste toujours de quoi faire défiler horizontalement dès le départ (le bug « slide horizontal sans effet » venait de l'affichage de *toutes* les bougies). Double-clic = reset ; changement d'actif = vue auto ; molette = zoom horizontal.
+
+**Pourquoi.** Le label faisait croire que le graphique n'était pas réel. Et le zoom souhaité est celui de l'échelle des prix (geste type TradingView sur l'axe), pas une fenêtre horizontale.
+
+**Bugs & fix.** Cf. le label ci-dessus. `typecheck` + `lint` + build web OK, 473 tests ; **vérif navigateur runtime** du geste de drag à finaliser.
+
+---
+
+## 2026-06-30 — F17 : remontée des positions perp au backend (leaderboard complet) [Phase 1/3, chemin produit]
+
+**Quoi.** Le PnL des positions perp (et des limit exécutées) vivait en `localStorage`, invisible au leaderboard/compétitions (qui valorisent les portefeuilles backend) — la **dette 🔴 de F16**. Décision (30/06, avec Armand) : **le faire remonter au backend**. Modèle de position porté au domaine, exposé en HTTP, et le terminal y est branché. **473 tests** (+49), `typecheck` + `lint` + build web OK.
+- **Domaine pur** (`@tide/core`, module `position/`) : `Position`/`OpenPositionInput`, `positionPnl(mark)` (long/short), `equityWithPositions(balances, positions, prices, quote)` = soldes spot **+** PnL non réalisé, `reservedMargin`/`availableMargin`, `validateOpenPosition` (erreur typée `InvalidPositionError`, levier borné par `MAX_PAPER_LEVERAGE`). `AccountSnapshot.positions?` + `buildLeaderboard` passe par `equityWithPositions` → le classement inclut les positions.
+- **Service + store** (`apps/api`) : `PaperService.openPosition`/`closePosition`/`positionsOf` ; `equityOf`/`portfolioOf` incluent le PnL des positions. `AccountStore` (interface + InMemory + **SQLite table `positions`**) gère les positions atomiquement (frais débités à l'ouverture, PnL crédité à la fermeture). `PositionNotFoundError` (404).
+- **HTTP + client** : `POST/GET /accounts/:id/positions`, `POST /accounts/:id/positions/:positionId/close` (validation `parseOpenPosition`). `@tide/client` : `openPosition`/`closePosition`/`positions` (+ DTO `ClosedPosition`).
+- **Front** (`DashboardView`, `usePaper`) : `openPaperPosition`/`closePaperPosition` (les **points de passage uniques** : market, limit exécuté, TP/SL) appellent désormais le backend ; `paperPositions` est rechargé via `client.positions`. `usePaper` expose `refresh`.
+
+**Pourquoi.** Le funnel et le track record reposent sur le leaderboard : s'il ignore le perp, il ment sur la performance. La remontée backend en fait la source de vérité unique.
+
+**Cheminement (décisions de compta).** Le **spot** reste en soldes (`placeOrder`, cash dépensé) ; le **perp** est une position : la **marge est réservée** (comptée dans le cash, pas dépensée), seul le **fee** est débité à l'ouverture, le **PnL réalisé** est crédité à la fermeture, **plafonné à -marge** (isolated margin — on ne perd jamais plus que la marge engagée). La fermeture est valorisée au **prix serveur** (autoritatif, anti-triche), pas au prix envoyé par le client. Surface minimale côté front : seuls les deux points de passage changent ; **TP/SL et l'horodatage d'ouverture restent des métadonnées locales** (`positionMeta`, le backend ne modélise que le financier), et les déclencheurs (limit/TP/SL) sont toujours évalués côté front — seule l'exécution remonte. Garde anti-réentrance (`closingPositions`) contre la double-fermeture pendant l'appel réseau.
+
+**Dette résiduelle (tracée).** Déclencheurs limit/TP/SL côté front (un onglet fermé = pas de déclenchement) → à porter serveur si on veut des ordres conditionnels persistants. **Pas de liquidation auto** serveur (plancher -marge appliqué seulement à la fermeture). À l'ouverture, le backend fait confiance à `entry`/`qty` du client (acceptable en paper). Vérifié : tests de bout en bout (inject) + build front ; **reste la vérification navigateur runtime** (ouvrir/fermer une position et la voir au leaderboard).
+
+**Bugs & fix.** `openPaperPosition` passé en async sans le mot-clé `async` → `vue-tsc` (TS2355/TS1308), corrigé.
+
+---
+
+## 2026-06-30 — F16 : terminal dérivés paper (perp/levier/limit/TP-SL, moteur local) [Phase 3, UI] — ⚠️ WIP non commit
+
+**Quoi.** Le terminal Paper, jusqu'ici **spot market-only** (un ordre = `client.placeOrder` vers le backend), gagne une couche de **trading simulé riche**, entièrement côté front (`DashboardView.vue` +1177, `usePaper.ts`, `app.ts`). État au 30/06 : **non commit, non testé au-delà de `typecheck`/`pnpm test` globaux (424 verts).**
+- **Produits & ordres** : bascule **spot ↔ perp**, **levier** (×5 par défaut), **marge** + **prix de liquidation** estimé (`liquidationLabel`), ordres **market ↔ limit**, **TP/SL**, distinction **maker/taker** (`PAPER_MAKER_FEE` 0,02 % / `PAPER_TAKER_FEE` 0,06 %).
+- **Moteur local persisté** : positions ouvertes, ordres en attente et historique vivent dans `localStorage` (`tide.paperTerminal`). Les ordres limit sont **filés** (`pendingOrders`) puis exécutés quand le prix les touche (`evaluatePaperTriggers` / `limitOrderTouched`) ; TP/SL ferment la position au franchissement (`levelTouchedAfter`). PnL des positions calculé au **mark price** (`positionPnl`).
+- **Blotter** 3 onglets (positions / ordres / historique) ; le tableau **positions fusionne** les positions locales **et** les soldes spot du backend (dédoublonnés, cf. `positions` computed).
+- **Chart** : **zoom** (molette + slider, 24→10× `visibleChartCandles`), **bougie live** reconstruite depuis le prix temps réel (`updateLiveCandle`), **axe temporel** (`chartTimeLabels`), refresh historique 30 s. `HISTORY_TTL_MS` backend 60 s → **20 s** (voir une bougie clôturée apparaître plus vite).
+- **Identité paper anonyme** (`usePaper`) : un `paper:<uuid>` en `localStorage` (`tide.paperUserId`) sert d'identité quand **aucun wallet** n'est connecté ; l'adresse XRPL prend le relais dès qu'un wallet est là. **Réouvre** le commit `586a4e4` (« require xrpl wallet for paper identity ») du 29/06 : le Paper redevient jouable **sans wallet**.
+
+**Pourquoi.** Faire du terminal une vraie surface de démo « pro » (perp, levier, limit, TP/SL, blotter) sans dépendre du backend, qui ne modélise que le spot market. L'identité anonyme retire la friction « connecte un wallet pour jouer » à l'entrée du funnel.
+
+**Cheminement.** Architecture **hybride assumée** : le **spot market** continue de passer par `paper.placeOrder` (backend → soldes SQLite → leaderboard/portfolio restent alimentés) **plus** un log local ; le **perp et les ordres limit** sont **local-only**. Le moteur local évite de toucher le `PaperService` backend (et ses tests) pour une couche de simulation UI.
+
+**Dette & points à trancher (non résolus, tracés).**
+- 🔴 **Réouverture d'une décision verrouillée.** Le perp/levier contredit l'entrée du 21/06 (« levier/short écartés, spot-only assumé ») et le « pas de perp » de `CLAUDE.md`. Tension à lever : ce « pas de perp » vise le **perp on-chain** (smart contracts absents du mainnet) — un perp **simulé en paper** ne le viole pas techniquement, mais contredit le **branding** « apprendre, pas pousser au levier ». À assumer explicitement ou retirer.
+- ✅ **Source de vérité divergente — RÉSOLU le 30/06 (F17, entrée ci-dessus).** Le PnL perp/limit remonte désormais au backend (positions modélisées au domaine, equity = soldes + PnL) → le leaderboard reflète la perf complète, et le PnL n'est plus « fantôme » (crédité au cash à la fermeture).
+- 🟠 Un **spot limit exécuté** crée une position locale mais **ne pousse pas** au backend (alors qu'un spot market le fait) → deux ordres spot identiques, un seul compte au leaderboard.
+
+**Bugs & fix.** Aucun bug bloquant trouvé (`typecheck` + 424 tests verts). Les points ci-dessus sont des **incohérences d'architecture/produit**, pas des défauts de code.
+
+---
+
+## 2026-06-29 — Campagne « honnêteté des surfaces » : carnets + charts depuis des venues réelles [Phase 2/3]
+
+**Quoi.** Après F15 (watchlist top 250 réelle), purge de **toutes les données simulées restantes** des surfaces de marché et secondaires. 14 commits (`d083795`→`0b56baf`), 424 tests.
+- **`make UX surfaces honest` (`d083795`)** : retrait des chiffres inventés dans Portfolio, Leaderboard, Landing, Competition(s) (courbes/stats décoratives présentées comme réelles).
+- **Carnets d'ordres réels** : le carnet fake est remplacé par de la **profondeur XRPL** (`book-reader` via `book_offers`, `5c92bd8`), puis des carnets **multi-actifs Binance** (`binance-book-feed`, `f3fd014`), avec **refresh** périodique (`f91e6ba`) et **tri vers le spread** (`81af7ce`) ; **HYPE** (absent de Binance) est sourcé depuis **Hyperliquid** (`hyperliquid-book-feed`, `1857aff`).
+- **Charts réels** : cascade de replis quand Binance klines manque — **CoinGecko history** (`252ef47`/`3edd7ce`, rendu en **ligne** si prix-seul sans OHLC), **CoinGecko OHLC** + **GeckoTerminal** + **Gate book** pour les actifs « rain » / DEX (`ba8b7fb`), et **Gate candles** en dernier recours (`0b56baf`) à la place des **bougies synthétiques** ; lissage des charts **clairsemés / stablecoins** (`059b72c`).
+- **`require xrpl wallet for paper identity` (`586a4e4`)** : l'identité paper devenait l'adresse XRPL connectée (depuis **réouvert** par F16, cf. entrée du 30/06).
+- Nouveaux feeds back : `binance-book-feed`, `hyperliquid-book-feed`, `gate-book-feed`, `coingecko-history`, `coingecko-ohlc`, `geckoterminal-history`, `gate-history` — chacun testé.
+
+**Pourquoi.** Cohérence avec la ligne « ne jamais présenter du décor comme une donnée réelle » (cf. `armand-design-craft-no-ai-look`). Un carnet/chart inventé sur une app de trading = mensonge produit ; F15 ayant ouvert les 250 coins, il fallait que **chaque** actif ait un carnet et un chart **réels** (ou un repli honnête, horodaté).
+
+**Cheminement.** Stratégie **multi-venues par actif** plutôt qu'une source unique : Binance couvre le mainstream, Hyperliquid les perp-natifs (HYPE), Gate/GeckoTerminal/CoinGecko les longues traînes et les actifs DEX. Le chart distingue désormais **OHLC** (bougies) de **prix-seul** (ligne) au lieu de fabriquer de fausses mèches.
+
+**Bugs & fix.** `restore markets scroll` (`1527ba3`) : la refonte du carnet avait cassé le scroll de la watchlist. Dette : forte dépendance à des **API externes** (Binance/Hyperliquid/Gate/CoinGecko/GeckoTerminal) — rate-limits, CORS et disponibilité à surveiller ; `HISTORY_TTL_MS` borne les appels OHLC.
+
+---
+
 ## 2026-06-29 — F15 : feed « markets » CoinGecko (top 250 coins, watchlist dynamique) [Phase 2, feed]
 
 **Quoi.** La watchlist était limitée à **9 coins codés en dur** (`SYMBOL_TO_ID` + `/simple/price`) et son %24h était mock. Bascule sur **CoinGecko `/coins/markets`** : un seul appel = top N coins par capitalisation avec **prix + %24h réel + nom**, sans mapping manuel.
