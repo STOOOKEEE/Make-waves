@@ -4,6 +4,21 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-06-30 — Perp v2 (P2, suite) : `SettlementService` + interface `VaultClient` injectable [piste v2]
+
+**Quoi.** Deuxième maillon codable de P2 : l'**adaptateur de règlement** qui consume une `VaultClient` (interface) et expose l'API que le backend appellera — testable avec un fake, sans viem ni clés.
+- `vault-client.ts` : interface `VaultClient` (`openAccounting`/`closeAccounting`/`collateralOf`, bigints en unités de base) — la frontière `[env]` entre le backend et le contrat on-chain.
+- `settlement-service.ts` : `SettlementService(vault, {collateralDecimals})` avec `openPosition(account, margin, fee)` et `closePosition(account, position, exitPrice)`. Réutilise les fonctions pures auditées (`computeOpenSettlement`/`computeCloseSettlement` → unités de base + cap isolated), propage les erreurs sans avalement, garde-fou miroir `pnl ≥ -marge`.
+- 8 nouveaux tests (settle-service) : 511 au total. lint + typecheck OK.
+
+**Pourquoi.** Garder le backend **découplé** du contrat : on peut tester bout en bout (paper position → arguments vault) avec un fake, et brancher l'implémentation viem au runtime sans toucher au reste. Renforce l'invariant `pnl ≥ -marge` côté off-chain (mirror du re-plafonnement on-chain).
+
+**Cheminement.** L'adresse de compte est **passée explicitement** (pas déduite de `Position.id`, qui est locale au backend — sinon croisement dangereux entre identifiants). Constructor valide les décimales. Pas d'idempotence on-chain : la couche d'appel (backend) doit s'assurer qu'elle n'appelle pas deux fois ; le contrat n'a pas de nonce sur les instructions d'opérateur (trade-off assumé : opérateur de confiance).
+
+**Audit (workflow adversarial, 3 lentilles + vérif, 11 confirmés/26).** 2 corrections appliquées : (1) constructeur ne vérifiait pas la borne haute des décimales → `assertValidDecimals` exporté de `units.ts` et réutilisé (fail-fast au boot, test ajouté) ; (2) garde-fou `pnlBase < -marginReleaseBase` mort (la monotonie de l'arrondi + le cap dans `computeCloseSettlement` le garantissent déjà) → supprimé, autorité unique dans `settlement.ts`. Dettes tracées (à fermer au câblage, pas des bugs runtime) : **pas d'idempotence** (un retry backend double-appellerait `openAccounting`/`closeAccounting` ; à dédupliquer côté backend via `UNIQUE(operationId)` SQLite, ou nonce on-chain) ; **pas d'adaptateur viem concret** (`VaultClient` n'est consommé que par le fake de test ; frontière `[env]`). Le retour réel appliqué par le contrat (fee/perte plafonnés via events) n'est pas exposé par `VaultClient` → à enrichir au câblage si on synchronise le leaderboard sur la chaîne. 511 tests, lint + typecheck OK.
+
+---
+
 ## 2026-06-30 — Perp v2 (P2, début) : module `@tide/evm` — settlement pur (number → unités de base) [piste v2]
 
 **Quoi.** Premier maillon **codable sans environnement** de la Phase 2 : un nouveau package pur **`@tide/evm`** qui traduit les mouvements de compta du domaine (PnL/marge/fee en `number`) en arguments entiers exacts (`bigint`, unités de base du token) pour `MarginVault`. C'est le **pont off-chain → vault** et le **point de règlement** où l'on quitte le flottant.

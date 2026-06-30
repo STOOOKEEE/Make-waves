@@ -25,7 +25,12 @@ const MAX_DECIMALS = 36;
 /** Borne haute : au-delà, `toFixed` passe en exponentiel. Aucun collatéral réel n'approche 1e21. */
 const MAX_AMOUNT = 1e21;
 
-function assertValidDecimals(decimals: number): void {
+/**
+ * Valide un nombre de décimales pour un token de collatéral (exporté pour
+ * validation amont : on veut échouer au plus tôt, au constructeur de tout
+ * consommateur, pas en deep stack au premier appel `toBaseUnits`).
+ */
+export function assertValidDecimals(decimals: number): void {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > MAX_DECIMALS) {
     throw new SettlementError(`Décimales invalides: ${String(decimals)}`);
   }
