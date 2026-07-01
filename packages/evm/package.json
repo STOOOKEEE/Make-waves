@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@tide/core": "workspace:*"
+    "@tide/core": "workspace:*",
+    "viem": "^2.21.0"
   }
 }
