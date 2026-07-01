@@ -1,10 +1,13 @@
 import {
+  BaseError,
+  ContractFunctionRevertedError,
   createPublicClient,
   createWalletClient,
   defineChain,
   getAddress,
   http,
   keccak256,
+  nonceManager,
   stringToHex,
   type Chain,
 } from "viem";
@@ -12,6 +15,18 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { VaultClient } from "./vault-client";
 import { MARGIN_VAULT_ABI } from "./vault-abi";
 import { SettlementError } from "./errors";
+
+/** Au-delà, on abandonne l'attente du reçu (RPC muet / tx écrasée) plutôt que de bloquer le règlement. */
+const RECEIPT_TIMEOUT_MS = 60_000;
+
+/** `true` si l'erreur est un revert `AlreadySettled` du contrat (retry d'un règlement déjà appliqué). */
+function isAlreadySettled(err: unknown): boolean {
+  if (!(err instanceof BaseError)) return false;
+  const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+  return (
+    revert instanceof ContractFunctionRevertedError && revert.data?.errorName === "AlreadySettled"
+  );
+}
 
 /**
  * Adaptateur concret `VaultClient` sur **viem** : la frontière runtime entre le
@@ -47,50 +62,78 @@ export function createViemVaultClient(options: ViemVaultClientOptions): VaultCli
     rpcUrls: { default: { http: [rpcUrl] } },
   });
 
-  const account = privateKeyToAccount(operatorPrivateKey);
+  // nonceManager : sérialise les nonces d'une même clé opérateur → deux règlements
+  // concurrents ne se collisionnent plus sur le même nonce pending.
+  const account = privateKeyToAccount(operatorPrivateKey, { nonceManager });
   const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
   const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
   const address = getAddress(vaultAddress);
 
-  const settlementId = (idempotencyKey: string): `0x${string}` =>
-    keccak256(stringToHex(idempotencyKey));
+  const settlementId = (idempotencyKey: string): `0x${string}` => {
+    if (idempotencyKey === "") throw new SettlementError("idempotencyKey vide");
+    return keccak256(stringToHex(idempotencyKey));
+  };
 
   async function awaitSuccess(hash: `0x${string}`, label: string): Promise<void> {
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      timeout: RECEIPT_TIMEOUT_MS,
+      confirmations: 1,
+    });
     if (receipt.status !== "success") {
       throw new SettlementError(`${label} échec on-chain (tx ${hash})`);
     }
   }
 
+  // Un règlement déjà appliqué (retry après succès on-chain, réponse réseau perdue)
+  // revert `AlreadySettled` → no-op idempotent, pas une erreur. Suppose des clés
+  // d'idempotence uniques PAR opération (convention backend positionId:action:seq).
+  async function idempotent(run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (err) {
+      if (isAlreadySettled(err)) return;
+      throw err;
+    }
+  }
+
   return {
-    async openAccounting(
+    openAccounting(
       accountAddr: string,
       idempotencyKey: string,
       marginBase: bigint,
       feeBase: bigint,
     ): Promise<void> {
-      const hash = await walletClient.writeContract({
-        address,
-        abi: MARGIN_VAULT_ABI,
-        functionName: "openAccounting",
-        args: [settlementId(idempotencyKey), getAddress(accountAddr), marginBase, feeBase],
+      const id = settlementId(idempotencyKey);
+      const to = getAddress(accountAddr);
+      return idempotent(async () => {
+        const hash = await walletClient.writeContract({
+          address,
+          abi: MARGIN_VAULT_ABI,
+          functionName: "openAccounting",
+          args: [id, to, marginBase, feeBase],
+        });
+        await awaitSuccess(hash, "openAccounting");
       });
-      await awaitSuccess(hash, "openAccounting");
     },
 
-    async closeAccounting(
+    closeAccounting(
       accountAddr: string,
       idempotencyKey: string,
       marginReleaseBase: bigint,
       pnlBase: bigint,
     ): Promise<void> {
-      const hash = await walletClient.writeContract({
-        address,
-        abi: MARGIN_VAULT_ABI,
-        functionName: "closeAccounting",
-        args: [settlementId(idempotencyKey), getAddress(accountAddr), marginReleaseBase, pnlBase],
+      const id = settlementId(idempotencyKey);
+      const to = getAddress(accountAddr);
+      return idempotent(async () => {
+        const hash = await walletClient.writeContract({
+          address,
+          abi: MARGIN_VAULT_ABI,
+          functionName: "closeAccounting",
+          args: [id, to, marginReleaseBase, pnlBase],
+        });
+        await awaitSuccess(hash, "closeAccounting");
       });
-      await awaitSuccess(hash, "closeAccounting");
     },
 
     collateralOf(accountAddr: string): Promise<bigint> {

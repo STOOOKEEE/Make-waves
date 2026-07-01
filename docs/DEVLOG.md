@@ -4,6 +4,18 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-01 — Perp v2 : revue de la PR adaptateur (audit 3 lentilles) + correctifs [piste v2]
+
+**Quoi.** Revue de la PR #2 (adaptateur viem + anti-rejeu) : tests re-joués (Foundry 40/40, e2e anvil, 515 TS) puis audit adversarial 3 lentilles (anti-rejeu contrat / adaptateur viem / address+service). Contrat anti-rejeu jugé sain. Correctifs appliqués à l'adaptateur/tests :
+- **`nonceManager`** sur l'account viem (`viem-vault-client.ts`) : deux règlements concurrents d'une même clé opérateur ne collisionnent plus sur le même nonce pending (bug de chemin de fonds en usage concurrent).
+- **`AlreadySettled` → no-op idempotent** : un retry après succès on-chain était remonté comme erreur ; désormais avalé (exactly-once propre bout-en-bout). Suppose des clés uniques par opération (`positionId:action:seq`). ABI complété (`AmountOutOfRange`).
+- **Robustesse** : `timeout`+`confirmations` sur `waitForTransactionReceipt` (plus de hang RPC) ; garde `idempotencyKey` vide dans l'adaptateur (`keccak256("")` ≠ 0).
+- **e2e** : `beforeAll` lance `forge build` et `CAN_RUN` ne gate plus que sur anvil → plus de faux résultat sur un `out/` périmé (ce qui faisait échouer l'e2e en review).
+
+**Laissé (YAGNI).** `applyFunding` non exposé dans `VaultClient`/adaptateur : aucun appelant, funding-on-chain hors du flux courant. Rappel runbook : le backend doit dériver `settlementId` déterministe (jamais un nonce aléatoire par tentative).
+
+---
+
 ## 2026-07-01 — Perp v2 : audit du travail on-chain + correctifs (adaptateur viem, anti-rejeu) [piste v2]
 
 **Quoi.** Audit end-to-end du perp v2 livré (`packages/contracts` + `packages/evm`) puis comblement des deux trous trouvés — tout **codable et vérifié sans testnet** (contre anvil). Non déployé testnet (frontière `[env]` inchangée).

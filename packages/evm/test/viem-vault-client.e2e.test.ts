@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import {
@@ -50,7 +50,9 @@ function anvilInstalled(): boolean {
   }
 }
 
-const CAN_RUN = anvilInstalled() && existsSync(VAULT_ARTIFACT) && existsSync(TOKEN_ARTIFACT);
+// anvil suffit : `beforeAll` (re)compile les contrats, donc pas de faux résultat
+// sur un `out/` périmé (les artefacts sont toujours frais quand la suite tourne).
+const CAN_RUN = anvilInstalled();
 
 interface Artifact {
   readonly abi: Abi;
@@ -107,6 +109,8 @@ describe.skipIf(!CAN_RUN)("createViemVaultClient (e2e anvil)", () => {
   const traderAddr = mnemonicToAccount(MNEMONIC, { addressIndex: 2 }).address;
 
   beforeAll(async () => {
+    // Artefacts toujours à jour vs MarginVault.sol (sinon test contre un vieux bytecode).
+    execSync("forge build", { cwd: resolve(HERE, "../../contracts"), stdio: "ignore" });
     anvil = spawn("anvil", ["--port", String(PORT), "--silent"], { stdio: "ignore" });
     publicClient = createPublicClient({ chain, transport: http(RPC) });
     await waitReady(publicClient);
@@ -213,8 +217,9 @@ describe.skipIf(!CAN_RUN)("createViemVaultClient (e2e anvil)", () => {
     await svc.openPosition(traderAddr, openKey, 40, 0);
     expect(await readVault<bigint>("lockedMargin", [traderAddr])).toBe(parseEther("40"));
 
-    // 4. Anti-rejeu : rejouer la MÊME clé d'ouverture → revert, pas de double-lock.
-    await expect(svc.openPosition(traderAddr, openKey, 40, 0)).rejects.toThrow();
+    // 4. Anti-rejeu : rejouer la MÊME clé → no-op idempotent (résout, contrat revert
+    //    AlreadySettled avalé par l'adaptateur), aucun double-lock.
+    await svc.openPosition(traderAddr, openKey, 40, 0);
     expect(await readVault<bigint>("lockedMargin", [traderAddr])).toBe(parseEther("40")); // toujours 40, pas 80
 
     // 5. Fermeture avec gain +50 (long, entry 2 → exit 2.5, qty 100).

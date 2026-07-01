@@ -47,4 +47,5 @@ export const MARGIN_VAULT_ABI = [
   { type: "error", name: "InsufficientFreeCollateral", inputs: [] },
   { type: "error", name: "MarginExceedsLocked", inputs: [] },
   { type: "error", name: "PoolInsolvent", inputs: [] },
+  { type: "error", name: "AmountOutOfRange", inputs: [] },
 ] as const;
