@@ -52,11 +52,21 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
     /// @notice Somme comptabilisée en interne = Σ collateral + protocolPool.
     uint256 public totalAccounted;
 
+    /**
+     * @notice Ids de règlement déjà consommés. Chaque instruction opérateur
+     *         (ouverture/fermeture/funding) porte un `settlementId` unique généré
+     *         off-chain ; il est brûlé au premier passage. Une re-soumission (retry
+     *         réseau après un timeout où la tx avait réussi) revert `AlreadySettled`
+     *         au lieu de double-appliquer le mouvement. Idempotence **exactly-once**
+     *         garantie on-chain, pas seulement au niveau de la couche d'appel.
+     */
+    mapping(bytes32 => bool) public usedSettlementId;
+
     event Deposit(address indexed account, uint256 amount);
     event Withdraw(address indexed account, uint256 amount);
-    event PositionOpened(address indexed account, uint256 margin, uint256 fee);
-    event PositionClosed(address indexed account, uint256 marginReleased, int256 pnl);
-    event FundingApplied(address indexed account, int256 amount);
+    event PositionOpened(address indexed account, bytes32 indexed settlementId, uint256 margin, uint256 fee);
+    event PositionClosed(address indexed account, bytes32 indexed settlementId, uint256 marginReleased, int256 pnl);
+    event FundingApplied(address indexed account, bytes32 indexed settlementId, int256 amount);
     event PoolFunded(uint256 amount);
     event PoolDefunded(uint256 amount);
     event OperatorChanged(address indexed previousOperator, address indexed newOperator);
@@ -72,10 +82,24 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
     error NothingToSkim();
     error AmountOutOfRange();
     error RenounceDisabled();
+    error ZeroSettlementId();
+    error AlreadySettled();
 
     modifier onlyOperator() {
         if (msg.sender != operator) revert NotOperator();
         _;
+    }
+
+    /**
+     * @dev Brûle un `settlementId` : rejette l'id nul (force une valeur explicite
+     *      côté backend) et le rejeu (id déjà consommé). Appelé en toute première
+     *      ligne des instructions opérateur, avant le moindre effet, pour qu'un
+     *      retry ne puisse jamais rejouer un mouvement financier.
+     */
+    function _consume(bytes32 settlementId) internal {
+        if (settlementId == bytes32(0)) revert ZeroSettlementId();
+        if (usedSettlementId[settlementId]) revert AlreadySettled();
+        usedSettlementId[settlementId] = true;
     }
 
     /**
@@ -137,11 +161,12 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
      *      position ouverte (`collateral` repasse sous `lockedMargin`, `freeCollateral`
      *      saturant à 0). L'event remonte le fee RÉELLEMENT débité (pas le demandé).
      */
-    function openAccounting(address account, uint256 margin, uint256 fee)
+    function openAccounting(bytes32 settlementId, address account, uint256 margin, uint256 fee)
         external
         onlyOperator
         whenNotPaused
     {
+        _consume(settlementId);
         uint256 debited;
         if (fee > 0) {
             debited = fee > collateral[account] ? collateral[account] : fee;
@@ -150,7 +175,7 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
         }
         if (margin > freeCollateral(account)) revert InsufficientFreeCollateral();
         lockedMargin[account] += margin;
-        emit PositionOpened(account, margin, debited);
+        emit PositionOpened(account, settlementId, margin, debited);
     }
 
     /**
@@ -161,15 +186,16 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
      *         (perte ≤ marge de la position) est garantie OFF-CHAIN par le backend.
      *         L'event remonte le PnL RÉELLEMENT appliqué (perte plafonnée incluse).
      */
-    function closeAccounting(address account, uint256 marginRelease, int256 pnl)
+    function closeAccounting(bytes32 settlementId, address account, uint256 marginRelease, int256 pnl)
         external
         onlyOperator
         whenNotPaused
     {
+        _consume(settlementId);
         if (marginRelease > lockedMargin[account]) revert MarginExceedsLocked();
         lockedMargin[account] -= marginRelease;
         int256 applied = _settle(account, pnl);
-        emit PositionClosed(account, marginRelease, applied);
+        emit PositionClosed(account, settlementId, marginRelease, applied);
     }
 
     /**
@@ -177,9 +203,14 @@ contract MarginVault is Ownable2Step, Pausable, ReentrancyGuard {
      *         Funding intermédié par le pool (le backend calcule le net). L'event
      *         remonte le montant réellement appliqué (perte plafonnée incluse).
      */
-    function applyFunding(address account, int256 amount) external onlyOperator whenNotPaused {
+    function applyFunding(bytes32 settlementId, address account, int256 amount)
+        external
+        onlyOperator
+        whenNotPaused
+    {
+        _consume(settlementId);
         int256 applied = _settle(account, amount);
-        emit FundingApplied(account, applied);
+        emit FundingApplied(account, settlementId, applied);
     }
 
     /**

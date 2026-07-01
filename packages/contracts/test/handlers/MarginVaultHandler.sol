@@ -19,6 +19,15 @@ contract MarginVaultHandler is Test {
 
     uint256 internal constant MAX = 1_000_000e18;
 
+    /// @dev Compteur d'ids de règlement : chaque instruction opérateur reçoit un
+    ///      settlementId frais, donc le fuzzing d'invariant n'est jamais bloqué par
+    ///      un rejeu (l'anti-rejeu est couvert par les tests unitaires dédiés).
+    uint256 internal idNonce;
+
+    function _id() internal returns (bytes32) {
+        return keccak256(abi.encode("inv", idNonce++));
+    }
+
     constructor(MarginVault vault_, MockERC20 token_, address[] memory actors_) {
         vault = vault_;
         token = token_;
@@ -65,7 +74,7 @@ contract MarginVaultHandler is Test {
         uint256 locked = vault.lockedMargin(a);
         uint256 freeAfterFee = col - fee > locked ? col - fee - locked : 0;
         margin = bound(margin, 0, freeAfterFee);
-        vault.openAccounting(a, margin, fee);
+        vault.openAccounting(_id(), a, margin, fee);
     }
 
     function closeAccounting(uint256 actorSeed, uint256 marginRel, int256 pnl) public {
@@ -75,13 +84,13 @@ contract MarginVaultHandler is Test {
         marginRel = bound(marginRel, 0, locked);
         // Borne le gain au pool disponible (sinon PoolInsolvent, sans intérêt ici).
         pnl = bound(pnl, -int256(MAX), int256(vault.protocolPool()));
-        vault.closeAccounting(a, marginRel, pnl);
+        vault.closeAccounting(_id(), a, marginRel, pnl);
     }
 
     function applyFunding(uint256 actorSeed, int256 amount) public {
         address a = _actor(actorSeed);
         amount = bound(amount, -int256(MAX), int256(vault.protocolPool()));
-        vault.applyFunding(a, amount);
+        vault.applyFunding(_id(), a, amount);
     }
 
     function fundPool(uint256 amount) public {

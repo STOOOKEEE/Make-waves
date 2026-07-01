@@ -18,8 +18,16 @@ contract MarginVaultTest is Test {
 
     uint256 internal constant UNIT = 1e18;
 
-    event PositionOpened(address indexed account, uint256 margin, uint256 fee);
-    event PositionClosed(address indexed account, uint256 marginReleased, int256 pnl);
+    event PositionOpened(address indexed account, bytes32 indexed settlementId, uint256 margin, uint256 fee);
+    event PositionClosed(address indexed account, bytes32 indexed settlementId, uint256 marginReleased, int256 pnl);
+
+    /// @dev Génère un settlementId frais à chaque appel (compteur interne). Fonction
+    ///      interne : n'affecte pas le `vm.prank` posé pour l'appel externe suivant.
+    uint256 internal idSeq;
+
+    function _id() internal returns (bytes32) {
+        return keccak256(abi.encode("settle", idSeq++));
+    }
 
     function setUp() public {
         token = new MockERC20();
@@ -69,7 +77,7 @@ contract MarginVaultTest is Test {
     function test_WithdrawMoreThanFreeReverts() public {
         _deposit(alice, 100 * UNIT);
         vm.prank(operator);
-        vault.openAccounting(alice, 80 * UNIT, 0); // verrouille 80, libre = 20
+        vault.openAccounting(_id(), alice, 80 * UNIT, 0); // verrouille 80, libre = 20
         vm.prank(alice);
         vm.expectRevert(MarginVault.InsufficientFreeCollateral.selector);
         vault.withdraw(21 * UNIT);
@@ -102,19 +110,19 @@ contract MarginVaultTest is Test {
         _deposit(alice, 100 * UNIT);
         vm.prank(alice);
         vm.expectRevert(MarginVault.NotOperator.selector);
-        vault.openAccounting(alice, 10 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 10 * UNIT, 0);
     }
 
     function test_OnlyOperatorCanClose() public {
         vm.prank(bob);
         vm.expectRevert(MarginVault.NotOperator.selector);
-        vault.closeAccounting(alice, 0, 0);
+        vault.closeAccounting(_id(), alice, 0, 0);
     }
 
     function test_OnlyOperatorCanApplyFunding() public {
         vm.prank(bob);
         vm.expectRevert(MarginVault.NotOperator.selector);
-        vault.applyFunding(alice, 1);
+        vault.applyFunding(_id(), alice, 1);
     }
 
     // ----------------------------- Open / Close ------------------------------- //
@@ -122,7 +130,7 @@ contract MarginVaultTest is Test {
     function test_OpenLocksMarginAndDebitsFee() public {
         _deposit(alice, 100 * UNIT);
         vm.prank(operator);
-        vault.openAccounting(alice, 50 * UNIT, 2 * UNIT); // marge 50, fee 2
+        vault.openAccounting(_id(), alice, 50 * UNIT, 2 * UNIT); // marge 50, fee 2
         assertEq(vault.collateral(alice), 98 * UNIT); // fee débité
         assertEq(vault.lockedMargin(alice), 50 * UNIT);
         assertEq(vault.freeCollateral(alice), 48 * UNIT);
@@ -134,16 +142,16 @@ contract MarginVaultTest is Test {
         _deposit(alice, 100 * UNIT);
         vm.prank(operator);
         vm.expectRevert(MarginVault.InsufficientFreeCollateral.selector);
-        vault.openAccounting(alice, 101 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 101 * UNIT, 0);
     }
 
     function test_CloseReleasesMarginAndAppliesGain() public {
         _deposit(alice, 100 * UNIT);
         _fundPool(50 * UNIT);
         vm.prank(operator);
-        vault.openAccounting(alice, 50 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 50 * UNIT, 0);
         vm.prank(operator);
-        vault.closeAccounting(alice, 50 * UNIT, int256(10 * UNIT)); // gain de 10
+        vault.closeAccounting(_id(), alice, 50 * UNIT, int256(10 * UNIT)); // gain de 10
         assertEq(vault.lockedMargin(alice), 0);
         assertEq(vault.collateral(alice), 110 * UNIT); // +10 gain
         assertEq(vault.protocolPool(), 40 * UNIT); // -10 du pool
@@ -153,17 +161,17 @@ contract MarginVaultTest is Test {
     function test_CloseGainPoolInsolventReverts() public {
         _deposit(alice, 100 * UNIT);
         vm.startPrank(operator);
-        vault.openAccounting(alice, 50 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 50 * UNIT, 0);
         vm.expectRevert(MarginVault.PoolInsolvent.selector);
-        vault.closeAccounting(alice, 50 * UNIT, int256(1 * UNIT)); // pool vide
+        vault.closeAccounting(_id(), alice, 50 * UNIT, int256(1 * UNIT)); // pool vide
         vm.stopPrank();
     }
 
     function test_CloseLossGoesToPool() public {
         _deposit(alice, 100 * UNIT);
         vm.startPrank(operator);
-        vault.openAccounting(alice, 50 * UNIT, 0);
-        vault.closeAccounting(alice, 50 * UNIT, -int256(30 * UNIT)); // perte de 30
+        vault.openAccounting(_id(), alice, 50 * UNIT, 0);
+        vault.closeAccounting(_id(), alice, 50 * UNIT, -int256(30 * UNIT)); // perte de 30
         vm.stopPrank();
         assertEq(vault.collateral(alice), 70 * UNIT);
         assertEq(vault.protocolPool(), 30 * UNIT);
@@ -173,9 +181,9 @@ contract MarginVaultTest is Test {
     function test_CloseLossCappedAtCollateral() public {
         _deposit(alice, 40 * UNIT);
         vm.startPrank(operator);
-        vault.openAccounting(alice, 40 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 40 * UNIT, 0);
         // Perte annoncée 1000 mais plafonnée au collatéral (40) : jamais négatif.
-        vault.closeAccounting(alice, 40 * UNIT, -int256(1_000 * UNIT));
+        vault.closeAccounting(_id(), alice, 40 * UNIT, -int256(1_000 * UNIT));
         vm.stopPrank();
         assertEq(vault.collateral(alice), 0);
         assertEq(vault.protocolPool(), 40 * UNIT);
@@ -185,9 +193,9 @@ contract MarginVaultTest is Test {
     function test_CloseMarginExceedsLockedReverts() public {
         _deposit(alice, 100 * UNIT);
         vm.startPrank(operator);
-        vault.openAccounting(alice, 30 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 30 * UNIT, 0);
         vm.expectRevert(MarginVault.MarginExceedsLocked.selector);
-        vault.closeAccounting(alice, 31 * UNIT, 0);
+        vault.closeAccounting(_id(), alice, 31 * UNIT, 0);
         vm.stopPrank();
     }
 
@@ -197,10 +205,10 @@ contract MarginVaultTest is Test {
         _deposit(alice, 100 * UNIT);
         _fundPool(20 * UNIT);
         vm.startPrank(operator);
-        vault.applyFunding(alice, -int256(5 * UNIT)); // alice paie 5
+        vault.applyFunding(_id(), alice, -int256(5 * UNIT)); // alice paie 5
         assertEq(vault.collateral(alice), 95 * UNIT);
         assertEq(vault.protocolPool(), 25 * UNIT);
-        vault.applyFunding(alice, int256(3 * UNIT)); // alice reçoit 3
+        vault.applyFunding(_id(), alice, int256(3 * UNIT)); // alice reçoit 3
         assertEq(vault.collateral(alice), 98 * UNIT);
         assertEq(vault.protocolPool(), 22 * UNIT);
         vm.stopPrank();
@@ -210,12 +218,50 @@ contract MarginVaultTest is Test {
     function test_FundingCanPushFreeToZeroWithoutRevert() public {
         _deposit(alice, 100 * UNIT);
         vm.prank(operator);
-        vault.openAccounting(alice, 100 * UNIT, 0); // tout verrouillé, libre = 0
+        vault.openAccounting(_id(), alice, 100 * UNIT, 0); // tout verrouillé, libre = 0
         vm.prank(operator);
-        vault.applyFunding(alice, -int256(10 * UNIT)); // collatéral 90 < locked 100
+        vault.applyFunding(_id(), alice, -int256(10 * UNIT)); // collatéral 90 < locked 100
         assertEq(vault.collateral(alice), 90 * UNIT);
         assertEq(vault.lockedMargin(alice), 100 * UNIT);
         assertEq(vault.freeCollateral(alice), 0); // saturant, pas de revert
+    }
+
+    // ------------------------------ Anti-rejeu -------------------------------- //
+
+    function test_ReplaySettlementReverts() public {
+        _deposit(alice, 100 * UNIT);
+        bytes32 id = _id();
+        vm.prank(operator);
+        vault.openAccounting(id, alice, 10 * UNIT, 0);
+        // Rejouer le MÊME id (retry réseau après timeout) → revert, pas de double-lock.
+        vm.prank(operator);
+        vm.expectRevert(MarginVault.AlreadySettled.selector);
+        vault.openAccounting(id, alice, 10 * UNIT, 0);
+        // L'id est cross-fonction : le même id ne passe pas non plus sur closeAccounting.
+        vm.prank(operator);
+        vm.expectRevert(MarginVault.AlreadySettled.selector);
+        vault.closeAccounting(id, alice, 0, 0);
+        // La marge n'a été verrouillée qu'une seule fois.
+        assertEq(vault.lockedMargin(alice), 10 * UNIT);
+        assertEq(vault.usedSettlementId(id), true);
+    }
+
+    function test_ZeroSettlementIdReverts() public {
+        _deposit(alice, 100 * UNIT);
+        vm.prank(operator);
+        vm.expectRevert(MarginVault.ZeroSettlementId.selector);
+        vault.openAccounting(bytes32(0), alice, 10 * UNIT, 0);
+    }
+
+    function test_FundingReplayReverts() public {
+        _deposit(alice, 100 * UNIT);
+        _fundPool(20 * UNIT);
+        bytes32 id = _id();
+        vm.prank(operator);
+        vault.applyFunding(id, alice, int256(3 * UNIT));
+        vm.prank(operator);
+        vm.expectRevert(MarginVault.AlreadySettled.selector);
+        vault.applyFunding(id, alice, int256(3 * UNIT));
     }
 
     // --------------------------------- Pool ----------------------------------- //
@@ -268,11 +314,11 @@ contract MarginVaultTest is Test {
         assertEq(vault.operator(), bob);
         _deposit(alice, 10 * UNIT);
         vm.prank(bob);
-        vault.openAccounting(alice, 5 * UNIT, 0); // nouveau opérateur autorisé
+        vault.openAccounting(_id(), alice, 5 * UNIT, 0); // nouveau opérateur autorisé
         assertEq(vault.lockedMargin(alice), 5 * UNIT);
         vm.prank(operator);
         vm.expectRevert(MarginVault.NotOperator.selector);
-        vault.openAccounting(alice, 1 * UNIT, 0); // ancien opérateur rejeté
+        vault.openAccounting(_id(), alice, 1 * UNIT, 0); // ancien opérateur rejeté
     }
 
     function test_Ownable2StepTransfer() public {
@@ -295,10 +341,11 @@ contract MarginVaultTest is Test {
 
     function test_PositionOpenedEmitsDebitedFeeNotRequested() public {
         _deposit(alice, 10 * UNIT);
-        vm.expectEmit(true, false, false, true, address(vault));
-        emit PositionOpened(alice, 0, 10 * UNIT); // débité = collatéral (10), pas le fee demandé (100)
+        bytes32 id = _id();
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit PositionOpened(alice, id, 0, 10 * UNIT); // débité = collatéral (10), pas le fee demandé (100)
         vm.prank(operator);
-        vault.openAccounting(alice, 0, 100 * UNIT);
+        vault.openAccounting(id, alice, 0, 100 * UNIT);
         assertEq(vault.collateral(alice), 0);
         assertEq(vault.protocolPool(), 10 * UNIT);
     }
@@ -306,10 +353,11 @@ contract MarginVaultTest is Test {
     function test_PositionClosedEmitsAppliedLossNotRequested() public {
         _deposit(alice, 40 * UNIT);
         vm.startPrank(operator);
-        vault.openAccounting(alice, 40 * UNIT, 0);
-        vm.expectEmit(true, false, false, true, address(vault));
-        emit PositionClosed(alice, 40 * UNIT, -int256(40 * UNIT)); // perte plafonnée à 40, pas -1000
-        vault.closeAccounting(alice, 40 * UNIT, -int256(1_000 * UNIT));
+        vault.openAccounting(_id(), alice, 40 * UNIT, 0);
+        bytes32 id = _id();
+        vm.expectEmit(true, true, false, true, address(vault));
+        emit PositionClosed(alice, id, 40 * UNIT, -int256(40 * UNIT)); // perte plafonnée à 40, pas -1000
+        vault.closeAccounting(id, alice, 40 * UNIT, -int256(1_000 * UNIT));
         vm.stopPrank();
     }
 
@@ -326,7 +374,7 @@ contract MarginVaultTest is Test {
 
         vm.prank(operator);
         vm.expectRevert(Pausable.EnforcedPause.selector);
-        vault.openAccounting(alice, 1 * UNIT, 0);
+        vault.openAccounting(_id(), alice, 1 * UNIT, 0);
 
         // Retrait du libre toujours possible en pause.
         vm.prank(alice);
@@ -384,7 +432,7 @@ contract MarginVaultTest is Test {
         _deposit(alice, dep);
         if (pool > 0) _fundPool(pool);
         vm.prank(operator);
-        vault.applyFunding(alice, pnl);
+        vault.applyFunding(_id(), alice, pnl);
         // Conservation : la compta interne reste cohérente, solvabilité préservée.
         assertEq(vault.totalAccounted(), vault.collateral(alice) + vault.protocolPool());
         assertGe(token.balanceOf(address(vault)), vault.totalAccounted());

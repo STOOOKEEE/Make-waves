@@ -49,8 +49,8 @@
 - [ ] [code] **Service settlement** (`apps/api`) : calcule le PnL réalisé à la fermeture, produit l'instruction, la fait signer par le multisig, appelle `vault.settle` (viem)
 - [ ] [code] Lecture du collatéral on-chain (solde vault) → exposé à l'API (plafond de marge réel)
 - [ ] [code] **Liquidation off-chain** : le backend surveille mark vs marge, déclenche un settlement de liquidation (plancher -marge)
-- [ ] [code] Anti-rejeu / idempotence des settlements (nonce par instruction), gestion d'erreur réseau (pas d'avalement)
-- [ ] [code] Tests bout en bout (inject) du flux deposit → open → close → settle → withdraw
+- [x] [code] Anti-rejeu / idempotence des settlements (`settlementId` consommé on-chain), gestion d'erreur réseau (adaptateur viem : attente du reçu, échec si `status != success`) — *2026-07-01*
+- [x] [code] Tests bout en bout (inject) du flux deposit → open → close → settle → withdraw (e2e anvil via l'adaptateur viem réel) — *2026-07-01*
 - [ ] [env] Vérif sur testnet avec le vault réel (un règlement signé qui passe)
 
 ## Phase 3 — Front : mode « Perp on-chain » · 2026-07-14 → 2026-07-21

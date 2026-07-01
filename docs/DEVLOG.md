@@ -4,6 +4,39 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-01 — Perp v2 : revue de la PR adaptateur (audit 3 lentilles) + correctifs [piste v2]
+
+**Quoi.** Revue de la PR #2 (adaptateur viem + anti-rejeu) : tests re-joués (Foundry 40/40, e2e anvil, 515 TS) puis audit adversarial 3 lentilles (anti-rejeu contrat / adaptateur viem / address+service). Contrat anti-rejeu jugé sain. Correctifs appliqués à l'adaptateur/tests :
+- **`nonceManager`** sur l'account viem (`viem-vault-client.ts`) : deux règlements concurrents d'une même clé opérateur ne collisionnent plus sur le même nonce pending (bug de chemin de fonds en usage concurrent).
+- **`AlreadySettled` → no-op idempotent** : un retry après succès on-chain était remonté comme erreur ; désormais avalé (exactly-once propre bout-en-bout). Suppose des clés uniques par opération (`positionId:action:seq`). ABI complété (`AmountOutOfRange`).
+- **Robustesse** : `timeout`+`confirmations` sur `waitForTransactionReceipt` (plus de hang RPC) ; garde `idempotencyKey` vide dans l'adaptateur (`keccak256("")` ≠ 0).
+- **e2e** : `beforeAll` lance `forge build` et `CAN_RUN` ne gate plus que sur anvil → plus de faux résultat sur un `out/` périmé (ce qui faisait échouer l'e2e en review).
+
+**Laissé (YAGNI).** `applyFunding` non exposé dans `VaultClient`/adaptateur : aucun appelant, funding-on-chain hors du flux courant. Rappel runbook : le backend doit dériver `settlementId` déterministe (jamais un nonce aléatoire par tentative).
+
+---
+
+## 2026-07-01 — Perp v2 : audit du travail on-chain + correctifs (adaptateur viem, anti-rejeu) [piste v2]
+
+**Quoi.** Audit end-to-end du perp v2 livré (`packages/contracts` + `packages/evm`) puis comblement des deux trous trouvés — tout **codable et vérifié sans testnet** (contre anvil). Non déployé testnet (frontière `[env]` inchangée).
+- **Audit.** 37 tests Foundry + 38 TS verts ; cycle de vie complet re-joué sur **anvil** via le script de déploiement existant ; config `solc 0.8.24` / EVM Paris / chainId 1449000 **conforme à la doc officielle XRPL EVM**. Deux manques : (1) le pont runtime n'existait pas (aucune implémentation concrète de `VaultClient`, zéro `viem` dans le repo) ; (2) aucune protection anti-rejeu on-chain (idempotence « best-effort au niveau appel » seulement).
+- **Anti-rejeu on-chain (`MarginVault.sol`).** `openAccounting`/`closeAccounting`/`applyFunding` prennent un `bytes32 settlementId` consommé par `_consume` (première ligne, avant tout effet) : id nul rejeté (`ZeroSettlementId`), rejeu rejeté (`AlreadySettled`), `mapping usedSettlementId` public, `settlementId` indexé dans les events. Idempotence **exactly-once** garantie par le contrat, plus seulement par la couche d'appel. Réalise la ligne 52 de `docs/ROADMAP-PERP-V2.md`.
+- **Adaptateur viem concret (`createViemVaultClient`).** Première entrée de `viem` dans le repo. Factory sur le modèle de `createXamanApi` : enveloppe RPC + clé opérateur, retourne l'interface pure `VaultClient`. Hache l'`idempotencyKey` string en `settlementId` (`keccak256`), **attend le reçu** et **échoue si `status !== success`** (pas d'avalement d'erreur, ligne 52). ABI minimal typé `as const` (découplé de `out/`).
+- **Durcissement couche TS.** `assertEvmAddress` (pure, sans dépendance) branché dans `SettlementService` ; `idempotencyKey` propagée de bout en bout (service → interface → adaptateur) ; clé vide rejetée.
+- **Test e2e inject contre anvil.** Cycle `deposit → open → close(gain) → collateralOf → withdraw` à travers l'adaptateur réel + rejeu bloqué on-chain ; **skip propre** si anvil/artefacts absents (`pnpm test` reste vert sans Foundry). Réalise la ligne 53.
+
+**Pourquoi.** Le collègue a livré la moitié on-chain (contrat + traduction pure) mais pas le pont runtime ni l'idempotence robuste. Sans anti-rejeu on-chain, un simple retry réseau double-appliquait un mouvement financier — inacceptable pour une brique de règlement. L'adaptateur débloque le branchement backend (Phase 2/3) et est testable sans les clés/testnet du collègue.
+
+**Cheminement.** Modif d'un contrat déjà audité → re-run + re-audit complets : `_consume` placé après les modifiers `onlyOperator`/`whenNotPaused` (un appel non-autorisé ou en pause ne brûle pas l'id → le retry légitime reste possible). Handler d'invariant : `settlementId` frais par appel (compteur) pour ne pas bloquer le fuzzing ; l'anti-rejeu est couvert par des tests unitaires dédiés. Décision ABI : figé `as const` dans `packages/evm` plutôt qu'importé de `out/` (le typecheck ne dépend pas d'un `forge build`).
+
+**Vérif.** Foundry **40/40** (dont 3 nouveaux : replay open cross-fonction, id nul, replay funding + invariants inchangés) ; TS **41/41** evm ; suite complète **515/515** (e2e anvil inclus) ; typecheck + lint verts.
+
+**Bugs & fix.** `collateralOf` du service : la validation d'adresse synchrone levait *avant* de retourner la promesse (throw sync au lieu de rejet) → méthode passée `async` pour un contrat d'erreur cohérent côté appelant.
+
+**Frontière restante (`[env]`, machine du collègue).** Déploiement testnet `1449000` + vérif Blockscout, RLUSD testnet, cadence oracle Band, câblage runtime dans `apps/api` (env reader `TIDE_EVM_*` + `buildSettlementDeps` + route, OFF par défaut) — hors de cette PR.
+
+---
+
 ## 2026-06-30 — Perp v2 (P2, suite) : `SettlementService` + interface `VaultClient` injectable [piste v2]
 
 **Quoi.** Deuxième maillon codable de P2 : l'**adaptateur de règlement** qui consume une `VaultClient` (interface) et expose l'API que le backend appellera — testable avec un fake, sans viem ni clés.
