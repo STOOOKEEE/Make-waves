@@ -227,7 +227,9 @@ onMounted(() => {
   margin: 8px auto 0;
   padding: 8px 0 8px;
 }
-/* la ligne centrale qui descend */
+/* la ligne centrale qui descend — « route » en pointillés clairs, visible sur
+ * le fond bleu, avec un halo doux. Un rail continu discret dessous pour la
+ * continuité. */
 .road::before {
   content: "";
   position: absolute;
@@ -235,14 +237,16 @@ onMounted(() => {
   bottom: 6px;
   left: 50%;
   transform: translateX(-50%);
-  width: 2px;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(79, 106, 255, 0.7) 5%,
-    rgba(79, 106, 255, 0.7) 95%,
-    transparent
-  );
+  width: 4px;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(
+      180deg,
+      #ffffff 0 12px,
+      rgba(255, 255, 255, 0) 12px 26px
+    ),
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.22) 5%, rgba(255, 255, 255, 0.22) 95%, transparent);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.45);
 }
 
 /* --- caps départ/arrivée --- */
@@ -267,7 +271,8 @@ onMounted(() => {
   font-weight: 700;
   color: #fff;
   background: var(--panel);
-  border: 1px solid var(--line2);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.12);
 }
 .cap.top .cap-node {
   color: var(--blue);
@@ -301,17 +306,18 @@ onMounted(() => {
   max-width: 460px;
 }
 .ms-node {
-  width: 50px;
-  height: 50px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   margin: 0 auto 14px;
   display: grid;
   place-items: center;
   font-weight: 700;
-  font-size: 15px;
+  font-size: 16px;
   color: #fff;
   background: linear-gradient(150deg, var(--blue), var(--blue-dk));
-  box-shadow: 0 0 0 5px rgba(79, 106, 255, 0.16);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.14);
 }
 .ms-lab {
   margin-bottom: 6px;
@@ -344,11 +350,12 @@ onMounted(() => {
   justify-self: center;
   z-index: 2;
   position: relative;
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: var(--blue);
-  box-shadow: 0 0 0 4px rgba(79, 106, 255, 0.18);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 4px rgba(79, 106, 255, 0.3);
 }
 /* petit connecteur node → carte */
 .stop .node::before {
@@ -356,9 +363,9 @@ onMounted(() => {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  width: 22px;
+  width: 24px;
   height: 2px;
-  background: rgba(79, 106, 255, 0.5);
+  background: rgba(255, 255, 255, 0.6);
 }
 .stop.left .node::before {
   right: 100%;
