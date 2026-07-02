@@ -187,7 +187,6 @@ function open(slug: string): void {
           class="card lesson"
           @click="open(a.slug)"
         >
-          <pre class="lesson-art" aria-hidden="true">{{ a.art }}</pre>
           <div class="lesson-body">
             <div class="lesson-top">
               <span class="cat lab">{{ categoryLabel[a.category] }}</span>
@@ -327,6 +326,7 @@ function open(slug: string): void {
   border-top: 1px solid var(--line);
   padding: 14px 0;
   cursor: pointer;
+  color: var(--text);
   transition: opacity 0.2s;
 }
 .pop-row:first-of-type {
@@ -437,27 +437,10 @@ function open(slug: string): void {
 }
 .lesson:hover {
   transform: translateY(-4px);
-}
-.lesson-art {
-  font-family: var(--mono);
-  font-size: 9px;
-  line-height: 1.25;
-  color: var(--blue);
-  background: linear-gradient(135deg, #1b1b22, #191920);
-  border-bottom: 1px solid var(--line);
-  margin: 0;
-  padding: 18px 16px;
-  height: 112px;
-  white-space: pre;
-  overflow: hidden;
-  display: grid;
-  align-content: center;
-}
-.lesson:hover .lesson-art {
-  background: #111;
+  background: var(--panel2);
 }
 .lesson-body {
-  padding: 18px 20px 20px;
+  padding: 22px;
   display: flex;
   flex-direction: column;
   flex: 1;

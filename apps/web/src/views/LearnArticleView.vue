@@ -123,17 +123,14 @@ function open(slug: string): void {
 <template>
   <div class="page learn-article">
     <template v-if="article">
-      <!-- fil d'ariane -->
-      <nav class="crumb lab">
-        <a href="#/learn" @click.prevent="emit('navigate', '/learn')">{{ t("home") }}</a>
-        <span class="sep">/</span>
-        <span class="cur">{{ categoryLabel[article.category] }}</span>
-      </nav>
-
       <div class="article-grid">
         <main class="article-main">
+          <nav class="crumb lab">
+            <a href="#/learn" @click.prevent="emit('navigate', '/learn')">{{ t("home") }}</a>
+            <span class="sep">/</span>
+            <span class="cur">{{ categoryLabel[article.category] }}</span>
+          </nav>
           <header class="head">
-            <pre class="art" aria-hidden="true">{{ article.art }}</pre>
             <div class="meta lab">
               <span class="pill">{{ categoryLabel[article.category] }}</span>
               <span class="pill">{{ t(article.difficulty) }}</span>
@@ -142,6 +139,7 @@ function open(slug: string): void {
             </div>
             <h1>{{ article.title }}</h1>
             <p class="dek">{{ article.dek }}</p>
+            <pre class="art" aria-hidden="true">{{ article.art }}</pre>
           </header>
 
           <ArticleBody :blocks="article.blocks" />
@@ -170,11 +168,11 @@ function open(slug: string): void {
                 class="card rel"
                 @click="open(a.slug)"
               >
-                <pre class="rel-art mono" aria-hidden="true">{{ a.art }}</pre>
                 <div class="rel-body">
                   <div class="cat lab">{{ categoryLabel[a.category] }}</div>
                   <h4>{{ a.title }}</h4>
                 </div>
+                <span class="rel-go">→</span>
               </article>
             </div>
           </section>
@@ -216,7 +214,7 @@ function open(slug: string): void {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 14px 0 4px;
+  padding: 14px 0 10px;
 }
 .crumb a {
   transition: color 0.2s;
@@ -231,18 +229,29 @@ function open(slug: string): void {
   color: var(--soft);
 }
 
+/* Colonne de lecture CENTRÉE (piste du milieu) + sommaire dans la gouttière
+ * droite. Les gouttières 1fr égales garantissent que le texte est bien au
+ * centre de la page, quel que soit le sommaire. */
 .article-grid {
   display: grid;
-  grid-template-columns: minmax(0, 720px) 216px;
-  gap: 56px;
-  justify-content: center;
-  max-width: 1040px;
-  margin: 0 auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 720px) minmax(0, 1fr);
+  column-gap: 40px;
+  align-items: start;
 }
-@media (max-width: 980px) {
+.article-main {
+  grid-column: 2;
+  min-width: 0;
+}
+.toc {
+  grid-column: 3;
+}
+@media (max-width: 1080px) {
   .article-grid {
     grid-template-columns: minmax(0, 720px);
     justify-content: center;
+  }
+  .article-main {
+    grid-column: 1;
   }
   .toc {
     display: none;
@@ -251,18 +260,18 @@ function open(slug: string): void {
 
 /* --- en-tête --- */
 .head {
-  padding: 12px 0 18px;
+  padding: 4px 0 12px;
 }
 .art {
   font-family: var(--mono);
   font-size: 13px;
-  line-height: 1.25;
+  line-height: 1.3;
   color: var(--blue);
   background: linear-gradient(135deg, #1b1b22, #16161b);
   border: 1px solid var(--line);
   border-radius: 16px;
   padding: 26px 22px;
-  margin-bottom: 24px;
+  margin: 26px 0 4px;
   overflow-x: auto;
   white-space: pre;
   -webkit-overflow-scrolling: touch;
@@ -347,7 +356,9 @@ function open(slug: string): void {
 }
 .rel {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
   cursor: pointer;
   transition:
     transform 0.3s var(--ease),
@@ -357,37 +368,35 @@ function open(slug: string): void {
   transform: translateY(-3px);
   background: var(--panel2);
 }
-.rel-art {
-  font-size: 8px;
-  line-height: 1.15;
-  color: var(--blue);
-  background: var(--panel2);
-  border-bottom: 1px solid var(--line);
-  padding: 14px;
-  white-space: pre;
-  overflow: hidden;
-  height: 78px;
-}
-.rel:hover .rel-art {
-  background: #111;
-}
 .rel-body {
-  padding: 14px 16px 16px;
+  flex: 1;
+  min-width: 0;
 }
 .rel .cat {
-  margin-bottom: 4px;
+  margin-bottom: 5px;
 }
 .rel h4 {
   font-weight: 700;
-  font-size: 15px;
+  font-size: 15.5px;
   letter-spacing: -0.01em;
-  line-height: 1.2;
+  line-height: 1.25;
+}
+.rel-go {
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 18px;
+  flex: 0 0 auto;
+  transition: transform 0.2s var(--ease);
+}
+.rel:hover .rel-go {
+  transform: translateX(3px);
 }
 
 /* --- sommaire --- */
 .toc-inner {
   position: sticky;
   top: 84px;
+  max-width: 240px;
 }
 .toc-head {
   margin-bottom: 12px;
