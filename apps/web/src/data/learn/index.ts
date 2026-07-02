@@ -19,6 +19,10 @@ import { readingAChart } from "./articles/reading-a-chart";
 import { orderTypes } from "./articles/order-types";
 import { orderBookSpread } from "./articles/order-book-spread";
 import { howTideWorks } from "./articles/how-tide-works";
+import { whatIsAPerpetual } from "./articles/what-is-a-perpetual";
+import { leverageAndMargin } from "./articles/leverage-and-margin";
+import { longAndShort } from "./articles/long-and-short";
+import { takeProfitStopLoss } from "./articles/take-profit-stop-loss";
 
 /** Registre ordonné : l'ordre pilote l'affichage de la grille. */
 const ARTICLES_RAW: RawArticle[] = [
@@ -28,6 +32,11 @@ const ARTICLES_RAW: RawArticle[] = [
   orderTypes,
   orderBookSpread,
   howTideWorks,
+  // Perps & leverage
+  whatIsAPerpetual,
+  leverageAndMargin,
+  longAndShort,
+  takeProfitStopLoss,
 ];
 
 /** Ordre + libellés des pistes (résolus par langue à l'affichage). */
