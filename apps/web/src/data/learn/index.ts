@@ -15,9 +15,20 @@ import type {
 } from "./types";
 
 import { whatIsTrading } from "./articles/what-is-trading";
+import { readingAChart } from "./articles/reading-a-chart";
+import { orderTypes } from "./articles/order-types";
+import { orderBookSpread } from "./articles/order-book-spread";
+import { howTideWorks } from "./articles/how-tide-works";
 
 /** Registre ordonné : l'ordre pilote l'affichage de la grille. */
-const ARTICLES_RAW: RawArticle[] = [whatIsTrading];
+const ARTICLES_RAW: RawArticle[] = [
+  // Basics
+  whatIsTrading,
+  readingAChart,
+  orderTypes,
+  orderBookSpread,
+  howTideWorks,
+];
 
 /** Ordre + libellés des pistes (résolus par langue à l'affichage). */
 const CATEGORY_LABELS: Record<Category, Localized> = {
