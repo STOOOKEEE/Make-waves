@@ -88,6 +88,8 @@ interface RoadLevel {
   label: string;
   tag: string;
   desc: string;
+  /** Côté du titre de niveau : celui de sa 1ʳᵉ leçon (aligné aux cartes). */
+  side: "left" | "right";
   stops: RoadStop[];
 }
 
@@ -107,6 +109,7 @@ const roadmap = computed<RoadLevel[]>(() => {
       label: g?.label ?? lv.id,
       tag: t(lv.tagKey),
       desc: t(lv.descKey),
+      side: stops[0]?.side ?? "left",
       stops,
     };
   });
@@ -136,18 +139,9 @@ onMounted(() => {
     </div>
 
     <div class="road">
-      <!-- départ -->
-      <div class="cap top" v-reveal>
-        <div class="cap-node mono">▲</div>
-        <div class="cap-text">
-          <div class="cap-title">{{ t("start") }}</div>
-          <div class="lab">{{ t("startSub") }}</div>
-        </div>
-      </div>
-
       <template v-for="level in roadmap" :key="level.id">
         <!-- jalon / niveau -->
-        <div class="milestone" v-reveal>
+        <div class="milestone" :class="level.side" v-reveal>
           <div class="ms-node mono">{{ level.n }}</div>
           <div class="ms-head">
             <div class="lab ms-lab">{{ t("level", { n: level.n }) }} · {{ level.tag }}</div>
@@ -297,19 +291,21 @@ onMounted(() => {
   margin-top: 8px;
 }
 
-/* --- jalon / niveau --- */
+/* --- jalon / niveau : nœud sur la ligne, texte décalé du côté des cartes --- */
 .milestone {
   position: relative;
   z-index: 2;
-  text-align: center;
-  margin: 30px auto 20px;
-  max-width: 460px;
+  display: grid;
+  grid-template-columns: 1fr 54px 1fr;
+  align-items: center;
+  margin: 34px 0 12px;
 }
 .ms-node {
+  grid-column: 2;
+  justify-self: center;
   width: 52px;
   height: 52px;
   border-radius: 50%;
-  margin: 0 auto 14px;
   display: grid;
   place-items: center;
   font-weight: 700;
@@ -318,6 +314,18 @@ onMounted(() => {
   background: linear-gradient(150deg, var(--blue), var(--blue-dk));
   border: 3px solid #fff;
   box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.14);
+}
+.ms-head {
+  max-width: 420px;
+}
+.milestone.left .ms-head {
+  grid-column: 1;
+  text-align: right;
+  margin-left: auto;
+}
+.milestone.right .ms-head {
+  grid-column: 3;
+  text-align: left;
 }
 .ms-lab {
   margin-bottom: 6px;
@@ -333,8 +341,11 @@ onMounted(() => {
   color: var(--soft);
   font-size: 14.5px;
   line-height: 1.5;
-  margin: 8px auto 0;
-  max-width: 400px;
+  margin: 8px 0 0;
+  max-width: 380px;
+}
+.milestone.left .ms-head p {
+  margin-left: auto;
 }
 
 /* --- une leçon posée sur la ligne --- */
@@ -524,13 +535,15 @@ onMounted(() => {
     font-size: 14px;
   }
   .cap-text,
-  .ms-head {
+  .ms-head,
+  .milestone.left .ms-head,
+  .milestone.right .ms-head {
     grid-column: 2;
-  }
-  .milestone {
     text-align: left;
+    margin-left: 0;
   }
-  .ms-head p {
+  .milestone.left .ms-head p,
+  .milestone.right .ms-head p {
     margin-left: 0;
   }
   .stop {
