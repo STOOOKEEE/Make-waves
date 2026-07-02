@@ -23,6 +23,11 @@ import { whatIsAPerpetual } from "./articles/what-is-a-perpetual";
 import { leverageAndMargin } from "./articles/leverage-and-margin";
 import { longAndShort } from "./articles/long-and-short";
 import { takeProfitStopLoss } from "./articles/take-profit-stop-loss";
+import { riskManagement101 } from "./articles/risk-management-101";
+import { trendFollowing } from "./articles/trend-following";
+import { meanReversionRanges } from "./articles/mean-reversion-ranges";
+import { breakoutTrading } from "./articles/breakout-trading";
+import { tradingPsychology } from "./articles/trading-psychology";
 
 /** Registre ordonné : l'ordre pilote l'affichage de la grille. */
 const ARTICLES_RAW: RawArticle[] = [
@@ -37,6 +42,12 @@ const ARTICLES_RAW: RawArticle[] = [
   leverageAndMargin,
   longAndShort,
   takeProfitStopLoss,
+  // Strategies
+  riskManagement101,
+  trendFollowing,
+  meanReversionRanges,
+  breakoutTrading,
+  tradingPsychology,
 ];
 
 /** Ordre + libellés des pistes (résolus par langue à l'affichage). */
