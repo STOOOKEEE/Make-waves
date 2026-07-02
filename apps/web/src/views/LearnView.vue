@@ -177,14 +177,14 @@ onMounted(() => {
           </div>
         </article>
       </template>
+    </div>
 
-      <!-- arrivée : pro -->
-      <div class="cap bottom" v-reveal>
-        <div class="cap-node pro mono">★</div>
-        <div class="cap-text">
-          <div class="cap-title">{{ t("pro") }}</div>
-          <div class="lab">{{ t("proSub") }}</div>
-        </div>
+    <!-- arrivée : pro — hors de la ligne (qui s'arrête avant), mais centré -->
+    <div class="cap bottom" v-reveal>
+      <div class="cap-node pro mono">★</div>
+      <div class="cap-text">
+        <div class="cap-title">{{ t("pro") }}</div>
+        <div class="lab">{{ t("proSub") }}</div>
       </div>
     </div>
 
@@ -288,7 +288,7 @@ onMounted(() => {
   line-height: 1;
 }
 .cap.bottom {
-  margin-top: 8px;
+  margin-top: 30px;
 }
 
 /* --- jalon / niveau : nœud sur la ligne, texte décalé du côté des cartes --- */
