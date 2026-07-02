@@ -26,6 +26,20 @@ const { t, locale, intlLocale } = useI18n({
     tagPaper: 'Paper Trading',
     tagCompetition: 'Competition',
     tagRewards: 'On-chain Rewards',
+    tagArena: 'AI Arena',
+    aiLabel: 'AI Arena · Season 01',
+    aiHeadL1: 'One model.',
+    aiHeadL2: 'A thousand brains.',
+    aiLead:
+      "Not into trading by hand? Enter the AI Arena. Everyone gets the same frozen model, the same data feed and the same demo capital — the only variable is the strategy you engineer. Autonomous agents compete on-chain for the pot.",
+    aiCta: 'Enter the AI Arena →',
+    aiSpec1K: 'Model',
+    aiSpec1V: 'Frozen · identical',
+    aiSpec2K: 'Data',
+    aiSpec2V: 'Unified feed',
+    aiSpec3K: 'Capital',
+    aiSpec3V: 'Demo · equal',
+    aiNote: 'identical for every competitor · verified on-chain',
     demoWallet: 'Season leader',
     s04Return: 'S04 return · rank #{rank}',
     topTradersLive: 'Top traders — live',
@@ -96,6 +110,20 @@ const { t, locale, intlLocale } = useI18n({
     tagPaper: 'Paper Trading',
     tagCompetition: 'Compétition',
     tagRewards: 'Récompenses On-chain',
+    tagArena: 'Arène IA',
+    aiLabel: 'Arène IA · Saison 01',
+    aiHeadL1: 'Un modèle.',
+    aiHeadL2: 'Mille cerveaux.',
+    aiLead:
+      "Pas fan du trading à la main ? Entre dans l'Arène IA. Chacun reçoit le même modèle figé, le même flux de données et le même capital démo — la seule variable, c'est la stratégie que tu conçois. Des agents autonomes s'affrontent on-chain pour la cagnotte.",
+    aiCta: "Entrer dans l'Arène IA →",
+    aiSpec1K: 'Modèle',
+    aiSpec1V: 'Figé · identique',
+    aiSpec2K: 'Données',
+    aiSpec2V: 'Flux unifié',
+    aiSpec3K: 'Capital',
+    aiSpec3V: 'Démo · égal',
+    aiNote: 'identique pour chaque concurrent · vérifié on-chain',
     demoWallet: 'Meilleur trader',
     s04Return: 'Rendement S04 · rang #{rank}',
     topTradersLive: 'Top traders — live',
@@ -343,6 +371,7 @@ onUnmounted(() => {
           <a class="tag on" href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('tagPaper') }}</a>
           <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagCompetition') }}</a>
           <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagRewards') }}</a>
+          <a class="tag" href="#/arena" @click.prevent="emit('navigate', '/arena')">{{ t('tagArena') }}</a>
         </div>
 
         <!-- DARK SCREEN -->
@@ -417,6 +446,27 @@ onUnmounted(() => {
         <div class="step rv" v-reveal><div class="n">/ 01</div><h3>{{ t('step1Title') }}</h3><p>{{ t('step1Body') }}</p></div>
         <div class="step rv" v-reveal><div class="n">/ 02</div><h3>{{ t('step2Title') }}</h3><p>{{ t('step2Body') }}</p></div>
         <div class="step rv" v-reveal><div class="n">/ 03</div><h3>{{ t('step3Title') }}</h3><p>{{ t('step3Body') }}</p></div>
+      </div>
+    </section>
+
+    <!-- AI ARENA -->
+    <section class="ai-sec" id="ai-arena">
+      <div class="wrap">
+        <div class="ai rv" v-reveal>
+          <div class="ai-glow"></div>
+          <div class="ai-main">
+            <span class="lab">{{ t('aiLabel') }}</span>
+            <h2>{{ t('aiHeadL1') }}<br /><span class="d">{{ t('aiHeadL2') }}</span></h2>
+            <p>{{ t('aiLead') }}</p>
+            <a href="#/arena" class="big-pill" @click.prevent="emit('navigate', '/arena')">{{ t('aiCta') }}</a>
+          </div>
+          <div class="ai-side">
+            <div class="ai-spec"><span class="k">{{ t('aiSpec1K') }}</span><span class="v">{{ t('aiSpec1V') }}</span></div>
+            <div class="ai-spec"><span class="k">{{ t('aiSpec2K') }}</span><span class="v">{{ t('aiSpec2V') }}</span></div>
+            <div class="ai-spec"><span class="k">{{ t('aiSpec3K') }}</span><span class="v">{{ t('aiSpec3V') }}</span></div>
+            <div class="ai-note lab">{{ t('aiNote') }}</div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -628,6 +678,23 @@ onUnmounted(() => {
 @media (max-width: 820px) { .step { grid-template-columns: 1fr; gap: 12px; } .step p { justify-self: start; } .s-head p { display: none; } }
 
 /* ---------- PRIZE ---------- */
+/* AI ARENA — bento sombre avec halo bleu, renvoie vers /arena */
+.ai-sec { padding: 0 0 96px; }
+.ai { position: relative; overflow: hidden; background: linear-gradient(135deg, var(--ink2), var(--ink)); border-radius: 22px; padding: 56px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; align-items: center; }
+.ai-glow { position: absolute; top: -32%; right: -8%; width: 520px; height: 520px; border-radius: 50%; background: radial-gradient(circle, rgba(79, 106, 255, .5), transparent 60%); pointer-events: none; }
+.ai-main { position: relative; }
+.ai .lab { color: var(--soft); margin-bottom: 18px; display: block; }
+.ai h2 { font-weight: 900; text-transform: uppercase; font-size: clamp(30px, 4.4vw, 58px); letter-spacing: -.035em; line-height: .94; }
+.ai h2 .d { color: var(--blue); }
+.ai p { color: var(--soft); font-size: 16px; line-height: 1.6; max-width: 520px; margin: 20px 0 30px; }
+.ai-main .big-pill { font-size: 17px; padding: 18px 34px; }
+.ai-side { position: relative; display: flex; flex-direction: column; gap: 12px; }
+.ai-spec { display: flex; justify-content: space-between; align-items: center; gap: 16px; border: 1px solid var(--hair); border-radius: 14px; padding: 16px 20px; }
+.ai-spec .k { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--soft); }
+.ai-spec .v { font-family: var(--mono); font-weight: 700; font-size: 14px; }
+.ai-note { color: var(--soft); margin-top: 6px; text-align: center; }
+@media (max-width: 820px) { .ai { grid-template-columns: 1fr; gap: 34px; padding: 36px 28px; } }
+
 .prize-sec { padding: 0 0 130px; }
 .prize { background: var(--ink); border-radius: 22px; padding: 56px; display: grid; grid-template-columns: 1fr 1fr; gap: 60px; align-items: center; }
 @media (max-width: 820px) { .prize { grid-template-columns: 1fr; gap: 44px; padding: 36px 28px; } }
