@@ -19,6 +19,13 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 **Vérif.** `typecheck` (vue-tsc strict, sans `any`) + `build` verts à chaque étape ; suite complète **515/515** ; `lint` vert. Reste la **vérif navigateur runtime** (rendu des pages, bascule FR/EN, puces du terminal) — non faite ici.
 
+**MAJ (même jour) — refonte design « Coinbase Learn » + SEO + expansion du contenu.** Retour Eli : articles pas centrés/trop à gauche, contenu trop léger, viser la section Learn de Coinbase, **remplacer les emojis par de l'ASCII art custom**. Livré :
+- **Index refondu** : en-tête éditorial + **leçon vedette & colonne « Popular »** + **puces de piste** + **sections groupées par piste**, cartes à **vignette ASCII** (`data/learn/art.ts` : 16 illustrations monospace box-drawing, remplacent tous les emojis).
+- **Page article** : **colonne de lecture centrée** (grille centrée + sommaire collant « On this page » via IntersectionObserver), en-tête ASCII, fil d'ariane, date de MAJ, typographie enrichie.
+- **SEO** : `composables/useSeo.ts` pose `<title>`/description/keywords/Open Graph/Twitter/canonical + **JSON-LD `Article`** par leçon ; modèle de données étendu (`seoTitle`/`seoDescription`/`keywords`/`updated`/`popular`, `art` attaché par slug). Ancres de section (`toc.ts`).
+- **Contenu ×2** : les 16 leçons passées à **~20–29 blocs** (5–7 sections H2, exemples chiffrés, callouts, listes, citation), bilingues, avec champs SEO. Expansion **en parallèle via workflow multi-agents** (15 agents, un fichier chacun), puis re-vérif d'exactitude (perp simulé, TP/SL client, plancher −marge, pas d'auto-liq, frais 0,02/0,06 %, rake, Live spot) — toutes les mentions scannées sont dans un contexte correct. Parité FR/EN garantie par le type `Localized` (les deux clés obligatoires).
+- **Vérif** : `typecheck`/`build`/`lint` verts ; **515 tests** ; dev server HMR OK (200). Reste la vérif visuelle fine (rendu ASCII selon la police).
+
 ---
 
 ## 2026-07-01 — Perp v2 : revue de la PR adaptateur (audit 3 lentilles) + correctifs [piste v2]
