@@ -6,7 +6,6 @@ export const breakoutTrading: RawArticle = {
   category: "strategies",
   difficulty: "advanced",
   minutes: 6,
-  icon: "🚀",
   title: {
     en: "Breakout trading: catching the move",
     fr: "Breakout : attraper le mouvement",

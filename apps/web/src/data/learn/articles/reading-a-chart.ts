@@ -6,7 +6,6 @@ export const readingAChart: RawArticle = {
   category: "basics",
   difficulty: "beginner",
   minutes: 7,
-  icon: "📊",
   title: {
     en: "Reading a price chart",
     fr: "Lire un graphique de prix",

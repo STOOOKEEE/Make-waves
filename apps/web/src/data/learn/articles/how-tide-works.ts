@@ -8,7 +8,6 @@ export const howTideWorks: RawArticle = {
   category: "basics",
   difficulty: "beginner",
   minutes: 6,
-  icon: "🛟",
   title: {
     en: "How Tide works: Paper vs Live",
     fr: "Comment marche Tide : Paper vs Live",

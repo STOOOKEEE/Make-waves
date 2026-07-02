@@ -7,7 +7,6 @@ export const orderTypes: RawArticle = {
   category: "basics",
   difficulty: "beginner",
   minutes: 7,
-  icon: "🎛️",
   title: {
     en: "Order types: market, limit, TP & SL",
     fr: "Types d'ordres : market, limit, TP & SL",

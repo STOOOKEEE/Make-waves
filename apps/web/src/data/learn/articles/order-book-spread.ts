@@ -6,7 +6,6 @@ export const orderBookSpread: RawArticle = {
   category: "basics",
   difficulty: "intermediate",
   minutes: 6,
-  icon: "📖",
   title: {
     en: "Bid, ask, spread & the order book",
     fr: "Bid, ask, spread & le carnet d'ordres",

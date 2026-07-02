@@ -6,7 +6,6 @@ export const longAndShort: RawArticle = {
   category: "perps",
   difficulty: "intermediate",
   minutes: 6,
-  icon: "↕️",
   title: {
     en: "Going long and going short",
     fr: "Aller long et aller short",

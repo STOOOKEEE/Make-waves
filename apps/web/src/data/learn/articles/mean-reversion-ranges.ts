@@ -6,7 +6,6 @@ export const meanReversionRanges: RawArticle = {
   category: "strategies",
   difficulty: "advanced",
   minutes: 7,
-  icon: "🔁",
   title: {
     en: "Mean reversion & trading the range",
     fr: "Retour à la moyenne & trader le range",

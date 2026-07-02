@@ -6,7 +6,6 @@ export const takeProfitStopLoss: RawArticle = {
   category: "perps",
   difficulty: "intermediate",
   minutes: 6,
-  icon: "🎯",
   title: {
     en: "Take-profit & stop-loss: protecting a position",
     fr: "Take-profit & stop-loss : protéger une position",

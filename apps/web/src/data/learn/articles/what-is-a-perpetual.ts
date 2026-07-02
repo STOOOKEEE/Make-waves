@@ -8,7 +8,6 @@ export const whatIsAPerpetual: RawArticle = {
   difficulty: "intermediate",
   minutes: 7,
   featured: false,
-  icon: "♾️",
   title: {
     en: "What is a perpetual future?",
     fr: "C'est quoi un future perpétuel ?",

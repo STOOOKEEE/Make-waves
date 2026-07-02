@@ -6,7 +6,6 @@ export const trendFollowing: RawArticle = {
   category: "strategies",
   difficulty: "intermediate",
   minutes: 7,
-  icon: "📈",
   title: {
     en: "Trend following: ride the wave",
     fr: "Suivre la tendance : surfe la vague",

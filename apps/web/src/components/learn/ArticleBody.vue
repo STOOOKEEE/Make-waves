@@ -4,6 +4,7 @@
  * sûrs et rendus via <strong>/<code>. Suit docs/DESIGN.md (bleu = seul accent,
  * mono pour les nombres, pas d'ombres, contraste panel/panel2). */
 import type { Block } from "../../data/learn/types";
+import { headingId } from "../../data/learn/toc";
 
 defineProps<{ blocks: Block[] }>();
 
@@ -41,7 +42,9 @@ function parseInline(s: string): Seg[] {
 <template>
   <div class="body">
     <template v-for="(block, i) in blocks" :key="i">
-      <h2 v-if="block.type === 'h'" class="b-h">{{ block.text }}</h2>
+      <h2 v-if="block.type === 'h'" :id="headingId(block.text)" class="b-h">
+        {{ block.text }}
+      </h2>
 
       <p v-else-if="block.type === 'p'" class="b-p">
         <template v-for="(seg, j) in parseInline(block.text)" :key="j">
@@ -110,22 +113,23 @@ function parseInline(s: string): Seg[] {
 
 <style scoped>
 .body {
-  max-width: 720px;
+  font-size: 16.5px;
 }
 .b-h {
   font-family: var(--disp);
   font-weight: 800;
   text-transform: uppercase;
-  font-size: clamp(22px, 3vw, 30px);
+  font-size: clamp(23px, 3vw, 31px);
   letter-spacing: -0.03em;
-  line-height: 1;
-  margin: 44px 0 16px;
+  line-height: 1.02;
+  margin: 52px 0 18px;
+  scroll-margin-top: 84px;
 }
 .b-p {
-  font-size: 16px;
-  line-height: 1.68;
-  color: rgba(255, 255, 255, 0.86);
-  margin: 0 0 18px;
+  font-size: 16.5px;
+  line-height: 1.75;
+  color: rgba(255, 255, 255, 0.88);
+  margin: 0 0 20px;
 }
 .b-p strong,
 .b-list strong,

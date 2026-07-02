@@ -7,7 +7,6 @@ export const riskManagement101: RawArticle = {
   difficulty: "intermediate",
   minutes: 8,
   featured: false,
-  icon: "🛡️",
   title: {
     en: "Risk management 101: position sizing & R:R",
     fr: "Gestion du risque 101 : sizing & R:R",

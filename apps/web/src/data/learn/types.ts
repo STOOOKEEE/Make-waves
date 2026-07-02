@@ -42,11 +42,19 @@ export interface RawArticle {
   /** Temps de lecture estimé (minutes). */
   minutes: number;
   featured?: boolean;
-  /** Emoji/glyphe de la carte (comme les compétitions). */
-  icon: string;
+  /** Mise en avant secondaire (colonne « Popular »). */
+  popular?: boolean;
   title: Localized;
   /** Chapeau (résumé court sur la carte + en tête d'article). */
   dek: Localized;
+  /** Titre SEO (<title>). Repli sur `title` + suffixe marque si absent. */
+  seoTitle?: Localized;
+  /** Meta description SEO. Repli sur `dek` si absent. */
+  seoDescription?: Localized;
+  /** Mots-clés SEO (langue-neutres). */
+  keywords?: string[];
+  /** Date de dernière mise à jour (ISO, ex. "2026-07-02") — crédibilité SEO. */
+  updated?: string;
   blocks: RawBlock[];
   /** Slugs d'articles liés (bloc « à lire ensuite »). */
   related?: string[];
@@ -75,9 +83,15 @@ export interface Article {
   difficulty: Difficulty;
   minutes: number;
   featured: boolean;
-  icon: string;
+  popular: boolean;
+  /** Illustration ASCII (monospace) — remplace les emojis. */
+  art: string;
   title: string;
   dek: string;
+  seoTitle: string;
+  seoDescription: string;
+  keywords: string[];
+  updated: string;
   blocks: Block[];
   related: string[];
 }

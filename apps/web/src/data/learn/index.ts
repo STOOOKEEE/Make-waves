@@ -13,6 +13,7 @@ import type {
   RawArticle,
   RawBlock,
 } from "./types";
+import { articleArt } from "./art";
 
 import { whatIsTrading } from "./articles/what-is-trading";
 import { readingAChart } from "./articles/reading-a-chart";
@@ -101,9 +102,14 @@ function localizeArticle(raw: RawArticle, l: Locale): Article {
     difficulty: raw.difficulty,
     minutes: raw.minutes,
     featured: raw.featured ?? false,
-    icon: raw.icon,
+    popular: raw.popular ?? false,
+    art: articleArt(raw.slug),
     title: raw.title[l],
     dek: raw.dek[l],
+    seoTitle: (raw.seoTitle ?? raw.title)[l],
+    seoDescription: (raw.seoDescription ?? raw.dek)[l],
+    keywords: raw.keywords ?? [],
+    updated: raw.updated ?? "2026-07-02",
     blocks: raw.blocks.map((b) => localizeBlock(b, l)),
     related: raw.related ?? [],
   };
@@ -135,6 +141,30 @@ export function featuredArticle(locale: Locale): Article {
 /** Pistes présentes (dans l'ordre canonique), libellés résolus. */
 export function localizedCategories(locale: Locale): CategoryMeta[] {
   return CATEGORY_ORDER.map((id) => ({ id, label: CATEGORY_LABELS[id][locale] }));
+}
+
+/** Articles marqués `popular` (colonne latérale), sinon repli sur les vedettes. */
+export function popularArticles(locale: Locale, max = 5): Article[] {
+  const all = localizedArticles(locale);
+  const picked = all.filter((a) => a.popular);
+  return (picked.length ? picked : all).slice(0, max);
+}
+
+/** Groupe résolu : une piste + ses articles (ordre du registre). */
+export interface CategoryGroup {
+  id: Category;
+  label: string;
+  articles: Article[];
+}
+
+/** Articles groupés par piste (ordre canonique), pistes vides omises. */
+export function articlesByCategory(locale: Locale): CategoryGroup[] {
+  const all = localizedArticles(locale);
+  return CATEGORY_ORDER.map((id) => ({
+    id,
+    label: CATEGORY_LABELS[id][locale],
+    articles: all.filter((a) => a.category === id),
+  })).filter((g) => g.articles.length > 0);
 }
 
 /** Articles liés à un slug (résolus, dans l'ordre déclaré). */

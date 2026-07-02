@@ -1,18 +1,20 @@
 <script setup lang="ts">
 /*
- * LearnView — index de Tide School. Chapeau éditorial + filtre par piste +
- * leçon vedette (.card.feat) + grille de cartes (.cgrid). Porte le même langage
- * visuel que CompetitionsView (docs/DESIGN.md). Bilingue via useI18n + data/learn.
+ * LearnView — index de Tide School (façon Coinbase Learn, marque TIDE).
+ * En-tête éditorial + leçon vedette & colonne « Popular » + puces de piste +
+ * sections groupées par piste (cartes à vignette ASCII). Bilingue, sur le
+ * design system (docs/DESIGN.md) : bleu unique accent, mono pour les nombres.
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import {
+  articlesByCategory,
   featuredArticle,
   localizedArticles,
   localizedCategories,
+  popularArticles,
 } from "../data/learn";
 import type { Article, Category, Difficulty } from "../data/learn/types";
 import { useI18n } from "../i18n/useI18n";
-import SegControl from "../components/SegControl.vue";
 
 const emit = defineEmits<{ navigate: [path: string] }>();
 
@@ -21,12 +23,13 @@ const { t, locale } = useI18n({
     eyebrow: "Tide School",
     title: "Learn to trade",
     subtitle:
-      "From your first candle to leverage and risk management. Short, honest lessons — then go practice on the terminal.",
+      "Beginner guides, practical playbooks and market know-how — from your first candle to leverage, risk and on-chain competition.",
     featBadge: "Start here",
-    readCta: "Read lesson →",
-    minutes: "{n} min read",
-    countOne: "{n} lesson",
-    countMany: "{n} lessons",
+    popularTitle: "Popular",
+    readCta: "Read →",
+    readLesson: "Read lesson →",
+    minutes: "{n} min",
+    minutesRead: "{n} min read",
     filterAll: "All",
     beginner: "Beginner",
     intermediate: "Intermediate",
@@ -36,12 +39,13 @@ const { t, locale } = useI18n({
     eyebrow: "Tide School",
     title: "Apprends à trader",
     subtitle:
-      "De ta première bougie au levier et à la gestion du risque. Des leçons courtes et honnêtes — puis file t'entraîner sur le terminal.",
+      "Guides pour débutants, playbooks pratiques et savoir-faire de marché — de ta première bougie au levier, au risque et à la compétition on-chain.",
     featBadge: "Commence ici",
-    readCta: "Lire la leçon →",
-    minutes: "{n} min de lecture",
-    countOne: "{n} leçon",
-    countMany: "{n} leçons",
+    popularTitle: "Populaire",
+    readCta: "Lire →",
+    readLesson: "Lire la leçon →",
+    minutes: "{n} min",
+    minutesRead: "{n} min de lecture",
     filterAll: "Tout",
     beginner: "Débutant",
     intermediate: "Intermédiaire",
@@ -49,10 +53,16 @@ const { t, locale } = useI18n({
   },
 });
 
+onMounted(() => {
+  document.title = "TIDE School — Learn to trade | TIDE";
+});
+
 const featured = computed(() => featuredArticle(locale.value));
+const popular = computed(() =>
+  popularArticles(locale.value).filter((a) => a.slug !== featured.value.slug),
+);
 const categories = computed(() => localizedCategories(locale.value));
 
-// Libellé de piste par id (pour le tag des cartes).
 const categoryLabel = computed<Record<Category, string>>(() => {
   const map = {} as Record<Category, string>;
   for (const c of categories.value) {
@@ -65,27 +75,30 @@ function difficultyLabel(d: Difficulty): string {
   return t(d);
 }
 
-// Filtre segmenté : « Tout » + une pastille par piste. Valeurs stables.
-const filterOptions = computed(() => [
+// Puces de filtre : « Tout » + une par piste.
+const filter = ref<string>("all");
+const chips = computed(() => [
   { value: "all", label: t("filterAll") },
   ...categories.value.map((c) => ({ value: c.id, label: c.label })),
 ]);
-const filter = ref<string>("all");
 
-// Grille = tous les articles hors vedette, filtrés par piste.
-const grid = computed<Article[]>(() => {
-  const all = localizedArticles(locale.value).filter(
-    (a) => a.slug !== featured.value.slug,
-  );
+// Sections affichées : toutes les pistes (filtre "all") ou une seule.
+const groups = computed(() => {
+  const all = articlesByCategory(locale.value);
   return filter.value === "all"
     ? all
-    : all.filter((a) => a.category === filter.value);
+    : all.filter((g) => g.id === filter.value);
 });
 
-const countLabel = computed(() => {
-  const n = grid.value.length;
-  return t(n > 1 ? "countMany" : "countOne", { n });
-});
+// Sur une piste précise, on liste tout ; sur "all", la vedette reste en tête et
+// n'est pas répétée dans sa section.
+function sectionArticles(id: Category, articles: Article[]): Article[] {
+  return filter.value === "all"
+    ? articles.filter((a) => a.slug !== featured.value.slug)
+    : articles;
+}
+
+const totalCount = computed(() => localizedArticles(locale.value).length);
 
 function open(slug: string): void {
   emit("navigate", `/learn/${slug}`);
@@ -93,64 +106,105 @@ function open(slug: string): void {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page learn">
     <div class="page-head">
-      <div>
+      <div class="head-copy">
         <div class="lab eyebrow">{{ t("eyebrow") }}</div>
         <h1>{{ t("title") }}</h1>
         <p>{{ t("subtitle") }}</p>
       </div>
     </div>
 
-    <!-- leçon vedette -->
-    <div v-reveal class="card feat" @click="open(featured.slug)">
-      <div class="glow"></div>
-      <div class="feat-main">
-        <div class="badge">{{ t("featBadge") }}</div>
-        <div class="feat-meta lab">
-          {{ categoryLabel[featured.category] }} ·
-          {{ difficultyLabel(featured.difficulty) }} ·
-          <span class="mono">{{ t("minutes", { n: featured.minutes }) }}</span>
+    <!-- vedette + populaire -->
+    <div class="top">
+      <article v-reveal class="card feat" @click="open(featured.slug)">
+        <div class="glow"></div>
+        <div class="feat-main">
+          <div class="badge">{{ t("featBadge") }}</div>
+          <div class="feat-meta lab">
+            {{ categoryLabel[featured.category] }} ·
+            {{ difficultyLabel(featured.difficulty) }} ·
+            <span class="mono">{{ t("minutesRead", { n: featured.minutes }) }}</span>
+          </div>
+          <h2>{{ featured.title }}</h2>
+          <p>{{ featured.dek }}</p>
+          <button class="btn btn-white" @click.stop="open(featured.slug)">
+            {{ t("readLesson") }}
+          </button>
         </div>
-        <h2>{{ featured.title }}</h2>
-        <p>{{ featured.dek }}</p>
-        <button class="btn btn-white" @click.stop="open(featured.slug)">
-          {{ t("readCta") }}
-        </button>
-      </div>
-      <div class="feat-side">
-        <span class="feat-ico">{{ featured.icon }}</span>
-      </div>
-    </div>
-
-    <div class="controls">
-      <SegControl v-model="filter" :options="filterOptions" />
-      <div class="lab">{{ countLabel }}</div>
-    </div>
-
-    <div class="cgrid">
-      <article
-        v-for="(a, i) in grid"
-        :key="a.slug"
-        v-reveal="(i % 6) * 40"
-        class="card lesson"
-        @click="open(a.slug)"
-      >
-        <div class="top">
-          <span class="ico">{{ a.icon }}</span>
-          <span class="diff mono" :class="a.difficulty">
-            {{ difficultyLabel(a.difficulty) }}
-          </span>
-        </div>
-        <div class="cat lab">{{ categoryLabel[a.category] }}</div>
-        <h3>{{ a.title }}</h3>
-        <div class="dek">{{ a.dek }}</div>
-        <div class="foot">
-          <span class="time mono">{{ t("minutes", { n: a.minutes }) }}</span>
-          <span class="go">{{ t("readCta") }}</span>
+        <div class="feat-side">
+          <pre class="feat-art" aria-hidden="true">{{ featured.art }}</pre>
         </div>
       </article>
+
+      <aside v-reveal="80" class="card popular">
+        <div class="lab pop-head">{{ t("popularTitle") }}</div>
+        <button
+          v-for="(a, i) in popular"
+          :key="a.slug"
+          class="pop-row"
+          @click="open(a.slug)"
+        >
+          <span class="pop-idx mono">{{ String(i + 1).padStart(2, "0") }}</span>
+          <span class="pop-body">
+            <span class="pop-cat lab">{{ categoryLabel[a.category] }}</span>
+            <span class="pop-title">{{ a.title }}</span>
+          </span>
+        </button>
+      </aside>
     </div>
+
+    <!-- puces de piste -->
+    <div class="chips">
+      <button
+        v-for="c in chips"
+        :key="c.value"
+        class="chip"
+        :class="{ on: filter === c.value }"
+        @click="filter = c.value"
+      >
+        {{ c.label }}
+      </button>
+      <span class="spacer"></span>
+      <span class="lab count">{{ totalCount }} lessons</span>
+    </div>
+
+    <!-- sections groupées par piste -->
+    <section
+      v-for="group in groups"
+      :key="group.id"
+      class="cat-section"
+    >
+      <div class="cat-head">
+        <h2>{{ group.label }}</h2>
+        <span class="lab mono">{{ group.articles.length }}</span>
+      </div>
+      <div class="cgrid">
+        <article
+          v-for="(a, i) in sectionArticles(group.id, group.articles)"
+          :key="a.slug"
+          v-reveal="(i % 6) * 40"
+          class="card lesson"
+          @click="open(a.slug)"
+        >
+          <pre class="lesson-art" aria-hidden="true">{{ a.art }}</pre>
+          <div class="lesson-body">
+            <div class="lesson-top">
+              <span class="cat lab">{{ categoryLabel[a.category] }}</span>
+              <span class="diff mono" :class="a.difficulty">
+                {{ difficultyLabel(a.difficulty) }}
+              </span>
+            </div>
+            <h3>{{ a.title }}</h3>
+            <div class="dek">{{ a.dek }}</div>
+            <div class="foot">
+              <span class="time mono">{{ t("minutesRead", { n: a.minutes }) }}</span>
+              <span class="go">{{ t("readCta") }}</span>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -158,32 +212,46 @@ function open(slug: string): void {
 .eyebrow {
   margin-bottom: 10px;
 }
+.head-copy p {
+  max-width: 640px;
+}
 
-/* vedette — variante « leçon » de la carte feat des compétitions */
+/* ---- vedette + populaire ---- */
+.top {
+  display: grid;
+  grid-template-columns: 1.75fr 1fr;
+  gap: 14px;
+  margin-bottom: 30px;
+}
+@media (max-width: 980px) {
+  .top {
+    grid-template-columns: 1fr;
+  }
+}
+
 .feat {
   position: relative;
   overflow: hidden;
-  padding: 40px;
+  padding: 36px;
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 40px;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 32px;
   align-items: center;
-  margin-bottom: 14px;
   background: linear-gradient(135deg, #1d1d24, #16161b);
   cursor: pointer;
 }
-@media (max-width: 900px) {
+@media (max-width: 620px) {
   .feat {
     grid-template-columns: 1fr;
-    padding: 28px;
+    padding: 26px;
   }
 }
 .feat .glow {
   position: absolute;
   top: -30%;
   right: -10%;
-  width: 480px;
-  height: 480px;
+  width: 460px;
+  height: 460px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(79, 106, 255, 0.4), transparent 60%);
   pointer-events: none;
@@ -193,7 +261,6 @@ function open(slug: string): void {
 }
 .feat .badge {
   display: inline-flex;
-  align-items: center;
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.12em;
@@ -211,15 +278,15 @@ function open(slug: string): void {
 .feat h2 {
   font-weight: 900;
   text-transform: uppercase;
-  font-size: clamp(30px, 4.2vw, 52px);
+  font-size: clamp(28px, 3.6vw, 46px);
   letter-spacing: -0.035em;
-  line-height: 0.94;
+  line-height: 0.96;
 }
 .feat p {
   color: var(--soft);
   font-size: 15.5px;
-  margin: 16px 0 26px;
-  max-width: 460px;
+  margin: 14px 0 24px;
+  max-width: 440px;
   line-height: 1.55;
 }
 .feat-side {
@@ -227,19 +294,121 @@ function open(slug: string): void {
   display: grid;
   place-items: center;
 }
-.feat-ico {
-  font-size: clamp(80px, 12vw, 150px);
-  line-height: 1;
-  filter: saturate(1.1);
+.feat-art {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: var(--blue);
+  white-space: pre;
+  margin: 0;
+  overflow: hidden;
+}
+@media (max-width: 620px) {
+  .feat-side {
+    display: none;
+  }
 }
 
-.controls {
+.popular {
+  padding: 22px 22px 10px;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+}
+.pop-head {
+  margin-bottom: 8px;
+}
+.pop-row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.pop-row:first-of-type {
+  border-top: none;
+}
+.pop-row:hover {
+  opacity: 0.68;
+}
+.pop-idx {
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.pop-cat {
+  display: block;
+  margin-bottom: 3px;
+}
+.pop-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+/* ---- puces de piste ---- */
+.chips {
+  display: flex;
   align-items: center;
-  gap: 16px;
-  margin: 22px 0 14px;
+  gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 8px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.chip {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--soft);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  padding: 8px 15px;
+  transition:
+    color 0.2s,
+    background 0.2s,
+    border-color 0.2s;
+}
+.chip:hover {
+  color: #fff;
+}
+.chip.on {
+  color: var(--blue);
+  background: #fff;
+  border-color: #fff;
+}
+.chips .spacer {
+  flex: 1;
+}
+.chips .count {
+  color: var(--mut2);
+}
+
+/* ---- sections ---- */
+.cat-section {
+  margin-top: 34px;
+}
+.cat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.cat-head h2 {
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: clamp(20px, 2.6vw, 30px);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.cat-head .mono {
+  color: var(--mut2);
 }
 
 .cgrid {
@@ -259,7 +428,6 @@ function open(slug: string): void {
 }
 
 .lesson {
-  padding: 22px;
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -269,16 +437,36 @@ function open(slug: string): void {
 }
 .lesson:hover {
   transform: translateY(-4px);
-  background: var(--panel2);
 }
-.lesson .top {
+.lesson-art {
+  font-family: var(--mono);
+  font-size: 9px;
+  line-height: 1.25;
+  color: var(--blue);
+  background: linear-gradient(135deg, #1b1b22, #191920);
+  border-bottom: 1px solid var(--line);
+  margin: 0;
+  padding: 18px 16px;
+  height: 112px;
+  white-space: pre;
+  overflow: hidden;
+  display: grid;
+  align-content: center;
+}
+.lesson:hover .lesson-art {
+  background: #111;
+}
+.lesson-body {
+  padding: 18px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+.lesson-top {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 14px;
-}
-.lesson .ico {
-  font-size: 26px;
+  align-items: center;
+  margin-bottom: 10px;
 }
 .lesson .diff {
   font-size: 9.5px;
@@ -292,21 +480,18 @@ function open(slug: string): void {
 .lesson .diff.beginner {
   color: #fff;
 }
-.lesson .cat {
-  margin-bottom: 8px;
-}
 .lesson h3 {
   font-weight: 800;
-  font-size: 21px;
+  font-size: 20px;
   letter-spacing: -0.02em;
-  line-height: 1.06;
+  line-height: 1.08;
   margin-bottom: 8px;
 }
 .lesson .dek {
   font-size: 13.5px;
   color: var(--soft);
   line-height: 1.55;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
   flex: 1;
 }
 .lesson .foot {

@@ -7,7 +7,6 @@ export const onChainTrackRecord: RawArticle = {
   category: "platform",
   difficulty: "intermediate",
   minutes: 6,
-  icon: "⛓️",
   title: {
     en: "Building an on-chain track record",
     fr: "Construire un track record on-chain",

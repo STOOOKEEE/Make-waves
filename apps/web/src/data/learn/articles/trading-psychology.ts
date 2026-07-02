@@ -6,7 +6,6 @@ export const tradingPsychology: RawArticle = {
   category: "strategies",
   difficulty: "beginner",
   minutes: 7,
-  icon: "🧠",
   title: {
     en: "Trading psychology: your real opponent",
     fr: "Psychologie du trading : ton vrai adversaire",

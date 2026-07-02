@@ -8,7 +8,6 @@ export const winningCompetitions: RawArticle = {
   category: "platform",
   difficulty: "beginner",
   minutes: 6,
-  icon: "🏆",
   title: {
     en: "How Tide competitions work",
     fr: "Comment marchent les compétitions Tide",

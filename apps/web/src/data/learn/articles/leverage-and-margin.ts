@@ -7,7 +7,6 @@ export const leverageAndMargin: RawArticle = {
   category: "perps",
   difficulty: "advanced",
   minutes: 8,
-  icon: "⚖️",
   title: {
     en: "Leverage & margin, explained",
     fr: "Levier & marge, expliqués",
