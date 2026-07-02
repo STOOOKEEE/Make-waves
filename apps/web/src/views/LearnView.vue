@@ -1,18 +1,12 @@
 <script setup lang="ts">
 /*
- * LearnView — index de Tide School (façon Coinbase Learn, marque TIDE).
- * En-tête éditorial + leçon vedette & colonne « Popular » + puces de piste +
- * sections groupées par piste (cartes à vignette ASCII). Bilingue, sur le
- * design system (docs/DESIGN.md) : bleu unique accent, mono pour les nombres.
+ * LearnView — index de Tide School en ROADMAP verticale (beginner → pro).
+ * Une ligne centrale descend ; les niveaux (jalons) sont posés dessus et les
+ * leçons alternent gauche/droite autour. Vignette ASCII sur chaque carte.
+ * Bilingue, sur le design system (docs/DESIGN.md) : bleu = seul accent.
  */
-import { computed, onMounted, ref } from "vue";
-import {
-  articlesByCategory,
-  featuredArticle,
-  localizedArticles,
-  localizedCategories,
-  popularArticles,
-} from "../data/learn";
+import { computed, onMounted } from "vue";
+import { articlesByCategory } from "../data/learn";
 import type { Article, Category, Difficulty } from "../data/learn/types";
 import { useI18n } from "../i18n/useI18n";
 
@@ -21,88 +15,114 @@ const emit = defineEmits<{ navigate: [path: string] }>();
 const { t, locale } = useI18n({
   en: {
     eyebrow: "Tide School",
-    title: "Learn to trade",
+    title: "The trader's path",
     subtitle:
-      "Beginner guides, practical playbooks and market know-how — from your first candle to leverage, risk and on-chain competition.",
-    featBadge: "Start here",
-    popularTitle: "Popular",
+      "One route from your first candle to competing on-chain. Follow the line, clear each level, and go from beginner to pro.",
+    start: "Start",
+    startSub: "No experience needed",
+    pro: "Pro",
+    proSub: "You're ready to compete",
+    level: "Level {n}",
+    lvBeginner: "Beginner",
+    lvIntermediate: "Intermediate",
+    lvAdvanced: "Advanced",
+    lvPro: "Pro",
+    descBasics: "Read the market, master orders, and learn how Tide works.",
+    descPerps: "Perps, leverage, long & short, TP/SL — safely simulated in Paper.",
+    descStrategies: "Risk management, trends, ranges, breakouts and psychology.",
+    descPlatform: "Compete for pots and build a verifiable on-chain track record.",
     readCta: "Read →",
-    readLesson: "Read lesson →",
-    minutes: "{n} min",
-    minutesRead: "{n} min read",
-    filterAll: "All",
+    minutesRead: "{n} min",
     beginner: "Beginner",
     intermediate: "Intermediate",
     advanced: "Advanced",
+    ctaTitle: "That's the whole path.",
+    ctaBody: "Now put it to work — trade with virtual capital or jump into a competition.",
+    ctaTrade: "Open the terminal →",
+    ctaComps: "Browse competitions",
   },
   fr: {
     eyebrow: "Tide School",
-    title: "Apprends à trader",
+    title: "Le parcours du trader",
     subtitle:
-      "Guides pour débutants, playbooks pratiques et savoir-faire de marché — de ta première bougie au levier, au risque et à la compétition on-chain.",
-    featBadge: "Commence ici",
-    popularTitle: "Populaire",
+      "Une seule route, de ta première bougie à la compétition on-chain. Suis la ligne, passe chaque niveau, et va de débutant à pro.",
+    start: "Départ",
+    startSub: "Aucune expérience requise",
+    pro: "Pro",
+    proSub: "Prêt à concourir",
+    level: "Niveau {n}",
+    lvBeginner: "Débutant",
+    lvIntermediate: "Intermédiaire",
+    lvAdvanced: "Avancé",
+    lvPro: "Pro",
+    descBasics: "Lis le marché, maîtrise les ordres, et comprends comment marche Tide.",
+    descPerps: "Perps, levier, long & short, TP/SL — simulés sans risque en Paper.",
+    descStrategies: "Gestion du risque, tendances, ranges, breakouts et psychologie.",
+    descPlatform: "Concours pour des cagnottes et bâtis un track record on-chain vérifiable.",
     readCta: "Lire →",
-    readLesson: "Lire la leçon →",
-    minutes: "{n} min",
-    minutesRead: "{n} min de lecture",
-    filterAll: "Tout",
+    minutesRead: "{n} min",
     beginner: "Débutant",
     intermediate: "Intermédiaire",
     advanced: "Avancé",
+    ctaTitle: "Voilà tout le parcours.",
+    ctaBody: "Maintenant passe à la pratique — trade en capital virtuel ou saute dans une compétition.",
+    ctaTrade: "Ouvrir le terminal →",
+    ctaComps: "Voir les compétitions",
   },
 });
 
-onMounted(() => {
-  document.title = "TIDE School — Learn to trade | TIDE";
-});
+// Ordre des niveaux = ordre pédagogique (beginner → pro).
+const LEVEL_META: { id: Category; tagKey: string; descKey: string }[] = [
+  { id: "basics", tagKey: "lvBeginner", descKey: "descBasics" },
+  { id: "perps", tagKey: "lvIntermediate", descKey: "descPerps" },
+  { id: "strategies", tagKey: "lvAdvanced", descKey: "descStrategies" },
+  { id: "platform", tagKey: "lvPro", descKey: "descPlatform" },
+];
 
-const featured = computed(() => featuredArticle(locale.value));
-const popular = computed(() =>
-  popularArticles(locale.value).filter((a) => a.slug !== featured.value.slug),
-);
-const categories = computed(() => localizedCategories(locale.value));
+interface RoadStop extends Article {
+  side: "left" | "right";
+}
+interface RoadLevel {
+  id: Category;
+  n: string;
+  label: string;
+  tag: string;
+  desc: string;
+  stops: RoadStop[];
+}
 
-const categoryLabel = computed<Record<Category, string>>(() => {
-  const map = {} as Record<Category, string>;
-  for (const c of categories.value) {
-    map[c.id] = c.label;
-  }
-  return map;
+// Roadmap : niveaux dans l'ordre, leçons alternées gauche/droite (zigzag continu).
+const roadmap = computed<RoadLevel[]>(() => {
+  const groups = articlesByCategory(locale.value);
+  let idx = 0;
+  return LEVEL_META.map((lv, i) => {
+    const g = groups.find((x) => x.id === lv.id);
+    const stops: RoadStop[] = (g?.articles ?? []).map((a) => ({
+      ...a,
+      side: idx++ % 2 === 0 ? "left" : "right",
+    }));
+    return {
+      id: lv.id,
+      n: String(i + 1).padStart(2, "0"),
+      label: g?.label ?? lv.id,
+      tag: t(lv.tagKey),
+      desc: t(lv.descKey),
+      stops,
+    };
+  });
 });
 
 function difficultyLabel(d: Difficulty): string {
   return t(d);
 }
 
-// Puces de filtre : « Tout » + une par piste.
-const filter = ref<string>("all");
-const chips = computed(() => [
-  { value: "all", label: t("filterAll") },
-  ...categories.value.map((c) => ({ value: c.id, label: c.label })),
-]);
-
-// Sections affichées : toutes les pistes (filtre "all") ou une seule.
-const groups = computed(() => {
-  const all = articlesByCategory(locale.value);
-  return filter.value === "all"
-    ? all
-    : all.filter((g) => g.id === filter.value);
-});
-
-// Sur une piste précise, on liste tout ; sur "all", la vedette reste en tête et
-// n'est pas répétée dans sa section.
-function sectionArticles(id: Category, articles: Article[]): Article[] {
-  return filter.value === "all"
-    ? articles.filter((a) => a.slug !== featured.value.slug)
-    : articles;
-}
-
-const totalCount = computed(() => localizedArticles(locale.value).length);
-
 function open(slug: string): void {
   emit("navigate", `/learn/${slug}`);
 }
+
+onMounted(() => {
+  document.title = "TIDE School — The trader's path | TIDE";
+});
 </script>
 
 <template>
@@ -115,98 +135,80 @@ function open(slug: string): void {
       </div>
     </div>
 
-    <!-- vedette + populaire -->
-    <div class="top">
-      <article v-reveal class="card feat" @click="open(featured.slug)">
-        <div class="glow"></div>
-        <div class="feat-main">
-          <div class="badge">{{ t("featBadge") }}</div>
-          <div class="feat-meta lab">
-            {{ categoryLabel[featured.category] }} ·
-            {{ difficultyLabel(featured.difficulty) }} ·
-            <span class="mono">{{ t("minutesRead", { n: featured.minutes }) }}</span>
-          </div>
-          <h2>{{ featured.title }}</h2>
-          <p>{{ featured.dek }}</p>
-          <button class="btn btn-white" @click.stop="open(featured.slug)">
-            {{ t("readLesson") }}
-          </button>
+    <div class="road">
+      <!-- départ -->
+      <div class="cap top" v-reveal>
+        <div class="cap-node mono">▲</div>
+        <div class="cap-text">
+          <div class="cap-title">{{ t("start") }}</div>
+          <div class="lab">{{ t("startSub") }}</div>
         </div>
-        <div class="feat-side">
-          <pre class="feat-art" aria-hidden="true">{{ featured.art }}</pre>
-        </div>
-      </article>
-
-      <aside v-reveal="80" class="card popular">
-        <div class="lab pop-head">{{ t("popularTitle") }}</div>
-        <button
-          v-for="(a, i) in popular"
-          :key="a.slug"
-          class="pop-row"
-          @click="open(a.slug)"
-        >
-          <span class="pop-idx mono">{{ String(i + 1).padStart(2, "0") }}</span>
-          <span class="pop-body">
-            <span class="pop-cat lab">{{ categoryLabel[a.category] }}</span>
-            <span class="pop-title">{{ a.title }}</span>
-          </span>
-        </button>
-      </aside>
-    </div>
-
-    <!-- puces de piste -->
-    <div class="chips">
-      <button
-        v-for="c in chips"
-        :key="c.value"
-        class="chip"
-        :class="{ on: filter === c.value }"
-        @click="filter = c.value"
-      >
-        {{ c.label }}
-      </button>
-      <span class="spacer"></span>
-      <span class="lab count">{{ totalCount }} lessons</span>
-    </div>
-
-    <!-- sections groupées par piste -->
-    <section
-      v-for="group in groups"
-      :key="group.id"
-      class="cat-section"
-    >
-      <div class="cat-head">
-        <h2>{{ group.label }}</h2>
-        <span class="lab mono">{{ group.articles.length }}</span>
       </div>
-      <div class="cgrid">
-        <article
-          v-for="(a, i) in sectionArticles(group.id, group.articles)"
-          :key="a.slug"
-          v-reveal="(i % 6) * 40"
-          class="card lesson"
-          @click="open(a.slug)"
-        >
-          <div class="lesson-art">
-            <pre aria-hidden="true">{{ a.art }}</pre>
+
+      <template v-for="level in roadmap" :key="level.id">
+        <!-- jalon / niveau -->
+        <div class="milestone" v-reveal>
+          <div class="ms-node mono">{{ level.n }}</div>
+          <div class="ms-head">
+            <div class="lab ms-lab">{{ t("level", { n: level.n }) }} · {{ level.tag }}</div>
+            <h2>{{ level.label }}</h2>
+            <p>{{ level.desc }}</p>
           </div>
-          <div class="lesson-body">
-            <div class="lesson-top">
-              <span class="cat lab">{{ categoryLabel[a.category] }}</span>
-              <span class="diff mono" :class="a.difficulty">
-                {{ difficultyLabel(a.difficulty) }}
-              </span>
+        </div>
+
+        <!-- leçons du niveau -->
+        <article
+          v-for="stop in level.stops"
+          :key="stop.slug"
+          class="stop"
+          :class="stop.side"
+          v-reveal
+        >
+          <div class="node"></div>
+          <div class="card lesson" @click="open(stop.slug)">
+            <div class="lesson-art">
+              <pre aria-hidden="true">{{ stop.art }}</pre>
             </div>
-            <h3>{{ a.title }}</h3>
-            <div class="dek">{{ a.dek }}</div>
-            <div class="foot">
-              <span class="time mono">{{ t("minutesRead", { n: a.minutes }) }}</span>
-              <span class="go">{{ t("readCta") }}</span>
+            <div class="lesson-body">
+              <div class="lesson-top">
+                <span class="diff mono" :class="stop.difficulty">
+                  {{ difficultyLabel(stop.difficulty) }}
+                </span>
+                <span class="time mono">{{ t("minutesRead", { n: stop.minutes }) }}</span>
+              </div>
+              <h3>{{ stop.title }}</h3>
+              <div class="dek">{{ stop.dek }}</div>
+              <div class="go">{{ t("readCta") }}</div>
             </div>
           </div>
         </article>
+      </template>
+
+      <!-- arrivée : pro -->
+      <div class="cap bottom" v-reveal>
+        <div class="cap-node pro mono">★</div>
+        <div class="cap-text">
+          <div class="cap-title">{{ t("pro") }}</div>
+          <div class="lab">{{ t("proSub") }}</div>
+        </div>
       </div>
-    </section>
+    </div>
+
+    <!-- CTA de fin de parcours -->
+    <div class="road-cta card" v-reveal>
+      <div>
+        <h3>{{ t("ctaTitle") }}</h3>
+        <p>{{ t("ctaBody") }}</p>
+      </div>
+      <div class="cta-acts">
+        <button class="btn btn-white" @click="emit('navigate', '/dashboard')">
+          {{ t("ctaTrade") }}
+        </button>
+        <button class="btn btn-line" @click="emit('navigate', '/competitions')">
+          {{ t("ctaComps") }}
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -218,228 +220,161 @@ function open(slug: string): void {
   max-width: 640px;
 }
 
-/* ---- vedette + populaire ---- */
-.top {
-  display: grid;
-  grid-template-columns: 1.75fr 1fr;
-  gap: 14px;
-  margin-bottom: 30px;
+/* ============ ROADMAP ============ */
+.road {
+  position: relative;
+  max-width: 1080px;
+  margin: 8px auto 0;
+  padding: 8px 0 8px;
 }
-@media (max-width: 980px) {
-  .top {
-    grid-template-columns: 1fr;
-  }
+/* la ligne centrale qui descend */
+.road::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(79, 106, 255, 0.7) 5%,
+    rgba(79, 106, 255, 0.7) 95%,
+    transparent
+  );
 }
 
-.feat {
+/* --- caps départ/arrivée --- */
+.cap {
   position: relative;
-  overflow: hidden;
-  padding: 36px;
+  z-index: 2;
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
-  gap: 32px;
-  align-items: center;
-  background: linear-gradient(135deg, #1d1d24, #16161b);
-  cursor: pointer;
+  grid-template-columns: 1fr auto 1fr;
+  justify-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 6px 0;
 }
-@media (max-width: 620px) {
-  .feat {
-    grid-template-columns: 1fr;
-    padding: 26px;
-  }
-}
-.feat .glow {
-  position: absolute;
-  top: -30%;
-  right: -10%;
-  width: 460px;
-  height: 460px;
+.cap-node {
+  grid-column: 2;
+  width: 54px;
+  height: 54px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(79, 106, 255, 0.4), transparent 60%);
-  pointer-events: none;
-}
-.feat-main {
-  position: relative;
-}
-.feat .badge {
-  display: inline-flex;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  background: #fff;
-  color: var(--blue);
-  font-weight: 700;
-  border-radius: 100px;
-  padding: 7px 14px;
-  margin-bottom: 16px;
-}
-.feat-meta {
-  margin-bottom: 12px;
-}
-.feat h2 {
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: clamp(28px, 3.6vw, 46px);
-  letter-spacing: -0.035em;
-  line-height: 0.96;
-}
-.feat p {
-  color: var(--soft);
-  font-size: 15.5px;
-  margin: 14px 0 24px;
-  max-width: 440px;
-  line-height: 1.55;
-}
-.feat-side {
-  position: relative;
   display: grid;
   place-items: center;
-}
-.feat-art {
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.34;
-  color: #c7cfff;
-  white-space: pre;
-  margin: 0;
-  padding: 28px 26px;
-  border: 1px solid var(--line2);
-  border-radius: 16px;
-  background:
-    radial-gradient(120% 130% at 75% -15%, rgba(79, 106, 255, 0.4), transparent 58%),
-    linear-gradient(158deg, #22254010, #14141d);
-  text-shadow: 0 0 18px rgba(79, 106, 255, 0.5);
-  overflow: hidden;
-}
-@media (max-width: 620px) {
-  .feat-side {
-    display: none;
-  }
-}
-
-.popular {
-  padding: 22px 22px 10px;
-  display: flex;
-  flex-direction: column;
-}
-.pop-head {
-  margin-bottom: 8px;
-}
-.pop-row {
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  text-align: left;
-  background: none;
-  border: none;
-  border-top: 1px solid var(--line);
-  padding: 14px 0;
-  cursor: pointer;
-  color: var(--text);
-  transition: opacity 0.2s;
-}
-.pop-row:first-of-type {
-  border-top: none;
-}
-.pop-row:hover {
-  opacity: 0.68;
-}
-.pop-idx {
-  color: var(--blue);
+  font-size: 18px;
   font-weight: 700;
-  font-size: 12px;
-  flex: 0 0 auto;
-}
-.pop-cat {
-  display: block;
-  margin-bottom: 3px;
-}
-.pop-title {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-
-/* ---- puces de piste ---- */
-.chips {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
-}
-.chip {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--soft);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
-  border-radius: 100px;
-  padding: 8px 15px;
-  transition:
-    color 0.2s,
-    background 0.2s,
-    border-color 0.2s;
-}
-.chip:hover {
   color: #fff;
+  background: var(--panel);
+  border: 1px solid var(--line2);
 }
-.chip.on {
+.cap.top .cap-node {
+  color: var(--blue);
+}
+.cap-node.pro {
   color: var(--blue);
   background: #fff;
-  border-color: #fff;
+  box-shadow: 0 0 0 5px rgba(79, 106, 255, 0.22);
 }
-.chips .spacer {
-  flex: 1;
+.cap-text {
+  grid-column: 2;
 }
-.chips .count {
-  color: var(--mut2);
-}
-
-/* ---- sections ---- */
-.cat-section {
-  margin-top: 34px;
-}
-.cat-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.cat-head h2 {
+.cap-title {
+  font-family: var(--disp);
   font-weight: 900;
   text-transform: uppercase;
-  font-size: clamp(20px, 2.6vw, 30px);
+  font-size: 22px;
   letter-spacing: -0.03em;
   line-height: 1;
 }
-.cat-head .mono {
-  color: var(--mut2);
+.cap.bottom {
+  margin-top: 8px;
 }
 
-.cgrid {
+/* --- jalon / niveau --- */
+.milestone {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  margin: 30px auto 20px;
+  max-width: 460px;
+}
+.ms-node {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  margin: 0 auto 14px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
+  place-items: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #fff;
+  background: linear-gradient(150deg, var(--blue), var(--blue-dk));
+  box-shadow: 0 0 0 5px rgba(79, 106, 255, 0.16);
 }
-@media (max-width: 1000px) {
-  .cgrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.ms-lab {
+  margin-bottom: 6px;
 }
-@media (max-width: 640px) {
-  .cgrid {
-    grid-template-columns: 1fr;
-  }
+.ms-head h2 {
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.ms-head p {
+  color: var(--soft);
+  font-size: 14.5px;
+  line-height: 1.5;
+  margin: 8px auto 0;
+  max-width: 400px;
 }
 
+/* --- une leçon posée sur la ligne --- */
+.stop {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 54px 1fr;
+  align-items: center;
+  margin: 16px 0;
+}
+.stop .node {
+  grid-column: 2;
+  justify-self: center;
+  z-index: 2;
+  position: relative;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgba(79, 106, 255, 0.18);
+}
+/* petit connecteur node → carte */
+.stop .node::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 2px;
+  background: rgba(79, 106, 255, 0.5);
+}
+.stop.left .node::before {
+  right: 100%;
+}
+.stop.right .node::before {
+  left: 100%;
+}
+.stop.left .card {
+  grid-column: 1;
+}
+.stop.right .card {
+  grid-column: 3;
+}
+
+/* --- carte leçon (vignette ASCII bleutée + corps) --- */
 .lesson {
-  display: flex;
-  flex-direction: column;
   cursor: pointer;
   transition:
     transform 0.3s var(--ease),
@@ -449,11 +384,9 @@ function open(slug: string): void {
   transform: translateY(-4px);
   box-shadow: 0 18px 40px -22px rgba(79, 106, 255, 0.6);
 }
-/* vignette « mini écran » : l'art ASCII sur un dégradé bleuté avec halo —
- * casse le bloc de cartes sombres et ramène l'accent de marque. */
 .lesson-art {
   position: relative;
-  height: 138px;
+  height: 128px;
   border-bottom: 1px solid var(--line);
   overflow: hidden;
   display: grid;
@@ -472,22 +405,16 @@ function open(slug: string): void {
 .lesson-art pre {
   margin: 0;
   font-family: var(--mono);
-  font-size: 11.5px;
-  line-height: 1.32;
+  font-size: 11px;
+  line-height: 1.3;
   color: #c7cfff;
   white-space: pre;
   text-shadow: 0 0 18px rgba(79, 106, 255, 0.45);
 }
-.lesson:hover .lesson-art {
-  background:
-    radial-gradient(120% 130% at 78% -18%, rgba(79, 106, 255, 0.45), transparent 56%),
-    linear-gradient(158deg, #262a4a, #15151f);
-}
 .lesson-body {
-  padding: 20px 22px 22px;
+  padding: 16px 20px 18px;
   display: flex;
   flex-direction: column;
-  flex: 1;
 }
 .lesson-top {
   display: flex;
@@ -507,30 +434,22 @@ function open(slug: string): void {
 .lesson .diff.beginner {
   color: #fff;
 }
-.lesson h3 {
-  font-weight: 800;
-  font-size: 20px;
-  letter-spacing: -0.02em;
-  line-height: 1.08;
-  margin-bottom: 8px;
-}
-.lesson .dek {
-  font-size: 13.5px;
-  color: var(--soft);
-  line-height: 1.55;
-  margin-bottom: 18px;
-  flex: 1;
-}
-.lesson .foot {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-}
 .lesson .time {
   font-size: 11px;
   color: var(--soft);
+}
+.lesson h3 {
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  margin-bottom: 7px;
+}
+.lesson .dek {
+  font-size: 13px;
+  color: var(--soft);
+  line-height: 1.5;
+  margin-bottom: 14px;
 }
 .lesson .go {
   font-weight: 700;
@@ -540,5 +459,89 @@ function open(slug: string): void {
 }
 .lesson:hover .go {
   transform: translateX(3px);
+}
+
+/* --- CTA de fin --- */
+.road-cta {
+  max-width: 1080px;
+  margin: 24px auto 0;
+  padding: 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: linear-gradient(135deg, #1d1d24, #16161b);
+}
+.road-cta h3 {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.road-cta p {
+  color: var(--soft);
+  font-size: 14px;
+  margin-top: 6px;
+  max-width: 360px;
+}
+.cta-acts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ============ MOBILE : ligne à gauche, cartes empilées ============ */
+@media (max-width: 860px) {
+  .road::before {
+    left: 19px;
+    transform: none;
+  }
+  .cap,
+  .milestone {
+    grid-template-columns: 38px 1fr;
+    display: grid;
+    text-align: left;
+    justify-items: start;
+    max-width: none;
+    gap: 14px;
+    align-items: center;
+  }
+  .cap-node,
+  .ms-node {
+    grid-column: 1;
+    margin: 0;
+    width: 38px;
+    height: 38px;
+    font-size: 14px;
+  }
+  .cap-text,
+  .ms-head {
+    grid-column: 2;
+  }
+  .milestone {
+    text-align: left;
+  }
+  .ms-head p {
+    margin-left: 0;
+  }
+  .stop {
+    grid-template-columns: 38px 1fr;
+    column-gap: 14px;
+  }
+  .stop .node,
+  .stop.left .node,
+  .stop.right .node {
+    grid-column: 1;
+  }
+  .stop .card,
+  .stop.left .card,
+  .stop.right .card {
+    grid-column: 2;
+  }
+  .stop .node::before {
+    display: none;
+  }
 }
 </style>
