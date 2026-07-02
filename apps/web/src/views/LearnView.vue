@@ -187,6 +187,9 @@ function open(slug: string): void {
           class="card lesson"
           @click="open(a.slug)"
         >
+          <div class="lesson-art">
+            <pre aria-hidden="true">{{ a.art }}</pre>
+          </div>
           <div class="lesson-body">
             <div class="lesson-top">
               <span class="cat lab">{{ categoryLabel[a.category] }}</span>
@@ -295,11 +298,18 @@ function open(slug: string): void {
 }
 .feat-art {
   font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.3;
-  color: var(--blue);
+  font-size: 13px;
+  line-height: 1.34;
+  color: #c7cfff;
   white-space: pre;
   margin: 0;
+  padding: 28px 26px;
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 130% at 75% -15%, rgba(79, 106, 255, 0.4), transparent 58%),
+    linear-gradient(158deg, #22254010, #14141d);
+  text-shadow: 0 0 18px rgba(79, 106, 255, 0.5);
   overflow: hidden;
 }
 @media (max-width: 620px) {
@@ -433,14 +443,48 @@ function open(slug: string): void {
   cursor: pointer;
   transition:
     transform 0.3s var(--ease),
-    background 0.2s;
+    box-shadow 0.3s var(--ease);
 }
 .lesson:hover {
   transform: translateY(-4px);
-  background: var(--panel2);
+  box-shadow: 0 18px 40px -22px rgba(79, 106, 255, 0.6);
+}
+/* vignette « mini écran » : l'art ASCII sur un dégradé bleuté avec halo —
+ * casse le bloc de cartes sombres et ramène l'accent de marque. */
+.lesson-art {
+  position: relative;
+  height: 138px;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(120% 130% at 78% -18%, rgba(79, 106, 255, 0.32), transparent 56%),
+    linear-gradient(158deg, #21243c, #14141d);
+}
+.lesson-art::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 55%, rgba(0, 0, 0, 0.28));
+  pointer-events: none;
+}
+.lesson-art pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.32;
+  color: #c7cfff;
+  white-space: pre;
+  text-shadow: 0 0 18px rgba(79, 106, 255, 0.45);
+}
+.lesson:hover .lesson-art {
+  background:
+    radial-gradient(120% 130% at 78% -18%, rgba(79, 106, 255, 0.45), transparent 56%),
+    linear-gradient(158deg, #262a4a, #15151f);
 }
 .lesson-body {
-  padding: 22px;
+  padding: 20px 22px 22px;
   display: flex;
   flex-direction: column;
   flex: 1;

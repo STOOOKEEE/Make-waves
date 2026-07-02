@@ -139,7 +139,6 @@ function open(slug: string): void {
             </div>
             <h1>{{ article.title }}</h1>
             <p class="dek">{{ article.dek }}</p>
-            <pre class="art" aria-hidden="true">{{ article.art }}</pre>
           </header>
 
           <ArticleBody :blocks="article.blocks" />
@@ -261,20 +260,8 @@ function open(slug: string): void {
 /* --- en-tête --- */
 .head {
   padding: 4px 0 12px;
-}
-.art {
-  font-family: var(--mono);
-  font-size: 13px;
-  line-height: 1.3;
-  color: var(--blue);
-  background: linear-gradient(135deg, #1b1b22, #16161b);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 26px 22px;
-  margin: 26px 0 4px;
-  overflow-x: auto;
-  white-space: pre;
-  -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 8px;
 }
 .meta {
   display: flex;
