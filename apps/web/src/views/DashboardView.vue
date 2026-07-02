@@ -10,6 +10,7 @@ import { usePaper } from "../composables/usePaper";
 import { useWallet } from "../composables/useWallet";
 import { useSession } from "../composables/useSession";
 import { useI18n } from "../i18n/useI18n";
+import LearnHint from "../components/learn/LearnHint.vue";
 
 const props = defineProps<{ client: TideClient }>();
 
@@ -58,6 +59,11 @@ const { t } = useI18n({
     leverage: "Leverage",
     takeProfit: "TP",
     stopLoss: "SL",
+    hintProduct: "Spot vs perp — what's the difference?",
+    hintOrder: "Market vs limit orders",
+    hintExecution: "Maker vs taker & fees",
+    hintLeverage: "How leverage & margin work",
+    hintRisk: "Take-profit & stop-loss explained",
     margin: "Margin",
     liqApprox: "Liq. approx",
     cancel: "Cancel",
@@ -131,6 +137,11 @@ const { t } = useI18n({
     leverage: "Levier",
     takeProfit: "TP",
     stopLoss: "SL",
+    hintProduct: "Spot vs perp — quelle différence ?",
+    hintOrder: "Ordres market vs limit",
+    hintExecution: "Maker vs taker & frais",
+    hintLeverage: "Comment marchent levier & marge",
+    hintRisk: "Take-profit & stop-loss expliqués",
     margin: "Marge",
     liqApprox: "Liq. approx",
     cancel: "Annuler",
@@ -1933,21 +1944,21 @@ onUnmounted(() => {
       <div class="card ticket">
         <div class="ticket-controls">
           <div class="mini-field">
-            <span>{{ t('product') }}</span>
+            <span>{{ t('product') }}<LearnHint slug="what-is-a-perpetual" :label="t('hintProduct')" :bubble="false" /></span>
             <div class="mini-seg">
               <button :class="{ on: product === 'spot' }" @click="product = 'spot'">{{ t('spot') }}</button>
               <button :class="{ on: product === 'perp' }" @click="product = 'perp'">{{ t('perp') }}</button>
             </div>
           </div>
           <div class="mini-field">
-            <span>{{ t('orderType') }}</span>
+            <span>{{ t('orderType') }}<LearnHint slug="order-types" :label="t('hintOrder')" :bubble="false" /></span>
             <div class="mini-seg">
               <button :class="{ on: orderKind === 'market' }" @click="orderKind = 'market'">{{ t('marketOrder') }}</button>
               <button :class="{ on: orderKind === 'limit' }" @click="orderKind = 'limit'">{{ t('limitOrder') }}</button>
             </div>
           </div>
           <div class="mini-field">
-            <span>{{ t('execution') }}</span>
+            <span>{{ t('execution') }}<LearnHint slug="order-book-spread" :label="t('hintExecution')" :bubble="false" /></span>
             <div class="mini-seg">
               <button :class="{ on: liquidity === 'taker' }" @click="liquidity = 'taker'">{{ t('taker') }}</button>
               <button :class="{ on: liquidity === 'maker' }" @click="liquidity = 'maker'">{{ t('maker') }}</button>
@@ -1971,7 +1982,7 @@ onUnmounted(() => {
           </div>
         </div>
         <div v-if="product === 'perp'" class="lev">
-          <div class="fl"><span class="k">{{ t('leverage') }}</span><span class="b">{{ leverage }}x</span></div>
+          <div class="fl"><span class="k">{{ t('leverage') }}<LearnHint slug="leverage-and-margin" :label="t('hintLeverage')" :bubble="false" /></span><span class="b">{{ leverage }}x</span></div>
           <input v-model.number="leverage" type="range" min="1" max="20" step="1" />
           <div class="lev-buttons">
             <button v-for="v in [1, 2, 5, 10, 20]" :key="v" :class="{ on: leverage === v }" @click="leverage = v">{{ v }}x</button>
@@ -1984,7 +1995,7 @@ onUnmounted(() => {
         </div>
         <div class="risk-grid">
           <div class="field compact-field">
-            <div class="fl"><span class="k">{{ t('takeProfit') }}</span></div>
+            <div class="fl"><span class="k">{{ t('takeProfit') }}<LearnHint slug="take-profit-stop-loss" :label="t('hintRisk')" :bubble="false" /></span></div>
             <div class="inp">
               <input type="text" :value="takeProfit" placeholder="—" @input="onTpInput" /><span class="suf">TP</span>
             </div>
