@@ -40,6 +40,14 @@ const { t, locale, intlLocale } = useI18n({
     aiSpec3K: 'Capital',
     aiSpec3V: 'Demo · equal',
     aiNote: 'identical for every competitor · verified on-chain',
+    duelLive: 'Live duel',
+    duelATag: 'regime · reflection',
+    duelBTag: 'raw execution',
+    duelFeed1: 'regime → range detected',
+    duelFeed2: 'fading the BTC high',
+    duelFeed3: 'throttle on · 1 order / min',
+    duelFeed4: 'stop hit · capital preserved',
+    duelFeed5: 'sentiment +, opening LONG',
     demoWallet: 'Season leader',
     s04Return: 'S04 return · rank #{rank}',
     topTradersLive: 'Top traders — live',
@@ -124,6 +132,14 @@ const { t, locale, intlLocale } = useI18n({
     aiSpec3K: 'Capital',
     aiSpec3V: 'Démo · égal',
     aiNote: 'identique pour chaque concurrent · vérifié on-chain',
+    duelLive: 'Duel en direct',
+    duelATag: 'régime · réflexion',
+    duelBTag: 'exécution brute',
+    duelFeed1: 'régime → range détecté',
+    duelFeed2: 'on fade le haut BTC',
+    duelFeed3: 'throttle · 1 ordre / min',
+    duelFeed4: 'stop touché · capital préservé',
+    duelFeed5: 'sentiment +, ouverture LONG',
     demoWallet: 'Meilleur trader',
     s04Return: 'Rendement S04 · rang #{rank}',
     topTradersLive: 'Top traders — live',
@@ -309,6 +325,26 @@ function onResize(): void {
 // Rafraîchit les horloges quand la langue change (le format Intl dépend de la locale).
 watch(locale, updateClocks)
 
+// --- Aperçu « duel d'agents » de la section AI Arena (séquence scriptée) ---
+const DUEL_A = [0.4, 1.2, 0.9, 2.1, 3.4, 2.8, 4.1]
+const DUEL_B = [0.6, -0.3, 1.1, 0.7, 1.9, -0.4, 1.6]
+const DUEL_FEED = ['duelFeed1', 'duelFeed2', 'duelFeed3', 'duelFeed4', 'duelFeed5']
+const duelStep = ref<number>(0)
+let duelTimer: ReturnType<typeof setInterval> | undefined
+const aPnl = computed(() => DUEL_A[duelStep.value] ?? 0)
+const bPnl = computed(() => DUEL_B[duelStep.value] ?? 0)
+const aLead = computed(() => aPnl.value >= bPnl.value)
+const feedKey = computed(() => DUEL_FEED[duelStep.value % DUEL_FEED.length] ?? 'duelFeed1')
+function fmtPnl(v: number): string {
+  return (v >= 0 ? '+' : '') + v.toFixed(1) + '%'
+}
+function pnlClass(v: number): string {
+  return v >= 0 ? 'up' : 'down'
+}
+function duelBar(v: number): number {
+  return Math.max(6, Math.min(100, (v / 4.5) * 100))
+}
+
 onMounted(() => {
   loaded.value = true
   loadFallback = setTimeout(() => {
@@ -317,6 +353,9 @@ onMounted(() => {
 
   updateClocks()
   clockTimer = setInterval(updateClocks, 10000)
+  duelTimer = setInterval(() => {
+    duelStep.value = (duelStep.value + 1) % DUEL_A.length
+  }, 1600)
   void loadBoard()
 
   // Recalcule l'indicateur après le rendu (et avec un léger délai, comme la source).
@@ -328,6 +367,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (clockTimer !== undefined) clearInterval(clockTimer)
+  if (duelTimer !== undefined) clearInterval(duelTimer)
   if (loadFallback !== undefined) clearTimeout(loadFallback)
   window.removeEventListener('resize', onResize)
 })
@@ -459,12 +499,35 @@ onUnmounted(() => {
             <h2>{{ t('aiHeadL1') }}<br /><span class="d">{{ t('aiHeadL2') }}</span></h2>
             <p>{{ t('aiLead') }}</p>
             <a href="#/arena" class="big-pill" @click.prevent="emit('navigate', '/arena')">{{ t('aiCta') }}</a>
+            <div class="ai-specs">
+              <span class="ai-chip mono">{{ t('aiSpec1K') }} · {{ t('aiSpec1V') }}</span>
+              <span class="ai-chip mono">{{ t('aiSpec2K') }} · {{ t('aiSpec2V') }}</span>
+              <span class="ai-chip mono">{{ t('aiSpec3K') }} · {{ t('aiSpec3V') }}</span>
+            </div>
           </div>
           <div class="ai-side">
-            <div class="ai-spec"><span class="k">{{ t('aiSpec1K') }}</span><span class="v">{{ t('aiSpec1V') }}</span></div>
-            <div class="ai-spec"><span class="k">{{ t('aiSpec2K') }}</span><span class="v">{{ t('aiSpec2V') }}</span></div>
-            <div class="ai-spec"><span class="k">{{ t('aiSpec3K') }}</span><span class="v">{{ t('aiSpec3V') }}</span></div>
-            <div class="ai-note lab">{{ t('aiNote') }}</div>
+            <div class="duel" @click="emit('navigate', '/arena')">
+              <div class="duel-head">
+                <span class="lab live"><i></i> {{ t('duelLive') }}</span>
+                <span class="lab soft">S01</span>
+              </div>
+              <div class="agent" :class="{ lead: aLead }">
+                <div class="ag-top"><span class="ag-name mono">AGENT_A</span><span class="ag-tag">{{ t('duelATag') }}</span></div>
+                <div class="ag-row">
+                  <div class="ag-bar"><i :style="{ width: duelBar(aPnl) + '%' }"></i></div>
+                  <span class="ag-pnl mono" :class="pnlClass(aPnl)">{{ fmtPnl(aPnl) }}</span>
+                </div>
+              </div>
+              <div class="vs mono">VS</div>
+              <div class="agent" :class="{ lead: !aLead }">
+                <div class="ag-top"><span class="ag-name mono">AGENT_B</span><span class="ag-tag">{{ t('duelBTag') }}</span></div>
+                <div class="ag-row">
+                  <div class="ag-bar"><i :style="{ width: duelBar(bPnl) + '%' }"></i></div>
+                  <span class="ag-pnl mono" :class="pnlClass(bPnl)">{{ fmtPnl(bPnl) }}</span>
+                </div>
+              </div>
+              <div class="duel-feed mono"><span class="fk">›</span> {{ t(feedKey) }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -688,11 +751,31 @@ onUnmounted(() => {
 .ai h2 .d { color: var(--blue); }
 .ai p { color: var(--soft); font-size: 16px; line-height: 1.6; max-width: 520px; margin: 20px 0 30px; }
 .ai-main .big-pill { font-size: 17px; padding: 18px 34px; }
-.ai-side { position: relative; display: flex; flex-direction: column; gap: 12px; }
-.ai-spec { display: flex; justify-content: space-between; align-items: center; gap: 16px; border: 1px solid var(--hair); border-radius: 14px; padding: 16px 20px; }
-.ai-spec .k { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--soft); }
-.ai-spec .v { font-family: var(--mono); font-weight: 700; font-size: 14px; }
-.ai-note { color: var(--soft); margin-top: 6px; text-align: center; }
+.ai-specs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+.ai-chip { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); border: 1px solid var(--hair); border-radius: 100px; padding: 7px 13px; }
+.ai-side { position: relative; }
+
+/* --- aperçu « duel d'agents » live --- */
+.duel { position: relative; background: rgba(0, 0, 0, .28); border: 1px solid var(--hair); border-radius: 18px; padding: 20px; cursor: pointer; transition: border-color .3s; }
+.duel:hover { border-color: rgba(255, 255, 255, .38); }
+.duel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.duel-head .live { display: inline-flex; align-items: center; gap: 8px; color: #fff; }
+.duel-head .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--up); animation: duelbl 1.4s infinite; }
+@keyframes duelbl { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.agent { border: 1px solid var(--hair); border-radius: 12px; padding: 12px 14px; transition: border-color .35s var(--ease), background .35s var(--ease); }
+.agent.lead { border-color: var(--blue); background: rgba(79, 106, 255, .12); }
+.ag-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 11px; }
+.ag-name { font-weight: 700; font-size: 13px; letter-spacing: -.01em; }
+.ag-tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; color: var(--soft); }
+.ag-row { display: flex; align-items: center; gap: 12px; }
+.ag-bar { flex: 1; height: 8px; background: rgba(255, 255, 255, .1); border-radius: 5px; overflow: hidden; }
+.ag-bar i { display: block; height: 100%; background: var(--blue); border-radius: 5px; transition: width .6s var(--ease); }
+.ag-pnl { font-weight: 700; font-size: 14px; min-width: 54px; text-align: right; }
+.ag-pnl.up { color: var(--up); }
+.ag-pnl.down { color: var(--down); }
+.vs { text-align: center; color: var(--soft); font-size: 10.5px; letter-spacing: .18em; margin: 9px 0; }
+.duel-feed { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); font-size: 12px; color: var(--soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.duel-feed .fk { color: var(--blue); margin-right: 6px; }
 @media (max-width: 820px) { .ai { grid-template-columns: 1fr; gap: 34px; padding: 36px 28px; } }
 
 .prize-sec { padding: 0 0 130px; }
