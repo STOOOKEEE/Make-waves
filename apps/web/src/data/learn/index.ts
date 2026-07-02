@@ -28,6 +28,8 @@ import { trendFollowing } from "./articles/trend-following";
 import { meanReversionRanges } from "./articles/mean-reversion-ranges";
 import { breakoutTrading } from "./articles/breakout-trading";
 import { tradingPsychology } from "./articles/trading-psychology";
+import { winningCompetitions } from "./articles/winning-competitions";
+import { onChainTrackRecord } from "./articles/on-chain-track-record";
 
 /** Registre ordonné : l'ordre pilote l'affichage de la grille. */
 const ARTICLES_RAW: RawArticle[] = [
@@ -48,6 +50,9 @@ const ARTICLES_RAW: RawArticle[] = [
   meanReversionRanges,
   breakoutTrading,
   tradingPsychology,
+  // Tide & competitions
+  winningCompetitions,
+  onChainTrackRecord,
 ];
 
 /** Ordre + libellés des pistes (résolus par langue à l'affichage). */

@@ -76,6 +76,7 @@ const { t, locale, intlLocale } = useI18n({
     linkLeaderboard: 'Leaderboard',
     linkRewards: 'Rewards',
     linkMarkets: 'Markets',
+    linkSchool: 'Tide School',
     linkDocumentation: 'Documentation',
     linkRules: 'Rules',
     linkApi: 'API',
@@ -145,6 +146,7 @@ const { t, locale, intlLocale } = useI18n({
     linkLeaderboard: 'Classement',
     linkRewards: 'Récompenses',
     linkMarkets: 'Marchés',
+    linkSchool: 'Tide School',
     linkDocumentation: 'Documentation',
     linkRules: 'Règlement',
     linkApi: 'API',
@@ -467,6 +469,11 @@ onUnmounted(() => {
               <a href="#/leaderboard" @click.prevent="emit('navigate', '/leaderboard')">{{ t('linkLeaderboard') }}</a>
               <a href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('linkRewards') }}</a>
               <a href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('linkMarkets') }}</a>
+            </div>
+            <div class="f-col">
+              <h4>{{ t('colResources') }}</h4>
+              <a href="#/learn" @click.prevent="emit('navigate', '/learn')">{{ t('linkSchool') }}</a>
+              <a href="#/learn/what-is-trading" @click.prevent="emit('navigate', '/learn/what-is-trading')">{{ t('linkDocumentation') }}</a>
             </div>
           </div>
         </div>
