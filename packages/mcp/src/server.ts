@@ -7,7 +7,14 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { McpError, ERROR_CODES, sanitizeError } from "./lib/errors";
-import type { McpContext, PaperBackend, PriceFeed } from "./types";
+import type {
+  AgentActionsStore,
+  Broadcaster,
+  McpContext,
+  PaperBackend,
+  PriceFeed,
+  TradingBackend,
+} from "./types";
 import { tools as allTools } from "./tools";
 
 export interface ServerConfig {
@@ -16,6 +23,9 @@ export interface ServerConfig {
   readonly userId: string;
   readonly priceFeed: PriceFeed;
   readonly paper: PaperBackend;
+  readonly trading: TradingBackend;
+  readonly actions: AgentActionsStore;
+  readonly broadcaster?: Broadcaster;
 }
 
 export async function startMcpServer(config: ServerConfig): Promise<void> {
@@ -59,6 +69,9 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
         mandate: null,
         priceFeed: config.priceFeed,
         paper: config.paper,
+        trading: config.trading,
+        actions: config.actions,
+        broadcaster: config.broadcaster,
       };
       const result = await tool.handler(args ?? {}, ctx);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };

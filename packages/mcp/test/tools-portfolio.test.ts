@@ -85,6 +85,31 @@ function makeCtx(paper: PaperBackend): McpContext {
     mandate: { ...baseMandate },
     priceFeed: fakePriceFeed,
     paper,
+    trading: {
+      async placeOrder() {
+        return { orderId: "o", status: "filled", filledQty: 0, avgPrice: 0 };
+      },
+      async cancelOrder() {
+        // no-op
+      },
+      async getOpenOrders() {
+        return [];
+      },
+    },
+    actions: {
+      async record() {
+        // no-op
+      },
+      async findByIdempotencyKey() {
+        return null;
+      },
+      async listByAgent() {
+        return [];
+      },
+      async countToday() {
+        return 0;
+      },
+    },
   };
 }
 

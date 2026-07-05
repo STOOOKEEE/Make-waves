@@ -60,6 +60,30 @@ export interface McpContext {
   readonly mandate: Mandate | null;
   readonly priceFeed: PriceFeed;
   readonly paper: PaperBackend;
+  readonly trading: TradingBackend;
+  readonly actions: AgentActionsStore;
+  /** Optional SSE broadcaster — emits one event per successful agent action. */
+  readonly broadcaster?: Broadcaster;
+}
+
+/** Backend façade pour les ordres spot (impl concrète dans @tide/api). */
+export interface TradingBackend {
+  placeOrder(input: {
+    userId: string;
+    symbol: string;
+    side: "buy" | "sell";
+    qty: number;
+    type: "market" | "limit";
+    price?: number;
+    clientOrderId?: string;
+  }): Promise<{ orderId: string; status: string; filledQty: number; avgPrice: number }>;
+  cancelOrder(userId: string, orderId: string): Promise<void>;
+  getOpenOrders(userId: string): Promise<readonly unknown[]>;
+}
+
+/** Optional SSE broadcaster — kept minimal so tools stay typed without it. */
+export interface Broadcaster {
+  emit(event: { readonly type: string; readonly [k: string]: unknown }): void;
 }
 
 /** Backend façade pour les requêtes portefeuille (impl concrète dans @tide/api). */
