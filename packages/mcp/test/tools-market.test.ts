@@ -39,6 +39,9 @@ function makePriceFeed(priceOf: PriceFeed["priceOf"]): PriceFeed {
     async orderbook() {
       return null;
     },
+    async markets() {
+      return [];
+    },
   };
 }
 

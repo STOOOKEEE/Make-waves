@@ -15,6 +15,9 @@ const bootstrapPriceFeed: PriceFeed = {
   async orderbook() {
     throw new Error("priceFeed non câblé — utiliser loadContext");
   },
+  async markets() {
+    throw new Error("priceFeed non câblé — utiliser loadContext");
+  },
 };
 
 startMcpServer({

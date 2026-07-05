@@ -13,6 +13,9 @@ const fakePriceFeed: PriceFeed = {
   async orderbook() {
     return null;
   },
+  async markets() {
+    return [];
+  },
 };
 
 // Local in-memory fakes — keep @tide/mcp a leaf package (no import from apps/api).

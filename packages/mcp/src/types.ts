@@ -61,10 +61,20 @@ export interface McpContext {
   readonly priceFeed: PriceFeed;
 }
 
+export interface MarketRow {
+  readonly symbol: string;
+  readonly name?: string;
+  readonly price?: number;
+  readonly change24h?: number;
+  readonly volume24h?: number;
+  readonly marketCap?: number;
+}
+
 export interface PriceFeed {
   priceOf(
     symbol: string,
   ): Promise<{ usd: number; change24h?: number; volume24h?: number } | null>;
+  markets(limit: number): Promise<readonly MarketRow[]>;
   history(
     symbol: string,
     interval: string,

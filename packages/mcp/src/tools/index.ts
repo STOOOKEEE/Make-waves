@@ -1,6 +1,11 @@
 // Outils MCP — Tasks 11+ peuplent ce tableau.
 import type { McpContext } from "../types";
-import { getMarketTool } from "./market";
+import {
+  getMarketTool,
+  getMarketsTool,
+  getHistoryTool,
+  getOrderbookTool,
+} from "./market";
 
 export interface ToolDef {
   readonly name: string;
@@ -9,4 +14,9 @@ export interface ToolDef {
   handler(args: Record<string, unknown>, ctx: McpContext): Promise<unknown>;
 }
 
-export const tools: readonly ToolDef[] = [getMarketTool];
+export const tools: readonly ToolDef[] = [
+  getMarketTool,
+  getMarketsTool,
+  getHistoryTool,
+  getOrderbookTool,
+];
