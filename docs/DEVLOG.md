@@ -4,6 +4,28 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : `get_markets` + `get_history` + `get_orderbook` MCP tools [Tâche 12/33]
+
+**Quoi.** Les 3 outils MCP marché restants, calquis sur le pattern de `get_market` (Tâche 11) : `get_markets(limit?)` (top N, clampé `[1, 250]`, défaut 100) ; `get_history({symbol, interval, limit?})` (OHLC, interval validé par type guard, limit clampé `[10, 500]`, défaut 120) ; `get_orderbook({symbol})` (depth bids/asks, `null` → `MARKET_ERROR`). **611/611** (+11 vs 600), typecheck vert. Helper interne `clampLimit` (gère `NaN`/`Infinity` + `Math.trunc`) et `isInterval` (type guard sur `Set<string>`) extraits pour rester typé strict.
+
+**Pourquoi.** Un agent a besoin de **voir avant d'agir** : top markets pour la discovery, historique OHLC pour raisonner sur la tendance, carnet pour la microstructure. Ces 3 outils complètent la trousse de lecture ; les outils d'ordre (Tâches 14+) introduiront les **garde-fous durs** (capital max, perte max / jour, max trades / jour, max levier, kill switch) — ici on est lecture-seule, pas de garde à appliquer.
+
+**Cheminement (3 écarts au brief, tous défendables — identiques à Tâche 11).**
+- **`(ctx as any).priceFeed.X(...)` retiré.** Le brief utilisait ce cast pour atteindre le feed — violation de la convention « jamais `as any` » (cf. `~/.claude/CLAUDE.md`). Refacto : `McpContext.priceFeed: PriceFeed` était déjà en place (Tâche 11), le tool accède maintenant à `ctx.priceFeed.markets/history/orderbook` typé naturellement. **0 cast de type** dans le livrable.
+- **`INTERVALS.includes(interval as never)` retiré.** Le cast `as never` laideur caché sous un `Array.includes` sur tuple readonly. Refacto : `INTERVALS = [...] as const` + `INTERVALS_SET = new Set<string>(INTERVALS)` + `isInterval(s): s is Interval` — type narrowing sans cast, et runtime rapide (Set lookup O(1), pas scan).
+- **`Number(args["limit"])` non protégé.** Le brief faisait `Number(args["limit"] ?? N)` puis `Math.min(Math.max(..., MIN), MAX)` — mais `Number("foo") = NaN` (NaN passe `Math.min/max` → propagé → bug silencieux au LLM qui envoie une string), `Number(3.7) = 3.7` (3.7 bougies = nonsense). Refacto : `clampLimit(raw, fallback, min, max)` centralisé, `Number.isFinite` + `Math.trunc`.
+- **11 tests au lieu de 3** (le brief en demandait 3 minimum). Couverture ajoutée : clamp de limit (haut + bas + défaut) sur `get_markets`, symbole invalide + interval invalide + `McpError` instance + forwarding symbol/interval au feed + clamp limit sur `get_history`, symbole invalide + livre absent sur `get_orderbook`. Verrouille les contrats implicites.
+
+**Modifications collatérales (3 fichiers mis à jour, conséquence additive obligatoire).**
+- **`PriceFeed.markets(limit)`** ajouté dans `src/types.ts` + type `MarketRow` exporté. `history` et `orderbook` existaient déjà depuis Tâche 7 (le brief les supposait ajoutés, ils étaient déjà là).
+- L'extension additive de `PriceFeed` oblige à **compléter les stubs partiels** : `bin/tide-mcp.ts` (bootstrap throw-loud), `test/context.test.ts` (fake no-op), `test/tools-market.test.ts` (`makePriceFeed`). Sans ces ajouts, typecheck échouait (l'interface exige 4 méthodes). Fait en suivant le pattern établi Tâche 11 (`priceFeed` lui-même avait dû être ajouté partout quand `McpContext` l'avait adopté).
+
+**Bugs & fix.** Aucun (impl + tests verts dès le premier jet, modulo les 4 écarts documentés ci-dessus). Lint : 5 erreurs **pré-existantes** inchangées (4 dans stores SQLite Tâche 3, 1 dans `guard.test.ts`) — vérifié **0 nouveau** de mon fait via diff pré-commit. Dette tracée : `bin/tide-mcp.ts` stub le `PriceFeed` avec un throw loud (volontaire, le câblage runtime arrive en Tâche 13+) ; `INTERVALS` codé en dur ici mais **pas de duplication** côté front pour l'instant (à surveiller si DashboardView expose des timeframes).
+
+**Suite logique.** Tâche 13 : câblage runtime `loadContext` ← vrais stores (`@tide/api` exposera un `PriceFeed` concret branché sur CoinGecko + Binance klines + book-offers). Les 4 outils marché (Tâches 11+12) sont **prêts sans modification** — il suffira de passer le vrai `PriceFeed` à `startMcpServer`. Les outils d'ordre (Tâches 14+) introduiront les garde-fous durs, qui ne s'appliquent pas ici.
+
+---
+
 ## 2026-07-06 — AI Agent : AgentService + MandateService (logique métier) [Tâche 4/33]
 
 **Quoi.** Couche service au-dessus des stores (Tâche 3). `AgentService` (create/get/listByUser/kill/delete) orchestre `AgentStore` + `MandateStore` — le kill d'un agent révoque automatiquement ses mandats actifs. `MandateService` (create/getActiveForAgent/onSignCallback/revoke) orchestre `MandateStore` + une surface `MandateXamanApi` stubbée (l'intégration Xaman réelle arrive plus tard). `onSignCallback` refuse tout mandat non-`pending` via `MandateInvalidError`. 3 nouvelles erreurs typées (`AgentAlreadyExistsError`, `MandateAlreadyExistsError`, `MandateInvalidError`) dans `services/errors.ts` ; `MandateNotFoundError` déjà fourni par le store. **558/558** (+8 vs 550), typecheck vert.
