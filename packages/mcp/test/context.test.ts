@@ -1,7 +1,19 @@
 import { describe, it, expect } from "vitest";
 import { loadContext, type AgentStore, type MandateStore } from "../src/lib/context";
 import { McpError } from "../src/lib/errors";
-import type { Agent, Mandate } from "../src/types";
+import type { Agent, Mandate, PriceFeed } from "../src/types";
+
+const fakePriceFeed: PriceFeed = {
+  async priceOf() {
+    return null;
+  },
+  async history() {
+    return [];
+  },
+  async orderbook() {
+    return null;
+  },
+};
 
 // Local in-memory fakes — keep @tide/mcp a leaf package (no import from apps/api).
 function makeAgentStore(seed: Agent[] = []): AgentStore {
@@ -52,7 +64,7 @@ describe("loadContext", () => {
         status: "active",
       },
     ]);
-    const ctx = await loadContext({ agents, mandates }, "a1");
+    const ctx = await loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1");
     expect(ctx.userId).toBe("u1");
     expect(ctx.agent.id).toBe("a1");
     expect(ctx.mandate?.id).toBe("m1");
@@ -61,8 +73,8 @@ describe("loadContext", () => {
   it("throws AGENT_STOPPED when agent.status=stopped", async () => {
     const agents = makeAgentStore([{ ...baseAgent, status: "stopped" }]);
     const mandates = makeMandateStore();
-    await expect(loadContext({ agents, mandates }, "a1")).rejects.toThrow(McpError);
-    await expect(loadContext({ agents, mandates }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toThrow(McpError);
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
       code: "AGENT_STOPPED",
     });
   });
@@ -70,7 +82,7 @@ describe("loadContext", () => {
   it("throws MANDATE_INVALID when no active mandate", async () => {
     const agents = makeAgentStore([{ ...baseAgent }]);
     const mandates = makeMandateStore();
-    await expect(loadContext({ agents, mandates }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
       code: "MANDATE_INVALID",
     });
   });
@@ -94,7 +106,7 @@ describe("loadContext", () => {
         status: "active",
       },
     ]);
-    await expect(loadContext({ agents, mandates }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
       code: "MANDATE_INVALID",
     });
   });

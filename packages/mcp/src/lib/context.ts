@@ -1,4 +1,4 @@
-import type { Agent, Mandate, McpContext } from "../types";
+import type { Agent, Mandate, McpContext, PriceFeed } from "../types";
 import { McpError } from "./errors";
 
 /** Minimal local store interfaces — keep @tide/mcp a leaf package. */
@@ -13,6 +13,7 @@ export interface MandateStore {
 export interface ContextStores {
   readonly agents: AgentStore;
   readonly mandates: MandateStore;
+  readonly priceFeed: PriceFeed;
 }
 
 export async function loadContext(
@@ -33,5 +34,5 @@ export async function loadContext(
       "No active mandate. Sign a new one via /api/mandates before trading.",
     );
   }
-  return { agent, userId: agent.userId, mandate };
+  return { agent, userId: agent.userId, mandate, priceFeed: stores.priceFeed };
 }

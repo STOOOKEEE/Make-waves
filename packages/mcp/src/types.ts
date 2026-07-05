@@ -58,6 +58,7 @@ export interface McpContext {
   readonly agent: Agent;
   readonly userId: string;
   readonly mandate: Mandate | null;
+  readonly priceFeed: PriceFeed;
 }
 
 export interface PriceFeed {
