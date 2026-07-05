@@ -20,6 +20,24 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : `get_market` MCP tool (1er outil, branchement du `PriceFeed`) [Tâche 11/33]
+
+**Quoi.** Premier outil MCP livré, lecture seule : `get_market(symbol)` → `{symbol, price, change24h, volume24h, timestamp}`. Vit dans `packages/mcp/src/tools/market.ts` (~40 lignes) et est enregistré dans `tools/index.ts`. **600/600** tests (+4 vs 596), typecheck vert. Modifications collatérales : `McpContext.priceFeed: PriceFeed` ajouté à `types.ts`, propagé dans `loadContext`/`ServerConfig`/`ContextStores` (le `PriceFeed` de la Tâche 7 attendait d'être branché au runtime, c'est chose faite). `bin/tide-mcp.ts` stubbe un `PriceFeed` qui throw loud (le vrai câblage runtime = Tâche 12+).
+
+**Pourquoi.** Premier « ce que peut appeler un LLM » : c'est la brique qui rend l'agent observable (lire le marché avant d'agir). Le tool est volontairement lecture-seule (pas de garde-fou capital/perte à appliquer) — les outils d'ordre viendront en Tâches 14+ où les garde-fous durs (capital max, perte max / jour, max trades / jour, max levier, kill switch) seront branchés. L'extension de `McpContext` est légitime : il est défini comme le transport des deps d'exécution (cf. design Tâche 7), et `PriceFeed` en fait partie.
+
+**Cheminement (3 écarts au brief, tous défendables).**
+- **`ctx as any` retiré.** Le brief utilisait `(ctx as any).priceFeed.priceOf(symbol)` pour atteindre le feed — violation de la convention « jamais `as any` ». Refonte : `priceFeed: PriceFeed` ajouté à `McpContext`, propagation à travers `loadContext`/`ServerConfig`/`ContextStores`. Le tool accède maintenant à `ctx.priceFeed.priceOf(symbol)` typé naturellement. 4 callsites de tests mis à jour.
+- **`ctx as never` retiré dans le test.** Remplacé par un helper `makeCtx(priceFeed)` qui construit un `McpContext` **complet et typé** (agent + mandate + priceFeed). Le test reste lisible et compile sans cast.
+- **Symboles de test du brief incompatibles avec l'impl.** Le brief testait `"bt"` et `"VERYLONG"` pour `INVALID_PARAMS`, mais l'impl uppercasé d'abord puis applique `^[A-Z0-9]{2,10}$` : `"bt"` → `"BT"` (2 chars, matche) ; `"VERYLONG"` → 8 chars, matche. Les deux inputs **passeraient** le regex. Choix : utiliser `"VERYLONGNAME"` (12 chars) et `"BT!"` (caractère spécial), qui eux échouent réellement le regex post-uppercase. Commentaire dans le test documente ce choix. La regex du brief reste la source de vérité, c'est le test qui est corrigé.
+- **4e test ajouté** (`throws an McpError instance with the documented code`) : vérifie que l'erreur levée est bien `instanceof McpError` (pas juste un objet `{code: …}`). 8 lignes, verrouille un contrat runtime implicite.
+
+**Bugs & fix.** Aucun (impl + tests verts dès le premier jet, modulo les 3 écarts documentés ci-dessus). Lint : 5 erreurs pré-existantes (4 dans les stores SQLite de Tâche 3, 1 dans `guard.test.ts`) — vérifié inchangé avant ce commit via `git stash` + lint, **0 nouveau**. Dette tracée : `bin/tide-mcp.ts` stub le `PriceFeed` avec un throw loud (volontaire, le câblage runtime arrive en Tâche 12+) ; 4 fichiers manquent un newline en fin (cohérent avec un pattern pré-existant dans le package).
+
+**Suite logique.** Tâche 12 : câblage runtime `loadContext` ← vrais stores (`@tide/api` exposera un `PriceFeed` concret branché sur CoinGecko). Le tool `get_market` est déjà prêt à le consommer sans modification — il suffira de brancher le vrai `PriceFeed` à l'entrée de `startMcpServer`.
+
+---
+
 ## 2026-07-05 — `GET /metrics` : audit de la chaîne d'attribution + test d'intégration bout en bout [chemin critique, métrique reine]
 
 **Quoi.** Suite à un retour externe (« l'indexeur fait la lecture mais pas l'agrégation »), audit de bout en bout du pipeline d'attribution, puis comblement du trou de couverture identifié. **519/519** (+4 vs 515), typecheck + lint verts, suite complète 2,43 s. Aucun changement de code de prod — uniquement 1 fichier de test ajouté (`apps/api/test/metrics-route.test.ts`).
