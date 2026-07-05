@@ -24,6 +24,7 @@ import { SqliteAccountStore } from "./store/sqlite-account-store";
 import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
 import { openDatabase } from "./store/sqlite";
+import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
 import { createXamanApi } from "./xaman/sdk";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
@@ -226,6 +227,7 @@ function startIndexerSync(indexer: AttributionIndexer): void {
 async function main(): Promise<void> {
   // Connexion SQLite partagée par les deux stores (persistance sur disque).
   const db = openDatabase(env.readDbPath());
+  migrateAgentTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
