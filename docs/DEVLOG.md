@@ -4,6 +4,52 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : `place_order` (Paper + guard + audit + idempotency) + `cancel_order` [Tâche 14/33]
+
+**Quoi.** Premiers outils d'**écriture** MCP (vs lecture seule Tâches 11-13). `place_order(symbol, side, qty, type, price?, client_order_id?)` applique les **garde-fous durs** du mandate **avant** l'appel trading (`enforceRiskLimits`) : capital max, perte max / jour, max trades / jour, max levier, kill switch agent.stopped, paires autorisées. Succès → `recordAction` (idempotencyKey = `client_order_id`) + broadcast SSE (`agent_action`). Échec (guard ou backend) → audit quand même enregistré, code McpError préservé (RISK_LIMIT ≠ TRADING_ERROR ≠ MARKET_ERROR ≠ MANDATE_INVALID). `cancel_order(order_id)` = miroir simple : `trading.cancelOrder(userId, orderId)` + audit. **631/631** (+12 vs 619), typecheck vert, 0 nouvelle erreur lint.
+
+**Pourquoi.** C'est la **frontière de sécurité** : un agent LLM qui appelle `place_order` ne peut pas dépasser `capitalMax`, trader hors `pairesAutorisees`, spammer au-delà de `maxTradesPerDay`, ou atteindre `perteMaxJour`. Ces garde-fous sont la raison d'être du « Paper géré par agent signé sous mandate ». `cancel_order` ferme un limit ouvert ; auditer qui annule quoi évite les annulations « silencieuses » sans trace.
+
+**Cheminement (5 écarts au brief, tous défendables — pattern additif Tâches 11-13).**
+- **`(ctx as any).trading`/`(ctx as never).actions`/`mandate` retirés partout.** Le brief utilisait ce cast à 3 endroits (violation « jamais `as any` »). Refacto : `McpContext` étendu avec **`trading: TradingBackend`** + **`actions: AgentActionsStore`** + **`broadcaster?: Broadcaster`** + nouvelles interfaces `TradingBackend` et `Broadcaster` (l'interface `AgentActionsStore` existait déjà dans `types.ts:50`, juste non branchée). Tool accède maintenant à `ctx.trading.placeOrder(...)` typé naturellement. **0 cast dans le livrable.**
+- **`enforceRiskLimits` enveloppé dans le `try/catch` (vs hors try/catch dans le brief).** Sinon les refus RISK_LIMIT/MARKET_ERROR/MANDATE_INVALID ne seraient **pas audités** (le `catch` ne les attrapait pas). Or le test case 3 du brief (« capital exceeded → throws RISK_LIMIT (audit logs the error) ») exige explicitement l'audit de l'erreur. Fix : tout le flow guard + placeOrder dans le `try`. Conséquence vertueuse — l'audit capture **toutes** les sorties.
+- **Codes McpError préservés dans le `throw` (vs tout envelopper en `TRADING_ERROR`).** Le brief englobait *toutes* les erreurs du catch en `new McpError("TRADING_ERROR", message)` → un RISK_LIMIT devenait indistinguishable d'une panne backend. Fix : `if (err instanceof McpError) throw err;` après le `recordAction(...)` — codes distincts (RISK_LIMIT, MARKET_ERROR, MANDATE_INVALID, INVALID_PARAMS) ; seul un throw non-McpError (panne backend, crash imprévu) devient TRADING_ERROR.
+- **Validation explicite du `type`** (`market`/`limit`) en plus de `side` — le brief l'oubliait. Coût : 2 lignes. Évite qu'un LLM envoie `type: "stop"` qui se propagerait jusqu'au backend.
+- **`getOpenOrders`** ajouté à l'interface `TradingBackend` (cohérence backend ↔ MCP, Tâches 16+ en auront besoin).
+
+**Modifications collatérales (10 fichiers, additive-only — même pattern que Tâches 11-13).**
+- `src/types.ts` : `TradingBackend`, `Broadcaster`, extension `McpContext` (+24).
+- `src/lib/context.ts` : `ContextStores.trading`/`.actions`, propagation dans `loadContext` (+12).
+- `src/server.ts` : `ServerConfig.trading`/`.actions`/`.broadcaster?`, ctx construit (+13).
+- `bin/tide-mcp.ts` : `bootstrapTrading` + `bootstrapActions` stubs throw-loud (+34), câblés dans `startMcpServer`.
+- `src/tools/index.ts` : enregistre les 2 outils (+3).
+- **4 tests existants** : `tools-market.test.ts`, `tools-market-extras.test.ts`, `tools-portfolio.test.ts`, `context.test.ts` — leurs `makeCtx`/`loadContext` reçoivent les nouveaux champs `trading`+`actions` no-op (+118). Sans ces ajouts, typecheck échouait (l'interface `McpContext` exige les champs).
+
+**12 tests au lieu de 5 minimum brief.** Couverture ajoutée au-delà du strict minimum :
+- `limit` avec `price` explicite **n'appelle pas** le feed (gain de round-trip, compteur `priceOfCalls`).
+- `MARKET_ERROR` quand aucun prix dispo.
+- `TRADING_ERROR` + audit quand le backend trading throw (« insufficient funds »).
+- `MANDATE_INVALID` quand `mandate === null` (et **`trading.placeOrder` jamais appelé**, vérifié).
+- `INVALID_PARAMS` pour `qty ≤ 0` (idem).
+- cancel_order : `MANDATE_INVALID` + audit sur erreur.
+
+Tous les codes McpError (`INVALID_PARAMS`, `MARKET_ERROR`, `TRADING_ERROR`, `RISK_LIMIT`, `MANDATE_INVALID`) sont verrouillés par au moins un test. Idempotence et broadcaster vérifiés (calls captured sur les fakes).
+
+**Bugs & fix.** 1 incident pendant l'impl : assertion `toMatch(/RISK_LIMIT/)` sur `recordAction.error` — j'avais cru que l'audit stockait le `code` McpError, mais `audit.ts:30` ne stocke que `err.message`. Le `code` McpError remonte via `throw err` séparément. **Fix** : retirer l'assertion (le préfixe « Capital engaged… » dans le message suffit à prouver que c'est la branche RISK_LIMIT — c'est le seul message du guard qui commence ainsi).
+
+**Note mineure — `broadcast` vs `broadcaster`.** Le brief utilise `broadcaster?` partout ; j'ai gardé le même nom pour l'interface et le champ. L'événement émis est typé `{type: string, [k: string]: unknown}` (forme minimale — l'agent plus tard pourra avoir une union discriminée si on veut typer strict par `type`).
+
+**Dette tracée.**
+- `recordAction` qui plante après un trade réussi → l'exception d'audit masque le trade côté agent LLM (accepté en MVP ; à wrapper en `try/catch` interne dans `recordAction` à la Tâche câblage runtime si on veut tolerer un audit fail silencieux côté agent).
+- `capitalEngaged` à 0 pour `type: "limit"` (la marge ne s'engage qu'à l'exécution, exact pour le spot ; à re-valider côté backend pour les perps Tâches 15+).
+- `getOpenOrders` non câblé dans `cancel_order` handler (l'ownership check se fera côté backend).
+- `bin/tide-mcp.ts` stubs `bootstrapTrading` + `bootstrapActions` throw loud (volontaire — câblage runtime = Tâche « brancher le vrai backend »).
+
+**Suite logique.** Tâches 15+ : `close_position` (perps), `place_limit_order`, `set_tp_sl` — même structure (`try/catch` global, audit, broadcast, `McpError`-preserved). Tâche câblage runtime : impl `TradingBackend` dans `@tide/api` (PaperService + SQLite), brancher `AgentActionsStore` (le store SQLite `sqlite-agent-actions-store.ts` existe déjà en `apps/api/src/store/`), brancher `Broadcaster` SSE (l'infra SSE existe déjà pour les compétitions).
+
+**Rapport détaillé** : `.superpowers/sdd/task-14-report.md`. **Commit** : `4518514`.
+
+
 ## 2026-07-06 — AI Agent : 4 outils portfolio MCP `get_balance` / `get_portfolio` / `get_positions` / `get_leaderboard` [Tâche 13/33]
 
 **Quoi.** Suite de la trousse de lecture MCP (après `get_market`/`get_markets`/`get_history`/`get_orderbook` Tâches 11+12) : 4 outils portefeuille, lecture-seule, délégateurs purs vers `ctx.paper.X(ctx.userId)`. `get_balance()` → `{ balances }`, `get_portfolio()` → `{ balances, equity, pnl }`, `get_positions()` → `{ positions }`, `get_leaderboard(limit?)` → `{ entries }` (clampé `[1, 100]`, défaut 20). Nouveau type **`PaperBackend`** dans `src/types.ts` (4 méthodes asynchrones retournant les shapes métier) ; `McpContext` étendu avec `paper: PaperBackend`. `clampLimit` ré-exporté de `market.ts` (cohérence package). **619/619** (+8 vs 611), typecheck vert, 0 nouvelle erreur lint.
