@@ -57,6 +57,10 @@ export interface AppConfig {
   readonly exec?: ExecDeps;
   /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
   readonly metrics?: MetricsDeps;
+  /** Service de gestion des agents (routes /api/agents/*) — absent si pas câblé. */
+  readonly agentService?: import("./services/agent-service").AgentService;
+  /** Service de gestion des mandats (routes /api/mandates, /api/sign/mandate-callback) — absent si pas câblé. */
+  readonly mandateService?: import("./services/mandate-service").MandateService;
   /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
   readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
   /** Historique DEX réel prioritaire pour les tokens dont la pool est connue. */
@@ -164,6 +168,8 @@ export function createApp(config: AppConfig): App {
     sign: config.sign,
     exec: config.exec,
     metrics: config.metrics,
+    agentService: config.agentService,
+    mandateService: config.mandateService,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

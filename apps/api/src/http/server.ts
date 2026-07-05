@@ -8,6 +8,8 @@ import type { Candle } from "../feed/klines";
 import type { MarketRow } from "../feed/coingecko-markets";
 import type { PaperService } from "../services/paper-service";
 import type { CompetitionService } from "../services/competition-service";
+import type { AgentService } from "../services/agent-service";
+import type { MandateService } from "../services/mandate-service";
 import type { XamanPayloadApi } from "../xaman/sign-request";
 import {
   createBuyInSignRequest,
@@ -21,9 +23,12 @@ import { statusForError } from "./errors";
 import {
   parseBuyInRequest,
   parseCompetition,
+  parseCreateAgent,
+  parseCreateMandate,
   parseLiveOfferRequest,
   parseOpenPosition,
   parseOrder,
+  parseSignMandateCallback,
   parseUserId,
 } from "./parse";
 
@@ -84,6 +89,10 @@ export interface ServerDeps {
   readonly exec?: ExecDeps;
   /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
   readonly metrics?: MetricsDeps;
+  /** Service de gestion des agents (routes /api/agents/*) — absent si pas câblé. */
+  readonly agentService?: AgentService;
+  /** Service de gestion des mandats (routes /api/mandates, /api/sign/mandate-callback) — absent si pas câblé. */
+  readonly mandateService?: MandateService;
 }
 
 /**
@@ -293,6 +302,59 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.metrics !== undefined) {
     const { store, sourceTag } = deps.metrics;
     app.get("/metrics", () => store.metrics(sourceTag));
+  }
+
+  // Agents & mandats : surfaces agent-on-chain (Task 5). Montés uniquement si
+  // les services correspondants sont câblés (idem /metrics, /sign, /exec).
+  if (deps.agentService !== undefined) {
+    const svc = deps.agentService;
+    app.post("/api/agents", async (request, reply) => {
+      const body = parseCreateAgent(request.body);
+      const agent = await svc.create(body);
+      reply.code(201);
+      return agent;
+    });
+
+    app.get<{ Querystring: { userId?: string } }>(
+      "/api/agents",
+      async (request, reply) => {
+        const userId = request.query.userId;
+        if (userId === undefined || userId.trim() === "") {
+          reply.code(400);
+          return { error: "userId required" };
+        }
+        return svc.listByUser(userId);
+      },
+    );
+
+    app.get<{ Params: { id: string } }>("/api/agents/:id", async (request, reply) => {
+      const agent = await svc.get(request.params.id);
+      if (agent === null) {
+        reply.code(404);
+        return { error: "not found" };
+      }
+      return agent;
+    });
+
+    app.post<{ Params: { id: string } }>(
+      "/api/agents/:id/kill",
+      async (request) => svc.kill(request.params.id),
+    );
+  }
+
+  if (deps.agentService !== undefined && deps.mandateService !== undefined) {
+    const mandateSvc = deps.mandateService;
+    app.post("/api/mandates", async (request, reply) => {
+      const body = parseCreateMandate(request.body);
+      const mandate = await mandateSvc.create(body);
+      reply.code(201);
+      return mandate;
+    });
+
+    app.post("/api/sign/mandate-callback", async (request) => {
+      const body = parseSignMandateCallback(request.body);
+      return mandateSvc.onSignCallback(body);
+    });
   }
 
   return app;
