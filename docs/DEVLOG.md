@@ -4,6 +4,40 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : 4 outils portfolio MCP `get_balance` / `get_portfolio` / `get_positions` / `get_leaderboard` [Tâche 13/33]
+
+**Quoi.** Suite de la trousse de lecture MCP (après `get_market`/`get_markets`/`get_history`/`get_orderbook` Tâches 11+12) : 4 outils portefeuille, lecture-seule, délégateurs purs vers `ctx.paper.X(ctx.userId)`. `get_balance()` → `{ balances }`, `get_portfolio()` → `{ balances, equity, pnl }`, `get_positions()` → `{ positions }`, `get_leaderboard(limit?)` → `{ entries }` (clampé `[1, 100]`, défaut 20). Nouveau type **`PaperBackend`** dans `src/types.ts` (4 méthodes asynchrones retournant les shapes métier) ; `McpContext` étendu avec `paper: PaperBackend`. `clampLimit` ré-exporté de `market.ts` (cohérence package). **619/619** (+8 vs 611), typecheck vert, 0 nouvelle erreur lint.
+
+**Pourquoi.** Un agent doit **voir son compte** avant d'agir : soldes spot pour raisonner sur les réserves, `equity+pnl` pour le track record, positions ouvertes pour la stratégie, leaderboard pour le contexte concurrentiel. Ces 4 outils complètent la lecture ; les outils d'ordre (Tâches 14+) introduiront les **garde-fous durs** (capital max, perte max / jour, max trades / jour, max levier, kill switch) — ici lecture-seule, pas de garde à appliquer.
+
+**Cheminement (4 écarts au brief, tous défendables — cohérents avec Tâches 11+12).**
+- **`(ctx as any).paper.X(...)` retiré partout.** Le brief utilisait ce cast — violation de la convention « jamais `as any` » (cf. `~/.claude/CLAUDE.md`). Refacto : `McpContext.paper: PaperBackend` ajouté à l'interface, propagation à travers **6 callsites** (`lib/context.ts` + `server.ts` + `bin/tide-mcp.ts` + `test/context.test.ts` + 2 `makeCtx` dans les tests market). **0 cast `as any`/`as never` dans le livrable.**
+- **`ctx as never` retiré dans les tests.** Le brief utilisait `await getBalanceTool.handler({}, ctx as never)`. Refacto : helper `makeCtx(paper)` qui construit un `McpContext` **complet et typé** (agent + mandate + priceFeed + paper), via un `makePaper(overrides)` qui satisfait l'interface `PaperBackend`. Tests restent lisibles et compilent sans cast.
+- **`Math.min(Math.max(Number(args["limit"] ?? 20), 1), 100)` remplacé par `clampLimit`.** Le brief ré-introduisait exactement le bug que Tâche 12 avait **explicitement corrigé** (cf. entrée DEVLOG Tâche 12, point « `Number(args["limit"])` non protégé ») : `Number("foo") = NaN` propagé silencieusement, `Number(3.7) = 3.7` non tronqué, `Number(null) = 0` mal géré. Refacto : `clampLimit(args["limit"], 20, 1, 100)` déjà extrait dans `market.ts` — `Number.isFinite` + `Math.trunc`. Ré-export depuis `market.ts` pour le rendre réutilisable.
+- **8 tests au lieu de 4** (le brief en demandait 4 minimum). Couverture ajoutée : **thread `ctx.userId` propagé** (capturé via `calls` sur le fake — un LLM qui spoof l'arg `userId` n'atteint pas le backend) sur `get_balance` ; liste vide propagée sur `get_positions` (user sans position) ; default 20 sur `get_leaderboard` ; `limit: "foo"` → 20 (le bug que le brief aurait ré-introduit). Verrouille les contrats implicites.
+
+**Modifications collatérales (10 fichiers touchés, conséquence additive obligatoire — même pattern que Tâches 11+12).**
+- `src/types.ts` : `PaperBackend` interface + `paper: PaperBackend` ajouté à `McpContext`.
+- `src/lib/context.ts` : `ContextStores.paper` + `loadContext` retourne `paper`.
+- `src/server.ts` : `ServerConfig.paper` + bootstrap `McpContext` complet.
+- `bin/tide-mcp.ts` : `bootstrapPaper` stub qui throw loud (volontaire, le câblage runtime arrive plus tard).
+- `src/tools/market.ts` : `clampLimit` passé `export function` (utilisé par `portfolio.ts`).
+- `src/tools/index.ts` : 4 outils ajoutés au registre `tools`.
+- `src/tools/portfolio.ts` : **créé**.
+- `test/tools-portfolio.test.ts` : **créé**.
+- `test/context.test.ts` : 5 appels `loadContext(...)` reçoivent `paper: fakePaper`.
+- `test/tools-market.test.ts` + `test/tools-market-extras.test.ts` : les `makeCtx` existants reçoivent un `paper` no-op (même pattern que quand `priceFeed` avait été ajouté Tâche 11).
+
+Sans ces ajouts : typecheck échouait (l'interface `McpContext` exige les 5 champs).
+
+**Note mineure — shape `getPortfolio` plus étroite que la réalité.** `PaperBackend.getPortfolio` est typé `{ balances, equity, pnl }` (3 champs) comme spécifié dans le brief, alors que `PaperService.portfolioOf` réel retourne `{ balances, holdings, equity, pnl }` (4 champs). À l'impl dans `@tide/api`, l'adaptateur devra **projeter** les 3 champs attendus. Pas un bug aujourd'hui (l'impl n'existe pas encore), mais à ne pas rater au câblage Task 14+ — l'interface pourra être élargie à `& { holdings?: ... }` si le front consomme les holdings via MCP un jour.
+
+**Bugs & fix.** Aucun (impl + tests verts dès le premier jet, modulo les 4 écarts documentés ci-dessus). Lint : 5 erreurs **pré-existantes** inchangées (4 dans stores SQLite Tâche 3, 1 dans `guard.test.ts`) — vérifié **0 nouveau** de mon fait via `git stash` + lint baseline. Dette tracée : `bin/tide-mcp.ts` stub `bootstrapPaper` avec un throw loud (volontaire, le câblage runtime arrive en Tâches 14+) ; `unknown[]` sur `listPositions`/`getLeaderboard` conforme au brief (pourrait être resserré en `Position[]`/`LeaderboardEntry[]` si besoin tooling).
+
+**Suite logique.** Tâches 14+ : outils d'ordre (`place_order`, `close_position`, `place_limit_order`, `set_tp_sl`). Ceux-ci appliqueront les **garde-fous durs** du mandate **avant** d'atteindre `ctx.paper` — pas de modification des 4 outils lecture-seule livrés ici. Ils seront naturellement testés contre le fake `makePaper(overrides)` déjà en place dans `tools-portfolio.test.ts` (pattern capturé dans `calls`).
+
+---
+
 ## 2026-07-06 — AI Agent : `get_markets` + `get_history` + `get_orderbook` MCP tools [Tâche 12/33]
 
 **Quoi.** Les 3 outils MCP marché restants, calquis sur le pattern de `get_market` (Tâche 11) : `get_markets(limit?)` (top N, clampé `[1, 250]`, défaut 100) ; `get_history({symbol, interval, limit?})` (OHLC, interval validé par type guard, limit clampé `[10, 500]`, défaut 120) ; `get_orderbook({symbol})` (depth bids/asks, `null` → `MARKET_ERROR`). **611/611** (+11 vs 600), typecheck vert. Helper interne `clampLimit` (gère `NaN`/`Infinity` + `Math.trunc`) et `isInterval` (type guard sur `Set<string>`) extraits pour rester typé strict.
