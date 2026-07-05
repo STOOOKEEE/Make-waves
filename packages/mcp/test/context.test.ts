@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { loadContext, type AgentStore, type MandateStore } from "../src/lib/context";
 import { McpError } from "../src/lib/errors";
-import type { Agent, Mandate, PriceFeed } from "../src/types";
+import type { Agent, Mandate, PaperBackend, PriceFeed } from "../src/types";
 
 const fakePriceFeed: PriceFeed = {
   async priceOf() {
@@ -14,6 +14,21 @@ const fakePriceFeed: PriceFeed = {
     return null;
   },
   async markets() {
+    return [];
+  },
+};
+
+const fakePaper: PaperBackend = {
+  async getBalance() {
+    return {};
+  },
+  async getPortfolio() {
+    return { balances: {}, equity: 0, pnl: 0 };
+  },
+  async listPositions() {
+    return [];
+  },
+  async getLeaderboard() {
     return [];
   },
 };
@@ -67,7 +82,7 @@ describe("loadContext", () => {
         status: "active",
       },
     ]);
-    const ctx = await loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1");
+    const ctx = await loadContext({ agents, mandates, priceFeed: fakePriceFeed, paper: fakePaper }, "a1");
     expect(ctx.userId).toBe("u1");
     expect(ctx.agent.id).toBe("a1");
     expect(ctx.mandate?.id).toBe("m1");
@@ -76,8 +91,8 @@ describe("loadContext", () => {
   it("throws AGENT_STOPPED when agent.status=stopped", async () => {
     const agents = makeAgentStore([{ ...baseAgent, status: "stopped" }]);
     const mandates = makeMandateStore();
-    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toThrow(McpError);
-    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed, paper: fakePaper }, "a1")).rejects.toThrow(McpError);
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed, paper: fakePaper }, "a1")).rejects.toMatchObject({
       code: "AGENT_STOPPED",
     });
   });
@@ -85,7 +100,7 @@ describe("loadContext", () => {
   it("throws MANDATE_INVALID when no active mandate", async () => {
     const agents = makeAgentStore([{ ...baseAgent }]);
     const mandates = makeMandateStore();
-    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed, paper: fakePaper }, "a1")).rejects.toMatchObject({
       code: "MANDATE_INVALID",
     });
   });
@@ -109,7 +124,7 @@ describe("loadContext", () => {
         status: "active",
       },
     ]);
-    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed }, "a1")).rejects.toMatchObject({
+    await expect(loadContext({ agents, mandates, priceFeed: fakePriceFeed, paper: fakePaper }, "a1")).rejects.toMatchObject({
       code: "MANDATE_INVALID",
     });
   });

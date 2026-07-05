@@ -59,6 +59,17 @@ export interface McpContext {
   readonly userId: string;
   readonly mandate: Mandate | null;
   readonly priceFeed: PriceFeed;
+  readonly paper: PaperBackend;
+}
+
+/** Backend façade pour les requêtes portefeuille (impl concrète dans @tide/api). */
+export interface PaperBackend {
+  getBalance(userId: string): Promise<Record<string, number>>;
+  getPortfolio(
+    userId: string,
+  ): Promise<{ balances: Record<string, number>; equity: number; pnl: number }>;
+  listPositions(userId: string): Promise<unknown[]>;
+  getLeaderboard(limit: number): Promise<unknown[]>;
 }
 
 export interface MarketRow {

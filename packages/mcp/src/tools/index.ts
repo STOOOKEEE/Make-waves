@@ -6,6 +6,12 @@ import {
   getHistoryTool,
   getOrderbookTool,
 } from "./market";
+import {
+  getBalanceTool,
+  getPortfolioTool,
+  getPositionsTool,
+  getLeaderboardTool,
+} from "./portfolio";
 
 export interface ToolDef {
   readonly name: string;
@@ -19,4 +25,8 @@ export const tools: readonly ToolDef[] = [
   getMarketsTool,
   getHistoryTool,
   getOrderbookTool,
+  getBalanceTool,
+  getPortfolioTool,
+  getPositionsTool,
+  getLeaderboardTool,
 ];

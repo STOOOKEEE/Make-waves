@@ -46,7 +46,7 @@ export const getMarketTool: ToolDef = {
   },
 };
 
-function clampLimit(raw: unknown, fallback: number, min: number, max: number): number {
+export function clampLimit(raw: unknown, fallback: number, min: number, max: number): number {
   const n = Number(raw ?? fallback);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(Math.trunc(n), min), max);

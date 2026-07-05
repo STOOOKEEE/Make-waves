@@ -51,6 +51,20 @@ function makeCtx(priceFeed: PriceFeed): McpContext {
     userId: "u1",
     mandate: { ...baseMandate },
     priceFeed,
+    paper: {
+      async getBalance() {
+        return {};
+      },
+      async getPortfolio() {
+        return { balances: {}, equity: 0, pnl: 0 };
+      },
+      async listPositions() {
+        return [];
+      },
+      async getLeaderboard() {
+        return [];
+      },
+    },
   };
 }
 
