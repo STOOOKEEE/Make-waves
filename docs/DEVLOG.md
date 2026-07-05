@@ -4,6 +4,66 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : AgentService + MandateService (logique métier) [Tâche 4/33]
+
+**Quoi.** Couche service au-dessus des stores (Tâche 3). `AgentService` (create/get/listByUser/kill/delete) orchestre `AgentStore` + `MandateStore` — le kill d'un agent révoque automatiquement ses mandats actifs. `MandateService` (create/getActiveForAgent/onSignCallback/revoke) orchestre `MandateStore` + une surface `MandateXamanApi` stubbée (l'intégration Xaman réelle arrive plus tard). `onSignCallback` refuse tout mandat non-`pending` via `MandateInvalidError`. 3 nouvelles erreurs typées (`AgentAlreadyExistsError`, `MandateAlreadyExistsError`, `MandateInvalidError`) dans `services/errors.ts` ; `MandateNotFoundError` déjà fourni par le store. **558/558** (+8 vs 550), typecheck vert.
+
+**Pourquoi.** La couche service isole la logique métier du transport HTTP et des effets de bord (SSE) — pure orchestration store, constructeur sans I/O, méthodes async. Sépare clairement « ce que fait l'app » de « comment c'est branché ». Le kill avec révocation des mandats actifs est la première garantie métier transversale : un agent tué ne peut plus rien trader, même si un mandat signé traîne en base.
+
+**Cheminement.**
+- Pattern repris de `PaperService` (constructeur injecte les stores, defaults `InMemory`, pas d'I/O).
+- Brief du plan respecté quasi verbatim, avec 5 tests au lieu de 4 sur `MandateService` (ajout du cas « refuse si non-pending » pour blinder le contrat).
+- Pas de SSE dans `kill()` : volontairement laissé pour la Tâche 18. Le service retourne juste l'agent mis à jour.
+- `MandateXamanApi` = interface locale (2 méthodes), stub `fakeXaman` dans les tests. Pas d'import de `@tide/xrpl` ici — l'intégration concrète est une tâche ultérieure.
+
+**Bugs & fix.** Aucun (Tâche 4 isolée, pas de modification des stores). Lint : 4 erreurs pré-existantes dans les stores SQLite (Tâche 3, `Row`/`openDatabase` unused) — hors périmètre, ne bloquent pas.
+
+---
+
+## 2026-07-05 — `GET /metrics` : audit de la chaîne d'attribution + test d'intégration bout en bout [chemin critique, métrique reine]
+
+**Quoi.** Suite à un retour externe (« l'indexeur fait la lecture mais pas l'agrégation »), audit de bout en bout du pipeline d'attribution, puis comblement du trou de couverture identifié. **519/519** (+4 vs 515), typecheck + lint verts, suite complète 2,43 s. Aucun changement de code de prod — uniquement 1 fichier de test ajouté (`apps/api/test/metrics-route.test.ts`).
+
+### Audit du pipeline existant (avant le test)
+
+Lecture exhaustive du flux pour confirmer ou infirmer le retour externe. Le pipeline tient en 6 étapes, **toutes prouvées par au moins un test unitaire** :
+
+| # | Étape | Fichier | Test qui la couvre |
+|---|-------|---------|--------------------|
+| 1 | **Lecture** : `extractTaggedTxs(transactions, sourceTag)` parse une liste `account_tx`, ne retient QUE `validated === true && meta.TransactionResult === "tesSUCCESS" && SourceTag === tideSourceTag` | `packages/xrpl/src/metrics/observe.ts:79` | `packages/xrpl/test/observe.test.ts` (couvre statut meta, tag, hash, etc.) |
+| 2 | **Normalisation** : `normalizeVolume(tx, prices, reference)` convertit `Amount` (Payment) ou `TakerGets` (OfferCreate) en devise de référence via le feed (drops/IOU × prix). Repli conservateur : prix manquant → 0 | `apps/api/src/indexer/normalize-volume.ts:42` | `apps/api/test/normalize-volume.test.ts` (5 tests) |
+| 3 | **Indexeur** : `AttributionIndexer.sync()` orchestre — pagine `account_tx` (fenêtre figée sur 1re page, marker suivi, garde `MAX_PAGES`), pour chaque tx appelle `recorder.record({account, sourceTag, volume, ledgerIndex, hash})` | `apps/api/src/indexer/indexer.ts:104` | `apps/api/test/indexer.test.ts` (7 tests — **mais via `FakeRecorder`, juste `push` dans un array**) |
+| 4 | **Persistance** : `SqliteAttributionStore.record(tx)` insère avec `INSERT OR IGNORE` sur `tx_hash UNIQUE` (clé d'idempotence). Valide `volume ∈ ℝ⁺` et `ledgerIndex ∈ ℕ` | `apps/api/src/store/attribution-store.ts:53` | `apps/api/test/attribution-store.test.ts` (10 tests) |
+| 5 | **Agrégation** : `aggregateAttribution(txs, sourceTag)` somme `totalVolume`, compte `txCount`, dédoublonne les comptes via `Set<string>` → `activeAccounts`. Rejette `volume < 0 \|\| !finite`. Filtré par `sourceTag === tideSourceTag` | `packages/xrpl/src/metrics/aggregate.ts:15` | `packages/xrpl/test/metrics.test.ts` (11 tests) |
+| 6 | **Exposition** : `app.get("/metrics", () => store.metrics(sourceTag))` | `apps/api/src/http/server.ts:293-296` | `apps/api/test/sign-routes.test.ts` (test « expose les métriques pour le sourceTag configuré (200) » + « sans indexeur câblé, /metrics est absent (404) ») — **mais via `FakeStore implements MetricsReader { return METRICS }`** |
+
+**Verdict.** Le retour externe est **faux sur le fond** : l'agrégation existe et est bien câblée (étape 5 appelée par l'étape 4, appelée par l'étape 6). **Vrai sur la forme** : aucun test ne compose les étapes 3 → 4 → 5 → 6 ensemble. Conséquence concrète : une régression silencieuse (signature de `MetricsReader` modifiée, `sourceTag` non injecté dans `MetricsDeps`, `aggregateAttribution` qui change sa sémantique, `attribution-store.ts` qui perd l'import) faisait passer **tous les tests** mais coupait `/metrics` en prod. C'est précisément le scénario que décrit la personne à qui on a parlé. La métrique `totalVolume/activeAccounts/txCount` est la **métrique reine** du hackathon (3 prix sur 4 dépendent d'elle) — un trou de couverture là-dessus est inacceptable.
+
+### Test ajouté (`apps/api/test/metrics-route.test.ts`, 4 cas)
+
+Un seul `describe`, **`buildServer` + `app.inject` + vrai `SqliteAttributionStore` (in-memory `:memory:`) + vrai `AttributionIndexer`**. `FakeReader` local pour piloter la pagination (pattern repris d'`indexer.test.ts`). Le store passe le check TypeScript via `store as unknown as AttributionRecorder` (sa signature `record(tx: ObservedTx): void` est structurellement compatible avec l'interface, pas besoin de déclaration explicite — et c'est le store de prod qu'on teste ainsi, pas un fake déguisé).
+
+- **Cas 1 — agrégation nominale** : 2 comptes (`rPool`, `rPlayer`), 2 Payments XRP de 2 000 000 + 1 000 000 drops à prix 0,5 USD, SourceTag Tide → attend `totalVolume: 1.5, activeAccounts: 2, txCount: 2`. Sanity check `result.recorded === 2` AVANT le `inject` pour s'assurer que l'indexeur a bien poussé.
+- **Cas 2 — filtre par SourceTag** : 1 tx taggée Tide (0,5 USD) + 1 tx taggée `OTHER_TAG` avec un volume énorme (9 999 000 000 drops) → seul Tide compte. Prouve que `aggregateAttribution` filtre bien et que la métrique n'est pas gonflée par les tx d'autres apps.
+- **Cas 3 — volume = 0 conservateur** : Payment IOU d'une devise sans prix (`FOO` absent de la `PriceMap`) → `totalVolume: 0` mais `activeAccounts: 1, txCount: 1`. Démontre la sémantique « la tx a eu lieu, on crédite le compte actif, on ne SUR-compte pas un volume qu'on ne sait pas valoriser » (dette tracée `DEVLOG 22/06` entrée « F4 indexeur d'attribution », limites d'attribution).
+- **Cas 4 — idempotence par hash** : `beforeEach` a déjà poussé 2 lignes. On relance un sync avec les **mêmes hashes** (`H_rPool_50`, `H_rPlayer_51`) pour simuler un rescan post-reboot (la dette « curseur non persisté » de F4). L'`INSERT OR IGNORE` neutralise → on reste à 2 lignes, jamais 4. Démontre que la route reflète l'idempotence du store.
+
+### Pourquoi `feedLogger` au premier jet — leçon
+
+Première passe du test, j'ai ajouté un `silentLogger` dans les appels `buildServer({ ..., feedLogger: silentLogger })` — réflexe pris en lisant `AppConfig` qui expose `feedLogger?`. Mais `ServerDeps` (l'interface passée à `buildServer`) **n'expose pas `feedLogger`** (cf. `server.ts:66-87` vs `app.ts:53`). Typecheck a rappelé à l'ordre : `TS2353: Object literal may only specify known properties`. Retiré en 3 Edit, puis lint a rappelé les 2 imports inutilisés (`AccountTxOptions`, `ObservedTx`). Trois lignes d'erreur pour trois réflexes à corriger — note pour plus tard : **lire l'interface cible avant d'écrire ses appels, pas après**.
+
+### Dette technique résiduelle (tracée, YAGNI pour l'instant)
+
+- **Pas de cache d'agrégation** : `store.metrics()` lit la table entière à chaque `GET /metrics`. Sur des millions de lignes ça peut devenir lent. YAGNI tant que la table reste < ~100k lignes ; si bottleneck observé, ajouter un compteur cumulé en mémoire mis à jour à chaque `record()`.
+- **Le `AccountTxReader` du test stub ne respecte pas l'interface** : la signature est `accountTx(account, options?)` mais le stub ignore `account` et `options`. Acceptable en test, mais à aligner si quelqu'un copie-colle le pattern dans un test d'intégration plus large.
+- **CLI runtime** : on n'a toujours pas vérifié `/metrics` contre un **vrai** serveur booté avec `XRPL_WSS_URL` + `TIDE_INDEXED_ACCOUNTS` + `TIDE_SOURCE_TAG`. Le test couvre la composition, pas la réalité réseau — ce qui manque c'est le spike d'attribution lui-même (`ROADMAP §chemin critique #1`).
+
+**Bugs & fix.** Cf. la leçon ci-dessus (3 erreurs typecheck/lint corrigées en Edit) + `store as unknown as AttributionRecorder` (cast localisé, justifié dans le commentaire du test).
+
+**Prochain pas logiquement.** Tant que ce test passe + 0 régression sur les 515 autres : la chaîne est tenue. **Bloqueur suivant =** exécuter le spike d'attribution (chemin critique #1) sur le wallet d'Armand pour faire monter le compteur orga — pas ce qu'on peut tester sans mainnet.
+
+---
+
 ## 2026-07-01 — Perp v2 : revue de la PR adaptateur (audit 3 lentilles) + correctifs [piste v2]
 
 **Quoi.** Revue de la PR #2 (adaptateur viem + anti-rejeu) : tests re-joués (Foundry 40/40, e2e anvil, 515 TS) puis audit adversarial 3 lentilles (anti-rejeu contrat / adaptateur viem / address+service). Contrat anti-rejeu jugé sain. Correctifs appliqués à l'adaptateur/tests :
