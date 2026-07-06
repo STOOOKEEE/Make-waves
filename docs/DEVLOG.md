@@ -4,6 +4,20 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Fix critique MCP : les 4 outils Tâche 17 n'étaient pas enregistrés dans `tools/index.ts`
+
+**Quoi.** `packages/mcp/src/tools/index.ts` n'importait pas `mandate.ts`/`meta.ts`. Conséquence : le tableau `tools` exporté contenait **16 entrées** au lieu de 20 ; `tools/list` MCP exposait `get_market`/`get_markets`/`get_history`/`get_orderbook` + `get_balance`/`get_portfolio`/`get_positions`/`get_leaderboard` + `place_order`/`cancel_order` + `open_position`/`close_position` + `list_competitions`/`get_competition`/`join_competition`/`get_competition_leaderboard` — mais **PAS** `get_mandate`, `get_risk_limits`, `get_config`, `get_agent_status`. Code mort : les fichiers étaient testés (`tools-mandate.test.ts`, `tools-meta.test.ts`) mais jamais exposés. Diff : +2 imports + 4 entrées dans l'array `tools` à la fin. **670/670** (+1), typecheck vert, **0 cast**.
+
+**Pourquoi.** Les agents LLM (Claude Desktop inclus) ne peuvent **ni découvrir ni appeler** un outil qui n'est pas dans le tableau `tools` — la découverte passe par `tools/list` (contrat MCP), pas par l'arborescence de fichiers. Sans enregistrement, la Tâche 17 était 0 % effective pour les clients MCP. Le bug a été raté en revue parce que (1) les tests unitaires par fichier passent, et (2) le reviewer n'a pas vu l'absence d'import dans `index.ts`. Leçon : **pour tout ajout d'outil MCP, vérifier l'import + l'array `tools` dans `tools/index.ts`**, pas seulement la couverture de test du nouveau fichier.
+
+**Cheminement.** Diagnostic en lisant les 3 fichiers (`mandate.ts`/`meta.ts`/`index.ts`) → confirmation que les 4 exports existent mais que `index.ts` n'importe que 5 modules (`market`, `portfolio`, `trading-spot`, `trading-perp`, `competitions`) et pas les 2 modules meta. Fix : imports + 4 entrées ajoutées en queue d'array (cohérent avec l'ordre des imports). Nouveau test `tools-index.test.ts` (78 fichiers, **+1**) qui asserte en une passe : 20 outils présents dans l'ordre attendu, aucun doublon (deux outils avec le même `name` se shadow-eraient silencieusement dans `tools/list`), chaque outil a un `name`/`description` non-vide/`inputSchema` objet/`handler` callable. Ce test est le **garde-fou de régression** explicite pour ce bug précis.
+
+**Bugs & fix.** 1 incident de typecheck pendant l'impl : un premier jet du test utilisait `it.each(table)(name, fn)` qui a déclenché TS1110/TS1161 (erreurs de parsing TS dans cette combo vitest 1.6.1 + TS 5.4). Simplifié en un seul `it` qui boucle sur la liste — même valeur, surface debug minimale. Typecheck + tests verts ensuite.
+
+**Commit** : `71081fb`. **Rapport détaillé** : `.superpowers/sdd/task-17-fix-report.md`.
+
+---
+
 ## 2026-07-06 — AI Agent : `get_mandate` + `get_risk_limits` + `get_config` + `get_agent_status` (4 read-only meta tools) [Tâche 17/33]
 
 **Quoi.** 4 outils MCP **lecture-seule** (vs lecture+écriture T11-T16). `get_mandate()` → `{ mandate }` (null si pas branché). `get_risk_limits()` → `{ capitalMax, capitalEngaged, perteMaxJour, perteJour, maxTradesPerDay, tradesToday, maxLeverage, pairesAutorisees }` (placeholders explicites `capitalEngaged`/`perteJour`=0, traçables au câblage runtime). `get_config()` → `{ mode, sourceTag, availablePairs }` (config serveur). `get_agent_status()` → `{ agentId, status, hasLiveAccount, lastAction }` (dernière action via `actions.listByAgent(agentId, 1)`). Nouveau type **`PublicConfig`** dans `src/types.ts` + helper `defaultPublicConfig` dans `lib/public-config.ts` (mode paper, 9 majors alignées CoinGecko, réutilisé partout). `McpContext` étendu avec `config: PublicConfig` (requis, cohérent avec les autres deps critiques). **669/669** (+10 vs 659), typecheck 8/8 vert, **0 nouvelle** erreur lint (5 pré-existantes inchangées).
