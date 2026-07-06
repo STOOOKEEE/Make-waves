@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Agent, AgentStore, AgentType } from "../store/agent-store";
 import type { MandateStore } from "../store/mandate-store";
+import { agentBroadcaster } from "../sse/agent-broadcast";
 
 export interface CreateAgentInput {
   readonly userId: string;
@@ -11,7 +12,9 @@ export interface CreateAgentInput {
 /**
  * Service de gestion des agents : orchestre `AgentStore` + `MandateStore`.
  * Le kill d'un agent révoque automatiquement tous ses mandats actifs.
- * Pas d'I/O au constructeur, pas de diffusion SSE ici (ajoutée en Task 18).
+ * Pas d'I/O au constructeur ; le kill diffuse l'événement sur le bus SSE
+ * (`agentBroadcaster`) pour que les clients connectés (dashboards, UI agents)
+ * soient notifiés en temps réel.
  */
 export class AgentService {
   constructor(
@@ -46,8 +49,12 @@ export class AgentService {
     return this.agents.listByUser(userId);
   }
 
-  /** Tue un agent (status=stopped) et révoque tous ses mandats actifs. */
-  async kill(id: string): Promise<Agent> {
+  /**
+   * Tue un agent (status=stopped), révoque tous ses mandats actifs, puis
+   * diffuse `agent_killed` sur le bus SSE. `reason?` est optionnel (libre,
+   * pas validé) — typiquement "manual", "risk_limit", etc.
+   */
+  async kill(id: string, reason?: string): Promise<Agent> {
     const updated = await this.agents.update(id, { status: "stopped" });
     const mandates = await this.mandates.listByAgent(id);
     await Promise.all(
@@ -55,6 +62,7 @@ export class AgentService {
         .filter((m) => m.status === "active")
         .map((m) => this.mandates.update(m.id, { status: "revoked" })),
     );
+    agentBroadcaster.emitEvent({ type: "agent_killed", agentId: id, reason });
     return updated;
   }
 

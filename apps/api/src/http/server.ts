@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import type { FastifyInstance } from "fastify";
 import type { PriceMap } from "@tide/core";
+import { agentBroadcaster } from "../sse/agent-broadcast";
 import type { BookDepth } from "../feed/binance-book-feed";
 import type { AttributionMetrics } from "@tide/xrpl";
 import type { Candle } from "../feed/klines";
@@ -340,6 +341,34 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       "/api/agents/:id/kill",
       async (request) => svc.kill(request.params.id),
     );
+
+    // Flux SSE des événements agent (`agent_killed`, `agent_action`, etc.).
+    // Header `text/event-stream`, hijack pour prendre la main sur la socket,
+    // ping commentaire toutes les 30 s pour garder la connexion ouverte
+    // (les proxies coupent au-delà de ~60 s d'inactivité).
+    app.get("/api/agents/events", (_req, reply) => {
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.hijack();
+
+      const send = (event: unknown) => {
+        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      };
+      const handler = (event: unknown) => send(event);
+      agentBroadcaster.on("event", handler);
+
+      // Keep-alive : commentaire SSE (`:`) — les navigateurs l'ignorent mais
+      // ça empêche les proxies de couper la connexion sur inactivité.
+      const interval = setInterval(() => reply.raw.write(": ping\n\n"), 30_000);
+
+      // Le client a fermé la connexion : on libère le listener et le timer
+      // sinon l'EventEmitter accumule des handlers et le process ne sort pas.
+      _req.raw.on("close", () => {
+        clearInterval(interval);
+        agentBroadcaster.off("event", handler);
+      });
+    });
   }
 
   if (deps.agentService !== undefined && deps.mandateService !== undefined) {
