@@ -12,6 +12,7 @@ import type {
   Broadcaster,
   McpContext,
   PaperBackend,
+  PerpBackend,
   PriceFeed,
   TradingBackend,
 } from "./types";
@@ -24,6 +25,7 @@ export interface ServerConfig {
   readonly priceFeed: PriceFeed;
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
+  readonly perp: PerpBackend;
   readonly actions: AgentActionsStore;
   readonly broadcaster?: Broadcaster;
 }
@@ -70,6 +72,7 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
         priceFeed: config.priceFeed,
         paper: config.paper,
         trading: config.trading,
+        perp: config.perp,
         actions: config.actions,
         broadcaster: config.broadcaster,
       };

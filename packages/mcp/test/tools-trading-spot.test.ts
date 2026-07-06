@@ -170,6 +170,14 @@ function makeCtx(opts: {
     priceFeed,
     paper,
     trading: opts.trading,
+    perp: {
+      async openPosition() {
+        return { positionId: "p", entryPrice: 0, liquidationPrice: 0 };
+      },
+      async closePosition() {
+        return { realizedPnl: 0 };
+      },
+    },
     actions: opts.actions,
     broadcaster: opts.broadcaster,
   };

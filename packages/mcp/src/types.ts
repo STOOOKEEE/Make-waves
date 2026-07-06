@@ -61,6 +61,7 @@ export interface McpContext {
   readonly priceFeed: PriceFeed;
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
+  readonly perp: PerpBackend;
   readonly actions: AgentActionsStore;
   /** Optional SSE broadcaster — emits one event per successful agent action. */
   readonly broadcaster?: Broadcaster;
@@ -94,6 +95,25 @@ export interface PaperBackend {
   ): Promise<{ balances: Record<string, number>; equity: number; pnl: number }>;
   listPositions(userId: string): Promise<unknown[]>;
   getLeaderboard(limit: number): Promise<unknown[]>;
+}
+
+/** Backend façade pour les positions perp à levier (impl concrète dans @tide/api). */
+export interface PerpBackend {
+  openPosition(input: {
+    userId: string;
+    symbol: string;
+    side: "long" | "short";
+    qty: number;
+    leverage: number;
+    margin?: number;
+    tp?: number;
+    sl?: number;
+    clientOrderId?: string;
+  }): Promise<{ positionId: string; entryPrice: number; liquidationPrice: number }>;
+  closePosition(input: {
+    userId: string;
+    positionId: string;
+  }): Promise<{ realizedPnl: number }>;
 }
 
 export interface MarketRow {

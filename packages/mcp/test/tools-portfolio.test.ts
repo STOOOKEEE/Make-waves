@@ -110,6 +110,14 @@ function makeCtx(paper: PaperBackend): McpContext {
         return 0;
       },
     },
+    perp: {
+      async openPosition() {
+        return { positionId: "p", entryPrice: 0, liquidationPrice: 0 };
+      },
+      async closePosition() {
+        return { realizedPnl: 0 };
+      },
+    },
   };
 }
 

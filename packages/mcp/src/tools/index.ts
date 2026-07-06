@@ -13,6 +13,7 @@ import {
   getLeaderboardTool,
 } from "./portfolio";
 import { placeOrderTool, cancelOrderTool } from "./trading-spot";
+import { openPositionTool, closePositionTool } from "./trading-perp";
 
 export interface ToolDef {
   readonly name: string;
@@ -32,4 +33,6 @@ export const tools: readonly ToolDef[] = [
   getLeaderboardTool,
   placeOrderTool,
   cancelOrderTool,
+  openPositionTool,
+  closePositionTool,
 ];

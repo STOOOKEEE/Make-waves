@@ -4,6 +4,7 @@ import type {
   Mandate,
   McpContext,
   PaperBackend,
+  PerpBackend,
   PriceFeed,
   TradingBackend,
 } from "../types";
@@ -24,6 +25,7 @@ export interface ContextStores {
   readonly priceFeed: PriceFeed;
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
+  readonly perp: PerpBackend;
   readonly actions: AgentActionsStore;
 }
 
@@ -52,6 +54,7 @@ export async function loadContext(
     priceFeed: stores.priceFeed,
     paper: stores.paper,
     trading: stores.trading,
+    perp: stores.perp,
     actions: stores.actions,
   };
 }
