@@ -216,4 +216,24 @@ describe("useAgent", () => {
     // disconnectSse reste idempotent après unmount
     expect(() => composed.disconnectSse()).not.toThrow();
   });
+
+  it("connectSse est idempotent : un 2e appel ne crée pas de nouvel EventSource", () => {
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
+    const instances: FakeEventSource[] = [];
+    const FakeCtor = function (url: string) {
+      const instance = new FakeEventSource(url);
+      instances.push(instance);
+      return instance;
+    } as unknown as typeof EventSource;
+    vi.stubGlobal("EventSource", FakeCtor);
+
+    const wrapper = mountAgent(clientWith({}));
+    const composed = ctxOf(wrapper);
+    composed.connectSse();
+    composed.connectSse();
+    composed.connectSse();
+
+    expect(instances.length).toBe(1);
+    wrapper.unmount();
+  });
 });
