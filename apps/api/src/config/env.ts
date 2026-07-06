@@ -151,3 +151,20 @@ export function readXamanCredentials(): XamanCredentials | undefined {
   }
   return { apiKey, apiSecret };
 }
+
+/**
+ * Master key AES-256-GCM (32 bytes / 64 hex chars) utilisée pour chiffrer les
+ * clés privées XRPL des agents au repos. Validée strictement quand déclarée
+ * (mauvais format = config cassée, on lève). `undefined` si non déclarée —
+ * l'agent-service Live ne peut alors pas tourner, mais l'API reste démarrable.
+ */
+export function readAgentKeyMaster(): string | undefined {
+  const raw = optional("TIDE_AGENT_KEY_MASTER");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error("TIDE_AGENT_KEY_MASTER must be 64 hex chars (32 bytes)");
+  }
+  return raw;
+}

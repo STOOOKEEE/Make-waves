@@ -14,9 +14,11 @@
     "@fastify/cors": "^11.2.0",
     "@tide/client": "workspace:*",
     "@tide/core": "workspace:*",
+    "@tide/mcp": "workspace:*",
     "@tide/xrpl": "workspace:*",
     "dotenv": "^17.4.2",
     "fastify": "^5.2.0",
-    "xumm-sdk": "^1.11.2"
+    "xumm-sdk": "^1.11.2",
+    "xrpl": "^4.6.0"
   }
 }
