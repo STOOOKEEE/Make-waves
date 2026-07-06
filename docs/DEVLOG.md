@@ -4,6 +4,48 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — `@tide/client` : 3 DTOs + 9 méthodes agents/mandates/agentActions + routes serveur [Tâche 23/33]
+
+**Quoi.** Étend `@tide/client` avec 9 méthodes typées pour piloter agents + mandats + historique d'actions : `agents(userId)` / `agent(id)` / `createAgent(input)` / `updateAgent(id, patch)` / `deleteAgent(id)` / `killAgent(id)` / `mandates(agentId)` / `createMandate(input)` / `agentActions(agentId, limit?)`. Nouveaux types `AgentDto`/`MandateDto`/`AgentActionDto` (miroirs des types domaine). `ApiMethod` étendu (`PATCH`/`DELETE` ajoutés à `ApiRequest.method`). Côté `apps/api` (additif, requis par les méthodes client) : 4 routes nouvelles (`PATCH /api/agents/:id`, `DELETE /api/agents/:id`, `GET /api/mandates?agentId=...`, `GET /api/agent-actions?agentId=...&limit=N`), `AgentService.update` (délégation store), `MandateService.listByAgent`, `parseUpdateAgent` (filtre name/type/status au bord), `agentActionsStore?: AgentActionsStore` dans `AppConfig` + `ServerDeps`. **701/701** (+6), typecheck 8/8 vert, lint : 5 erreurs **pré-existantes** inchangées (vérifié via `git stash` baseline), **0 cast**, **0 dépendance** ajoutée.
+
+**Pourquoi.** Les Tâches 4-5 ont livré `AgentService` + `MandateService` + `AgentActionsStore` côté serveur, et les Tâches 11-22 ont exposé la lecture/écriture côté MCP — mais **le client front n'avait aucun moyen de piloter ces surfaces depuis l'UI**. Les agents sont censés vivre dans le front (dashboard de monitoring, kill switch, audit LLM) ; sans méthodes `TideClient.agents/...`, le front ne pouvait que passer par des fetch manuels non typés. Cette tâche ferme la boucle client.
+
+**Cheminement (4 écarts au brief, tous défendables — pattern additif T11-T22).**
+- **9 méthodes au lieu des 7 snippets Step 1.** Le brief Step 1 montre 7 snippets mais le titre + consigne d'implémentation annonçaient 9 (avec `updateAgent`/`deleteAgent`). Les 2 manquants ont forcé l'ajout des routes `PATCH /api/agents/:id` et `DELETE /api/agents/:id` côté serveur.
+- **`AgentService.update(id, patch)` exposé** alors qu'il n'existait que côté store. Délégation pure (1 ligne) ; le **filtrage des champs patchables vit dans le parseur HTTP** (`parseUpdateAgent`), pas dans le service — défense au bord, pas en profondeur.
+- **`agentActions(agentId, limit?)` accepte un `limit` optionnel côté client** (le brief Step 1 ne précise pas). Décision pratique : si le front veut tuner plus tard, pas besoin de reforker le client. Le serveur borne déjà à `[1, 200]`.
+- **`MandateDto.style`/`status` typés `string` (pas l'union littérale)** : aligné sur la consigne du brief (`string | null`, `string`). Le front ne dépend pas des enums domaine côté serveur.
+
+**Modifications collatérales (8 fichiers, additive-only).**
+- `packages/client/src/client.ts` : 3 DTOs + 9 méthodes (+163 lignes).
+- `packages/client/src/transport.ts` : type `ApiMethod` extrait, étendu `ApiRequest.method` (+5).
+- `packages/client/test/agent-client.test.ts` : **créé** — 6 tests suivant le pattern `stub(responder)` de `client.test.ts`.
+- `apps/api/src/services/agent-service.ts` : `update` ajouté (+5).
+- `apps/api/src/services/mandate-service.ts` : `listByAgent` ajouté (+3).
+- `apps/api/src/http/parse.ts` : const `AGENT_STATUSES` + `parseUpdateAgent` (+44).
+- `apps/api/src/http/server.ts` : `agentActionsStore` dep + 4 routes nouvelles (+78).
+- `apps/api/src/app.ts` : `agentActionsStore` threadé dans `AppConfig` + `buildServer` (+3).
+
+**Décisions de design clés.**
+- **`updateAgent` autorise uniquement `name/type/status`** côté parser HTTP. `id`/`userId`/`hasLiveAccount`/`createdAt`/`updatedAt` ne sont pas patchables : la sécurité est **au bord** (parseur), pas dans le service. Le service laisse passer le `patch` au store, mais le parseur refuse tout autre champ → 400.
+- **`deleteAgent` renvoie `{deleted: true}` (200)** plutôt que 204 No Content : cohérent avec le pattern `live-account` (`{revoked: true}`), évite les pièges Fastify 204 + corps vide côté client.
+- **`mandates` et `agent-actions` exigent `agentId`** en query string : manquant → 400 (cohérent avec `GET /api/agents?userId=`).
+- **`agentActions` est `READ-ONLY` HTTP** : pas de route `POST /api/agent-actions` — l'écriture est faite côté MCP (`AgentActionsStore.record()`). Volontaire : l'API ne doit pas être un point d'entrée pour les actions (l'audit est côté MCP, pas côté API).
+
+**Bugs & fix.** 1 incident typecheck : `ApiRequest.method` n'autorisait que `"GET" | "POST"` → ajout de `"PATCH" | "DELETE"` via le type `ApiMethod` (1 ligne dans transport.ts). Aucun bug bloquant en logique.
+
+**Dette tracée.**
+- **Pas de câblage runtime `agentActionsStore` dans `main.ts`** : la route est montée si le store est passé à `createApp` (`agentActionsStore?: AgentActionsStore`), mais `main.ts` ne l'instancie pas. Identique au pattern `agentService`/`mandateService`/`agentXrplAccountService` : ces services sont **prêts**, leur activation runtime viendra avec le câblage MCP↔API (Tâches câblage).
+- **Pas de test `inject()` côté API** pour les nouvelles routes : le code est trivial (délégations pures du service vers le store), déjà couvert par les tests unitaires client (chaque méthode vérifie `path`/`method` exacts via `stub`). YAGNI cette granularité.
+- **`killAgent` vs `deleteAgent`** : sémantiquement distincts. `kill` met `status=stopped` (réversible ? non — `status` reste figé). `delete` supprime définitivement. Pas de route `restore` : si l'utilisateur regrette, il recrée un agent via `createAgent`. Documenté dans le JSDoc des méthodes.
+- **`updateAgent` ne notifie pas le SSE `agent_killed`** : c'est volontaire — seul `kill` diffuse (cf. T18). Une mise à jour de `status="paused"` n'est pas un événement de bord. Si on veut un jour broadcaster les status changes, à brancher dans `AgentService.update` (et non côté route, pour cohérence avec le pattern kill).
+
+**Suite logique.** **Câblage runtime** : instancier `SqliteAgentActionsStore` dans `main.ts`, le passer via `AppConfig.agentActionsStore`. Routes actives automatiquement. **Tools MCP consommateurs** (YAGNI) : `get_agent_actions` côté MCP pourrait appeler `client.agentActions(agentId, limit)` pour exposer l'historique aux LLMs.
+
+**Rapport détaillé** : `.superpowers/sdd/task-23-report.md`. **Commit** : `9e33f3a`.
+
+---
+
 ## 2026-07-06 — Agent : 2 routes HTTP `POST/DELETE /api/agents/:id/live-account` (provision + revoke) + fix latent `AgentNotFoundError.name` [Tâche 21/33]
 
 **Quoi.** Deux routes HTTP pour piloter le compte XRPL Live d'un agent via le service livré en T20. `POST /api/agents/:id/live-account` → `live.generate(agentId)` (génère un wallet chiffré, 200). `DELETE /api/agents/:id/live-account` → `live.revoke(agentId)` (idempotent, 200). v1 n'implémente que `generate` ; un body `{ seed: "..." }` (import d'un wallet existant) → 501. Parser `parseProvisionLiveAccount(body)` dans `apps/api/src/http/parse.ts` accepte `{ seed?: string }` (string non vide si présente). `ServerDeps.agentXrplAccountService?` ajouté, routes montées en bloc autonome (le service apporte son propre `AgentStore`). **689/689** (+7), typecheck vert 7/7, **0 nouvelle** erreur lint (5 pré-existantes inchangées), **0 cast**, **0 dépendance** ajoutée.
