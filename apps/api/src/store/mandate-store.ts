@@ -28,6 +28,7 @@ export interface MandateStore {
 export class MandateNotFoundError extends Error {
   constructor(id: string) {
     super(`Mandate ${id} not found`);
+    this.name = "MandateNotFoundError";
   }
 }
 

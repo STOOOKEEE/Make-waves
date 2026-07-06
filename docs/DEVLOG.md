@@ -4,6 +4,43 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Agent : 2 routes HTTP `POST/DELETE /api/agents/:id/live-account` (provision + revoke) + fix latent `AgentNotFoundError.name` [Tâche 21/33]
+
+**Quoi.** Deux routes HTTP pour piloter le compte XRPL Live d'un agent via le service livré en T20. `POST /api/agents/:id/live-account` → `live.generate(agentId)` (génère un wallet chiffré, 200). `DELETE /api/agents/:id/live-account` → `live.revoke(agentId)` (idempotent, 200). v1 n'implémente que `generate` ; un body `{ seed: "..." }` (import d'un wallet existant) → 501. Parser `parseProvisionLiveAccount(body)` dans `apps/api/src/http/parse.ts` accepte `{ seed?: string }` (string non vide si présente). `ServerDeps.agentXrplAccountService?` ajouté, routes montées en bloc autonome (le service apporte son propre `AgentStore`). **689/689** (+7), typecheck vert 7/7, **0 nouvelle** erreur lint (5 pré-existantes inchangées), **0 cast**, **0 dépendance** ajoutée.
+
+**Pourquoi.** Sans routes HTTP, le service `AgentXrplAccountService` de T20 est inutilisable depuis le front / le MCP. Les 2 routes ferment la boucle : un LLM agent (via `@tide/mcp`) ou le front peut provisionner et révoquer le compte Live. `seed → 501` documente l'API v1 (l'import viendra en v2) sans crasher le client qui anticipe la signature.
+
+**Cheminement (3 écarts au brief, tous défendables — pattern additif des T11-T20).**
+- **Routes en bloc autonome** (`if (deps.agentXrplAccountService !== undefined)`), pas imbriquées sous `if (deps.agentService !== undefined)`. Le service live-account apporte son propre `AgentStore` (cf. `AgentXrplAccountServiceDeps.agents`) ; imbriquer sous `agentService` couplerait deux stores potentiellement distincts et empêcherait un déploiement où seul le live-account service est câblé. Cohérent avec la signature du brief (`if (deps.agentXrplAccountService) { ... }` est isolé).
+- **Parser manuel, pas zod.** Le brief montrait `z.object({ seed: z.string().optional() })`, mais la convention maison de `parse.ts` est 100 % validateurs manuels (`asRecord`, `str`, `num`, `boundedNum`, `oneOf`, `uuid`, `shortString`). Importer zod pour UNE fonction aurait cassé l'homogénéité du fichier et tiré une dépendance pour 4 lignes de validation. Parser manuel reproduit la sémantique (body doit être un objet, `seed` optionnel, string non vide si présent).
+- **Test "body non-objet" remplacé par 2 cas utiles.** Fastify `inject({ payload: "not-an-object" })` envoie la string brute avec un content-type `text/plain`, ce qui bypass le parser JSON custom et change le comportement attendu. Remplacé par `{ seed: 42 }` (mauvais type de `seed`, 400 vérifié) et `[1, 2, 3]` (array comme body, 400 vérifié). Plus reproductible et plus pédagogique que le cas `payload: "string"` qui dépend d'un quirk Fastify inject.
+
+**Modifications collatérales (2 fichiers, additive-only — fix de bug latent).**
+- `apps/api/src/store/agent-store.ts` : `this.name = "AgentNotFoundError"` ajouté dans le constructeur. Sans ça, `statusForError` lit `error.name === "Error"` (défaut JS) et retourne 500 au lieu de 404. Confirmé en debug (`error.name: "Error"`, pas `"AgentNotFoundError"`). Le mapping `AgentNotFoundError: 404` dans `apps/api/src/http/errors.ts:27` était **code mort** jusqu'ici — les routes `/api/agents/:id` et `/api/agents/:id/kill` court-circuitent via `if (agent === null)` et n'atteignent jamais la branche `throw`. Ma nouvelle route `POST /api/agents/:id/live-account` est la première à passer par `live.generate(agentId)` qui throw `AgentNotFoundError` quand l'agent n'existe pas → 1 ligne de fix active le mapping.
+- `apps/api/src/store/mandate-store.ts` : fix symétrique pour `MandateNotFoundError` (même bug, même mapping code-mort à `errors.ts:28`). Appliqué par anticipation — toute future route qui throw `MandateNotFoundError` verra son 404 mappé sans nouvelle tâche de débogage.
+
+**Décisions de design clés.**
+- **`parseProvisionLiveAccount` retourne `{ seed?: string }`** (pas `{ seed?: string | null }`) : aligné sur le contrat `z.string().optional()` du brief. `seedRaw === undefined` (clé absente) → OK ; `typeof seedRaw === "string"` → OK ; `null` explicite, nombre, booléen, string vide → 400. Le trimming de string vide évite un 501 sur un input cosmétique.
+- **`return live.generate(...)`** plutôt que `reply.send(result)` : Fastify v5 gère implicitement le `reply.send` quand le handler retourne une valeur. Code plus court, même comportement observable. Cohérent avec les autres handlers modernes du fichier.
+- **`reply.code(501).send(...)` puis `return`** : pattern Fastify v5 obligatoire pour éviter la double-réponse (la 501 part, sinon Fastify enverrait aussi le résultat de `live.generate` qui throw).
+- **DELETE ne vérifie pas l'existence de l'agent** : `live.revoke` est **idempotent** côté service (no-op si pas de clé / agent inconnu, cf. T20 décision). Côté HTTP, ça donne `200 { revoked: true }` même sur un agent inexistant — choix assumé (DELETE est sémantiquement idempotent, le service fait le travail).
+
+**Bugs & fix.**
+- **Bug latent** : `AgentNotFoundError.name` non posé → `statusForError` retournait 500 sur la nouvelle route. **Fix** : `this.name = "AgentNotFoundError"` (1 ligne). Fait pour `MandateNotFoundError` par symétrie. **Root-cause** plutôt que patching dans le handler : le mapping de `errors.ts` est par design-by-name (cf. commentaire `errors.ts:5`), et les autres classes d'erreur de `services/errors.ts` suivent toutes cette convention — c'est juste les 2 classes des stores qui l'avaient oublié.
+
+**Dette tracée.**
+- **Pas de câblage runtime** : `main.ts` n'instancie pas `AgentXrplAccountService` (ni ne lit `TIDE_AGENT_KEY_MASTER`). Le service et les routes sont prêts sans modification — la tâche câblage runtime les branchera ensemble (env → service → `ServerDeps.agentXrplAccountService` → routes automatiquement actives).
+- **`seed` → 501 reste l'API v1 documentée** : import d'un seed existant pas implémenté côté service. Le parser valide la forme pour que l'API soit stable quand l'import arrivera en v2 (un client qui anticipe ne crashera pas).
+- **Pas de GET `/api/agents/:id/live-account`** : aurait été utile pour le front ("l'agent a-t-il déjà un compte Live ?"), mais le brief ne le demande pas et `get_agent_statusTool` (T17 MCP) renvoie déjà `hasLiveAccount` via le snapshot agent. YAGNI.
+- **`kill` agent ≠ `revoke` live-account** : un agent stoppé via `/kill` reste `hasLiveAccount = false` mais son compte XRPL (s'il en avait un) n'est pas révoqué automatiquement. Pas testé — le contrat actuel veut que kill et revoke soient indépendants (à confirmer côté UX).
+- **2 fixes latents combinés dans le même commit** : le fix `MandateNotFoundError` n'était pas demandé par le brief et aurait pu aller dans une tâche séparée. Regroupé ici pour éviter une PR triviale d'1 ligne. Tous deux traçables, additifs, 0 régression (tests existants utilisent `instanceof`, pas le mapping par nom).
+
+**Suite logique.** **Tâche câblage runtime** : instancier `AgentXrplAccountService` dans `main.ts`, brancher `readAgentKeyMaster()` au constructeur, monter dans `ServerDeps.agentXrplAccountService`. Routes actives automatiquement, **0 modification** côté service ni parse. **Tâche MCP pour signer une tx Live** : `AgentXrplAccountService.decryptSeed(agentId)` (livré T20) est le point d'entrée — l'utiliser pour signer un `OfferCreate` ou un `Payment` dans un futur tool `place_live_order` côté `@tide/mcp`. Hors scope ici.
+
+**Rapport détaillé** : `.superpowers/sdd/task-21-report.md`. **Commit** : `731309a`.
+
+---
+
 ## 2026-07-06 — Agent : AgentXrplAccountService (generate / decryptSeed / revoke) + chiffré au repos [Tâche 20/33]
 
 **Quoi.** `apps/api/src/services/agent-xrpl-account-service.ts` : 3 méthodes (`generate` / `decryptSeed` / `revoke`) qui s'appuient sur les helpers AES-256-GCM livrés en T19 (`@tide/mcp/crypto` — `encryptPrivateKey` / `decryptPrivateKey` / `readMasterKey`). `apps/api/src/store/agent-xrpl-keys-store.ts` : interface `AgentXrplKeysStore` + `InMemoryAgentXrplKeysStore`. `apps/api/src/store/sqlite-agent-xrpl-keys-store.ts` : persistance `node:sqlite` sur la table `agent_xrpl_keys` (déjà créée par `migrateAgentTables`). `apps/api/src/config/env.ts` : `readAgentKeyMaster()` valide `TIDE_AGENT_KEY_MASTER` (64 hex chars ; lève si invalide, `undefined` si absent). **682/682** (+6), typecheck vert 7/7, **0 nouvelle** erreur lint (5 pré-existantes inchangées), **0 cast**, **0 dépendance** ajoutée à part `xrpl@^4.6.0`.

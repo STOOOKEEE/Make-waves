@@ -11,6 +11,7 @@ import type { PaperService } from "../services/paper-service";
 import type { CompetitionService } from "../services/competition-service";
 import type { AgentService } from "../services/agent-service";
 import type { MandateService } from "../services/mandate-service";
+import type { AgentXrplAccountService } from "../services/agent-xrpl-account-service";
 import type { XamanPayloadApi } from "../xaman/sign-request";
 import {
   createBuyInSignRequest,
@@ -29,6 +30,7 @@ import {
   parseLiveOfferRequest,
   parseOpenPosition,
   parseOrder,
+  parseProvisionLiveAccount,
   parseSignMandateCallback,
   parseUserId,
 } from "./parse";
@@ -94,6 +96,8 @@ export interface ServerDeps {
   readonly agentService?: AgentService;
   /** Service de gestion des mandats (routes /api/mandates, /api/sign/mandate-callback) — absent si pas câblé. */
   readonly mandateService?: MandateService;
+  /** Service de provision/révocation du compte XRPL Live d'un agent (Tâche 21) — absent si pas câblé. */
+  readonly agentXrplAccountService?: AgentXrplAccountService;
 }
 
 /**
@@ -384,6 +388,34 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       const body = parseSignMandateCallback(request.body);
       return mandateSvc.onSignCallback(body);
     });
+  }
+
+  // Provision / révocation du compte XRPL Live d'un agent (Tâche 21).
+  // v1 : seul `generate()` (création d'un wallet) est implémenté côté service ;
+  // un `seed` dans le body (import d'un wallet existant) renvoie 501.
+  // `revoke` est idempotent côté service (no-op si pas de clé / agent inconnu).
+  if (deps.agentXrplAccountService !== undefined) {
+    const live = deps.agentXrplAccountService;
+    app.post<{ Params: { id: string } }>(
+      "/api/agents/:id/live-account",
+      async (request, reply) => {
+        const body = parseProvisionLiveAccount(request.body);
+        if (body.seed !== undefined) {
+          return reply
+            .code(501)
+            .send({ error: "Seed import not implemented in v1" });
+        }
+        return live.generate(request.params.id);
+      },
+    );
+
+    app.delete<{ Params: { id: string } }>(
+      "/api/agents/:id/live-account",
+      async (request) => {
+        await live.revoke(request.params.id);
+        return { revoked: true };
+      },
+    );
   }
 
   return app;

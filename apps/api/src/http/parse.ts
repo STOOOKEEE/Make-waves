@@ -325,3 +325,23 @@ export function parseSignMandateCallback(body: unknown): { mandateId: string; si
   const signature = shortString(obj, "signature", "signMandateCallback", 2000);
   return { mandateId, signature };
 }
+
+/**
+ * Corps de provision d'un compte Live (POST /api/agents/:id/live-account).
+ * v1 : seul `generate()` (création d'un nouveau wallet) est implémenté.
+ * `seed` est parsé pour valider la forme et documenter l'API, mais l'import
+ * d'un seed existant renvoie 501 côté route (cf. Tâche 21).
+ */
+export function parseProvisionLiveAccount(body: unknown): { seed?: string } {
+  const obj = asRecord(body, "provisionLiveAccount");
+  const seedRaw = obj["seed"];
+  if (seedRaw === undefined) {
+    return {};
+  }
+  if (typeof seedRaw !== "string" || seedRaw.trim() === "") {
+    throw new BadRequestError(
+      'provisionLiveAccount: "seed" doit être une string non vide',
+    );
+  }
+  return { seed: seedRaw };
+}

@@ -23,6 +23,7 @@ export interface AgentStore {
 export class AgentNotFoundError extends Error {
   constructor(id: string) {
     super(`Agent ${id} not found`);
+    this.name = "AgentNotFoundError";
   }
 }
 
