@@ -181,6 +181,7 @@ import type { CreateMandateInput } from "../services/mandate-service";
 import type { MandateStyle } from "../store/mandate-store";
 
 const AGENT_TYPES = ["external", "integrated"] as const;
+const AGENT_STATUSES = ["active", "paused", "stopped"] as const;
 const MANDATE_STYLES = [
   "momentum",
   "mean_reversion",
@@ -264,6 +265,47 @@ export function parseCreateAgent(body: unknown): CreateAgentInput {
     "type",
   );
   return { userId, name, type };
+}
+
+/**
+ * Corps de mise à jour partielle d'un agent (PATCH /api/agents/:id). Champs
+ * optionnels : `name?`, `type?`, `status?`. Au moins un champ requis (sinon
+ * la requête est un no-op silencieux — on lève pour le détecter).
+ */
+export function parseUpdateAgent(body: unknown): {
+  name?: string;
+  type?: "external" | "integrated";
+  status?: "active" | "paused" | "stopped";
+} {
+  const obj = asRecord(body, "updateAgent");
+  const patch: {
+    name?: string;
+    type?: "external" | "integrated";
+    status?: "active" | "paused" | "stopped";
+  } = {};
+  if (obj["name"] !== undefined) {
+    patch.name = shortString(obj, "name", "updateAgent", 60);
+  }
+  if (obj["type"] !== undefined) {
+    patch.type = oneOf(
+      shortString(obj, "type", "updateAgent", 20),
+      AGENT_TYPES,
+      "updateAgent",
+      "type",
+    );
+  }
+  if (obj["status"] !== undefined) {
+    patch.status = oneOf(
+      shortString(obj, "status", "updateAgent", 20),
+      AGENT_STATUSES,
+      "updateAgent",
+      "status",
+    );
+  }
+  if (patch.name === undefined && patch.type === undefined && patch.status === undefined) {
+    throw new BadRequestError('updateAgent: au moins un champ "name"/"type"/"status" requis');
+  }
+  return patch;
 }
 
 /** Corps de création d'un mandat (POST /api/mandates). */

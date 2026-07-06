@@ -60,6 +60,11 @@ export class MandateService {
     return this.store.getActive(agentId);
   }
 
+  /** Liste tous les mandats d'un agent (tous statuts). */
+  listByAgent(agentId: string): Promise<Mandate[]> {
+    return this.store.listByAgent(agentId);
+  }
+
   /**
    * Callback Xaman : passe un mandat `pending` en `active`, enregistre la
    * signature et l'horodatage. Refuse tout autre état.

@@ -157,6 +157,52 @@ export interface AttributionMetrics {
   readonly txCount: number;
 }
 
+// --- Agents / mandats / actions ---
+// DTO miroirs des types domaine côté `apps/api`. On garde les unions
+// littérales pour `type` / `status` agent (validation au bord côté serveur).
+
+/** Agent LLM piloté sous mandat : identifiant, propriétaire, état. */
+export interface AgentDto {
+  readonly id: string;
+  readonly userId: string;
+  readonly name: string;
+  readonly type: "external" | "integrated";
+  readonly status: "active" | "paused" | "stopped";
+  readonly hasLiveAccount: boolean;
+  readonly createdAt: number;
+  readonly updatedAt: number;
+}
+
+/** Mandat signé (ou en attente) d'un agent : bornes de risque + statut. */
+export interface MandateDto {
+  readonly id: string;
+  readonly agentId: string;
+  readonly userId: string;
+  readonly capitalMax: number;
+  readonly perteMaxJour: number;
+  readonly maxTradesPerDay: number;
+  readonly maxLeverage: number;
+  readonly pairesAutorisees: readonly string[];
+  readonly style: string | null;
+  readonly validUntil: number;
+  readonly signedAt: number | null;
+  readonly signature: string | null;
+  readonly status: string;
+}
+
+/** Action exécutée par un agent (tool MCP, résultat, éventuelle erreur). */
+export interface AgentActionDto {
+  readonly id: string;
+  readonly agentId: string;
+  readonly userId: string;
+  readonly toolName: string;
+  readonly toolParams: string;
+  readonly result: string | null;
+  readonly error: string | null;
+  readonly idempotencyKey: string | null;
+  readonly executedAt: number;
+}
+
 function path(...segments: string[]): string {
   return "/" + segments.map((s) => encodeURIComponent(s)).join("/");
 }
@@ -397,6 +443,104 @@ export class TideClient {
       },
       201,
     );
+  }
+
+  // --- Agents / mandats / actions ---
+  // Le serveur valide les entrées au bord (`parseCreateAgent`,
+  // `parseUpdateAgent`, etc.) ; les champs sensibles (`userId`, `id`,
+  // `createdAt`) ne peuvent pas être forcés côté client.
+
+  /** Liste les agents d'un utilisateur. */
+  async agents(userId: string): Promise<AgentDto[]> {
+    return this.call(
+      { path: `/api/agents?userId=${encodeURIComponent(userId)}`, method: "GET" },
+      200,
+    );
+  }
+
+  /** Récupère un agent par id (404 si absent). */
+  async agent(id: string): Promise<AgentDto> {
+    return this.call({ path: path("api", "agents", id), method: "GET" }, 200);
+  }
+
+  /** Crée un agent (status=active, hasLiveAccount=false par défaut). */
+  async createAgent(input: {
+    userId: string;
+    name: string;
+    type: "external" | "integrated";
+  }): Promise<AgentDto> {
+    return this.call(
+      { path: "/api/agents", method: "POST", body: input },
+      201,
+    );
+  }
+
+  /**
+   * Mise à jour partielle (name/type/status). `id`/`userId`/`createdAt`/
+   * `hasLiveAccount` sont protégés côté serveur — le serveur filtre la diff.
+   */
+  async updateAgent(
+    id: string,
+    patch: { name?: string; type?: "external" | "integrated"; status?: "active" | "paused" | "stopped" },
+  ): Promise<AgentDto> {
+    return this.call(
+      { path: path("api", "agents", id), method: "PATCH", body: patch },
+      200,
+    );
+  }
+
+  /** Supprime un agent. Idempotent côté store (404 si absent). */
+  async deleteAgent(id: string): Promise<{ deleted: true }> {
+    return this.call(
+      { path: path("api", "agents", id), method: "DELETE" },
+      200,
+    );
+  }
+
+  /** Tue un agent (status=stopped + révocation des mandats actifs). */
+  async killAgent(id: string): Promise<AgentDto> {
+    return this.call(
+      { path: path("api", "agents", id, "kill"), method: "POST" },
+      200,
+    );
+  }
+
+  /** Liste les mandats d'un agent (tous statuts). */
+  async mandates(agentId: string): Promise<MandateDto[]> {
+    return this.call(
+      { path: `/api/mandates?agentId=${encodeURIComponent(agentId)}`, method: "GET" },
+      200,
+    );
+  }
+
+  /** Crée un mandat en status=pending (non signé). */
+  async createMandate(input: {
+    agentId: string;
+    userId: string;
+    capitalMax: number;
+    perteMaxJour: number;
+    maxTradesPerDay: number;
+    maxLeverage: number;
+    pairesAutorisees: readonly string[];
+    style: string | null;
+    validUntil: number;
+  }): Promise<MandateDto> {
+    return this.call(
+      { path: "/api/mandates", method: "POST", body: input },
+      201,
+    );
+  }
+
+  /**
+   * Historique d'actions d'un agent (alimenté côté MCP). `limit` borné
+   * côté serveur à [1, 200] ; défaut 100.
+   */
+  async agentActions(agentId: string, limit?: number): Promise<AgentActionDto[]> {
+    const qs =
+      limit === undefined
+        ? `?agentId=${encodeURIComponent(agentId)}`
+        : `?agentId=${encodeURIComponent(agentId)}&limit=${String(limit)}`;
+    return this.call({ path: `/api/agent-actions${qs}`, method: "GET" }, 200);
   }
 
   private async call<T>(request: ApiRequest, okStatus: number): Promise<T> {

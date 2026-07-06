@@ -12,6 +12,7 @@ import type { CompetitionService } from "../services/competition-service";
 import type { AgentService } from "../services/agent-service";
 import type { MandateService } from "../services/mandate-service";
 import type { AgentXrplAccountService } from "../services/agent-xrpl-account-service";
+import type { AgentActionsStore } from "../store/agent-actions-store";
 import type { XamanPayloadApi } from "../xaman/sign-request";
 import {
   createBuyInSignRequest,
@@ -32,6 +33,7 @@ import {
   parseOrder,
   parseProvisionLiveAccount,
   parseSignMandateCallback,
+  parseUpdateAgent,
   parseUserId,
 } from "./parse";
 
@@ -98,6 +100,8 @@ export interface ServerDeps {
   readonly mandateService?: MandateService;
   /** Service de provision/révocation du compte XRPL Live d'un agent (Tâche 21) — absent si pas câblé. */
   readonly agentXrplAccountService?: AgentXrplAccountService;
+  /** Store d'actions d'agent (route /api/agent-actions) — absent si pas câblé. */
+  readonly agentActionsStore?: AgentActionsStore;
 }
 
 /**
@@ -346,6 +350,25 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       async (request) => svc.kill(request.params.id),
     );
 
+    // Mise à jour partielle (name/type/status). Le service filtre les champs
+    // sensibles (id, userId, hasLiveAccount, createdAt/updatedAt).
+    app.patch<{ Params: { id: string } }>(
+      "/api/agents/:id",
+      async (request) => {
+        const patch = parseUpdateAgent(request.body);
+        return svc.update(request.params.id, patch);
+      },
+    );
+
+    // Suppression de l'agent (idempotent côté store : no-op si absent).
+    app.delete<{ Params: { id: string } }>(
+      "/api/agents/:id",
+      async (request) => {
+        await svc.delete(request.params.id);
+        return { deleted: true };
+      },
+    );
+
     // Flux SSE des événements agent (`agent_killed`, `agent_action`, etc.).
     // Header `text/event-stream`, hijack pour prendre la main sur la socket,
     // ping commentaire toutes les 30 s pour garder la connexion ouverte
@@ -384,10 +407,49 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return mandate;
     });
 
+    // Liste les mandats d'un agent (tous statuts). `agentId` requis.
+    app.get<{ Querystring: { agentId?: string } }>(
+      "/api/mandates",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        if (agentId === undefined || agentId.trim() === "") {
+          reply.code(400);
+          return { error: "agentId required" };
+        }
+        return mandateSvc.listByAgent(agentId);
+      },
+    );
+
     app.post("/api/sign/mandate-callback", async (request) => {
       const body = parseSignMandateCallback(request.body);
       return mandateSvc.onSignCallback(body);
     });
+  }
+
+  // Historique d'actions d'un agent (lecture-seule, alimenté par le MCP).
+  // `agentId` requis ; optionnellement `limit` borné à [1, 200] (défaut 100).
+  if (deps.agentActionsStore !== undefined) {
+    const actionsStore = deps.agentActionsStore;
+    app.get<{ Querystring: { agentId?: string; limit?: string } }>(
+      "/api/agent-actions",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        if (agentId === undefined || agentId.trim() === "") {
+          reply.code(400);
+          return { error: "agentId required" };
+        }
+        const rawLimit = request.query.limit;
+        const limit =
+          rawLimit === undefined || rawLimit.trim() === ""
+            ? 100
+            : Math.trunc(Number(rawLimit));
+        if (!Number.isFinite(limit) || limit < 1 || limit > 200) {
+          reply.code(400);
+          return { error: "limit must be an integer in [1, 200]" };
+        }
+        return actionsStore.listByAgent(agentId, limit);
+      },
+    );
   }
 
   // Provision / révocation du compte XRPL Live d'un agent (Tâche 21).

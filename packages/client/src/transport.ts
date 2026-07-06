@@ -1,7 +1,10 @@
+/** Méthodes HTTP supportées par le client. */
+export type ApiMethod = "GET" | "POST" | "PATCH" | "DELETE";
+
 /** Requête API abstraite (découplée de la lib HTTP). */
 export interface ApiRequest {
   readonly path: string;
-  readonly method: "GET" | "POST";
+  readonly method: ApiMethod;
   readonly body?: unknown;
 }
 
