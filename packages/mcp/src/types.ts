@@ -54,6 +54,19 @@ export interface AgentActionsStore {
   countToday(agentId: string, userId: string): Promise<number>;
 }
 
+/**
+ * Snapshot of Tide's runtime config exposed to MCP tools.
+ * Fed by the API at session start; safe-by-default values used by the bootstrap.
+ */
+export interface PublicConfig {
+  /** Trading mode exposure for this session. */
+  readonly mode: "paper" | "live";
+  /** XRPL SourceTag if the server is configured for on-chain attribution, else null. */
+  readonly sourceTag: number | null;
+  /** Symbols the agent may trade under this mandate (subset of platform markets). */
+  readonly availablePairs: readonly string[];
+}
+
 export interface McpContext {
   readonly agent: Agent;
   readonly userId: string;
@@ -64,6 +77,7 @@ export interface McpContext {
   readonly perp: PerpBackend;
   readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
+  readonly config: PublicConfig;
   /** Optional SSE broadcaster — emits one event per successful agent action. */
   readonly broadcaster?: Broadcaster;
 }

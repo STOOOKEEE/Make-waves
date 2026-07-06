@@ -18,6 +18,7 @@ import type {
   PerpBackend,
 } from "../src/types";
 import { McpError } from "../src/lib/errors";
+import { defaultPublicConfig } from "../src/lib/public-config";
 
 const baseAgent: Agent = {
   id: "a1",
@@ -180,6 +181,7 @@ function makeCtx(opts: {
     perp,
     competitions: opts.competitions,
     actions: opts.actions,
+    config: defaultPublicConfig,
   };
 }
 

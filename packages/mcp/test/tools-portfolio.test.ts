@@ -6,6 +6,7 @@ import {
   getLeaderboardTool,
 } from "../src/tools/portfolio";
 import type { Agent, Mandate, McpContext, PaperBackend, PriceFeed } from "../src/types";
+import { defaultPublicConfig } from "../src/lib/public-config";
 
 const baseAgent: Agent = {
   id: "a1",
@@ -132,6 +133,7 @@ function makeCtx(paper: PaperBackend): McpContext {
         return [];
       },
     },
+    config: defaultPublicConfig,
   };
 }
 

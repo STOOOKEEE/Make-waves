@@ -7,6 +7,7 @@ import type {
   PaperBackend,
   PerpBackend,
   PriceFeed,
+  PublicConfig,
   TradingBackend,
 } from "../types";
 import { McpError } from "./errors";
@@ -29,6 +30,7 @@ export interface ContextStores {
   readonly perp: PerpBackend;
   readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
+  readonly config: PublicConfig;
 }
 
 export async function loadContext(
@@ -59,5 +61,6 @@ export async function loadContext(
     perp: stores.perp,
     competitions: stores.competitions,
     actions: stores.actions,
+    config: stores.config,
   };
 }

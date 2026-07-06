@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { startMcpServer } from "../src/server";
+import { defaultPublicConfig } from "../src/lib/public-config";
 import type {
   AgentActionsStore,
   CompetitionBackend,
@@ -108,6 +109,7 @@ startMcpServer({
   perp: bootstrapPerp,
   competitions: bootstrapCompetitions,
   actions: bootstrapActions,
+  config: defaultPublicConfig,
 }).catch((err: unknown) => {
   // stderr uniquement — ne pas polluer stdout qui porte le protocole MCP.
   console.error("[tide-mcp] fatal:", err);

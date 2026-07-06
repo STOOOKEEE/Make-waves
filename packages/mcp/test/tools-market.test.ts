@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getMarketTool } from "../src/tools/market";
 import type { Agent, Mandate, McpContext, PriceFeed } from "../src/types";
 import { McpError } from "../src/lib/errors";
+import { defaultPublicConfig } from "../src/lib/public-config";
 
 const baseAgent: Agent = {
   id: "a1",
@@ -112,6 +113,7 @@ function makeCtx(priceFeed: PriceFeed): McpContext {
         return [];
       },
     },
+    config: defaultPublicConfig,
   };
 }
 

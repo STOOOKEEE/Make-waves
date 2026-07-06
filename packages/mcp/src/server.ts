@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { McpError, ERROR_CODES, sanitizeError } from "./lib/errors";
+import { defaultPublicConfig } from "./lib/public-config";
 import type {
   AgentActionsStore,
   Broadcaster,
@@ -15,6 +16,7 @@ import type {
   PaperBackend,
   PerpBackend,
   PriceFeed,
+  PublicConfig,
   TradingBackend,
 } from "./types";
 import { tools as allTools } from "./tools";
@@ -29,6 +31,7 @@ export interface ServerConfig {
   readonly perp: PerpBackend;
   readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
+  readonly config?: PublicConfig;
   readonly broadcaster?: Broadcaster;
 }
 
@@ -77,6 +80,7 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
         perp: config.perp,
         competitions: config.competitions,
         actions: config.actions,
+        config: config.config ?? defaultPublicConfig,
         broadcaster: config.broadcaster,
       };
       const result = await tool.handler(args ?? {}, ctx);
