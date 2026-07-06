@@ -48,6 +48,9 @@ const bootstrapTrading: TradingBackend = {
   async placeOrder() {
     throw new Error("trading non câblé — utiliser loadContext");
   },
+  async placeLiveOrder() {
+    throw new Error("live trading non câblé — utiliser loadContext");
+  },
   async cancelOrder() {
     throw new Error("trading non câblé — utiliser loadContext");
   },

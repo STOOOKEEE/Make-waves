@@ -41,6 +41,50 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Agent : Live mode dans `place_order` (signe `OfferCreate` avec le seed déchiffré de l'agent) [Tâche 22/33]
+
+**Quoi.** `place_order` route désormais vers `ctx.trading.placeLiveOrder(...)` quand `ctx.config.mode === "live"`, en passant le seed déchiffré (`ctx.liveCrypto.decryptAgentSeed(mandate.agentId)`) + l'adresse de l'agent au backend. `packages/mcp/src/tools/trading-live.ts` créé (delegate interne, **pas** un `ToolDef` — sinon shadow dans `tools/list`). `TradingBackend` étendu avec `placeLiveOrder(PlaceLiveOrderInput)` + types `PlaceLiveOrderInput`/`PlaceLiveOrderResult` + interface `LiveCryptoService` + `McpContext.liveCrypto?` (optionnelle, branchée au runtime). `placeOrderTool` branche **après** le `enforceRiskLimits` partagé (le guard est identique Paper/Live). Audit + SSE broadcast unifiés (le LLM voit `tool: "place_order"` quel que soit le mode). **695/695** (+6 vs 689 baseline), typecheck 8/8 vert, lint : 5 erreurs **pré-existantes** inchangées, **0 cast** `as any`/`as never`.
+
+**Pourquoi.** Le service `AgentXrplAccountService` (T20) sait déchiffrer le seed d'un agent, mais n'était **atteignable par aucun tool MCP**. Tâche 22 ferme cette boucle : un agent LLM qui passe en mode Live peut signer et soumettre un vrai `OfferCreate` (le `SourceTag` est posé par `planExecution` côté backend, F5/F13 — le trade remonte au compteur d'attribution). Sans ça, la stack agent-MCP est aveugle on-chain.
+
+**Cheminement (5 écarts au brief, tous défendables — pattern additif T11-T21).**
+- **`LiveCryptoService` interface typée plutôt que `ctx.decryptAgentSeed` direct.** Le brief référait une méthode ad-hoc sur `ctx`. Refacto : interface `LiveCryptoService { decryptAgentSeed(agentId) }` typée, exposée comme `ctx.liveCrypto?`. Avantage : contrat testable, API extensible (`signXamanPayload` plus tard sans toucher au `McpContext`).
+- **`trading-live.ts` n'exporte pas de `ToolDef`.** Le brief Step 1 dit "Create `trading-live.ts`" et Step 2 dit "Modify `placeOrderTool` to detect Live" → lecture honnête : c'est un **delegate interne**, pas une nouvelle entrée du registre. `tools/index.ts` reste à 20 outils (vérifié par `tools-index.test.ts`). Si on avait enregistré un `placeLiveOrderTool`, il aurait shadowé `place_order` dans `tools/list` (cf. bug T17).
+- **Risk guard exécuté une seule fois dans `trading-spot.ts` (et non dans `executeLiveOrder`).** Première version dupliquait `enforceRiskLimits` dans les deux chemins → corrigé : garde commune, appliquée en amont. Tests vérifient le chemin Live ET Paper.
+- **`TradingBackend.placeLiveOrder` étendu → 9 fakes de test ont reçu un stub `placeLiveOrder` (3 lignes chacun).** Signature TS structurelle : chaque implémentation (InMemory, bootstrap, fakes) doit fournir la méthode. Pattern additif des T11-T16 (`PerpBackend`, `CompetitionBackend` avaient forcé le même passage).
+- **6 tests au lieu de 3-5 minimum brief.** Couverture ajoutée : branching paper-vs-live (appel à `placeOrder` jamais fait quand `mode === "live"`), `RISK_LIMIT` AVANT le decrypt (le seed ne quitte jamais la DB si le guard refuse — vraie garantie de sécurité), `LiveCryptoService.not wired` (production env sans `TIDE_AGENT_KEY_MASTER`), `client_order_id` idempotency, broadcaster emit.
+
+**Modifications collatérales (16 fichiers, additive-only).**
+- `src/types.ts` : `LiveCryptoService` + `PlaceLiveOrderInput`/`PlaceLiveOrderResult` + extension `TradingBackend`/`McpContext` (+45).
+- `src/server.ts` : `ServerConfig.liveCrypto?` + propagation dans le `McpContext` (+4).
+- `src/lib/context.ts` : `ContextStores.liveCrypto?` threadé dans `loadContext` (+4).
+- `bin/tide-mcp.ts` : `bootstrapTrading.placeLiveOrder` throw-loud (+3).
+- **9 tests existants** : ajout d'un stub `async placeLiveOrder()` aux `TradingBackend` literals de `context.test.ts`, `tools-competitions.test.ts`, `tools-mandate.test.ts`, `tools-market-extras.test.ts`, `tools-market.test.ts`, `tools-meta.test.ts`, `tools-portfolio.test.ts`, `tools-trading-perp.test.ts`, `tools-trading-spot.test.ts` (+33). Sans ces ajouts, typecheck échouait (l'interface `TradingBackend` exige la méthode).
+
+**Décisions de design clés.**
+- **`ctx.liveCrypto?` optionnel** : bootstrap sans env → `liveCrypto` reste `undefined` et `executeLiveOrder` throw `TRADING_ERROR` avec message explicite ("LiveCryptoService not wired — set TIDE_AGENT_KEY_MASTER or run in Paper mode"). Pas d'erreur muette.
+- **Risk guard partagé en amont** : `capitalMax`/`perteMaxJour`/`maxTradesPerDay`/`pairesAutorisees` sont identiques Paper/Live (mêmes `Mandate`, mêmes règles du brief). Pas de duplication, pas de drift possible entre les deux chemins.
+- **Audit + broadcast unifiés** : `recordAction({toolName: "place_order", ...})` et `ctx.broadcaster?.emit({type: "agent_action", tool: "place_order", ...})` partent après le branch. Le LLM voit `tool: "place_order"` quel que soit le mode (cohérent avec le contrat MCP).
+- **`McpError` codes préservés** dans le catch : `RISK_LIMIT`, `MARKET_ERROR`, `MANDATE_INVALID`, `INVALID_PARAMS` remontent tels quels ; `TRADING_ERROR` enveloppe uniquement les throws non-`McpError` (panne backend Live). Le décodage de l'erreur backend vit dans le runtime.
+
+**Bugs & fix.**
+- **Risk guard supprimé par erreur** dans la 1re refacto de `placeOrderTool` (mis uniquement dans `executeLiveOrder`) → 2 tests `tools-trading-spot.test.ts` ont rouge (RISK_LIMIT non thrown sur paper). **Fix** : remettre le guard amont `placeOrderTool` avant le branch — `executeLiveOrder` ne re-garde plus. **Root-cause** : la garde fait partie du contrat tool, pas du delegate Live.
+- **`ExecuteLiveOrderInput` typé sans `userId`** → première itération incluait `userId: mandate.userId` dans l'intent literal → TS2353 ("unknown property"). **Fix** : retirer du literal ; `mandate.userId` lu directement dans `executeLiveOrder`.
+- **`FakeFeed` interface dans le nouveau test** incluait `priceFor` (typage local custom) → TS2561. **Fix** : retirer le champ `priceFor` de l'interface (utilisé seulement dans le closure interne).
+
+**Dette tracée.**
+- **`TradingBackend.placeLiveOrder` non implémentée côté `@tide/api`** : `bootstrapTrading` stub throw loud. **Câblage runtime à venir** : adapter `HttpTradingBackend` dans `apps/api` qui appellera `AgentXrplAccountService.decryptSeed(agentId)` → `Wallet.fromSeed(seed)` → construit `OfferCreate` taggé (via `buildLiveOffer` de `@tide/xrpl`) → soumis via Xaman/extension (selon décision orga F8/F10/F12). Hors scope cette tâche.
+- **`LiveCryptoService.decryptAgentSeed` retourne `{seed, address}`** — `address` lu depuis `AgentXrplKeysStore.publicKey` qui est en fait l'**adresse** (`rAGENT…`), pas la vraie Ed25519 publicKey (cf. dette tracée T20). Acceptable pour signer une tx XRPL.
+- **`slippageTolerance` dans `ExecuteLiveOrderInput` mais non utilisé par le code MCP** — forwardé à `PlaceLiveOrderInput`. La borne vit dans `planExecution` côté backend (F5/F13). Cohérent avec le brief.
+- **Pas de garde `mode === "live" && !agent.hasLiveAccount`** : on suppose que le runtime câblera cette garde (l'`AgentStore` sait que l'agent a un compte Live si `hasLiveAccount === true`). YAGNI pour cette tâche.
+- **Pas de test isolant `executeLiveOrder` directement** : tous les tests passent par `placeOrderTool` (qui est le seul caller). YAGNI pour cette granularité (la délégation interne est triviale).
+
+**Suite logique.** **Tâche câblage runtime** : impl concrète `TradingBackend` dans `apps/api`. `placeOrder` → `PaperService.placeOrder` (déjà branché). `placeLiveOrder` → nouveau : `AgentXrplAccountService.decryptSeed` → `Wallet.fromSeed` → `buildLiveOffer` (taggé `SourceTag`) → `XamanPayloadApi.create` (ou un adaptateur qui signe + submit direct). Le service et les tools sont **prêts sans modification**.
+
+**Rapport détaillé** : `.superpowers/sdd/task-22-report.md`. **Commit** : `321965f`.
+
+---
+
 ## 2026-07-06 — Agent : AgentXrplAccountService (generate / decryptSeed / revoke) + chiffré au repos [Tâche 20/33]
 
 **Quoi.** `apps/api/src/services/agent-xrpl-account-service.ts` : 3 méthodes (`generate` / `decryptSeed` / `revoke`) qui s'appuient sur les helpers AES-256-GCM livrés en T19 (`@tide/mcp/crypto` — `encryptPrivateKey` / `decryptPrivateKey` / `readMasterKey`). `apps/api/src/store/agent-xrpl-keys-store.ts` : interface `AgentXrplKeysStore` + `InMemoryAgentXrplKeysStore`. `apps/api/src/store/sqlite-agent-xrpl-keys-store.ts` : persistance `node:sqlite` sur la table `agent_xrpl_keys` (déjà créée par `migrateAgentTables`). `apps/api/src/config/env.ts` : `readAgentKeyMaster()` valide `TIDE_AGENT_KEY_MASTER` (64 hex chars ; lève si invalide, `undefined` si absent). **682/682** (+6), typecheck vert 7/7, **0 nouvelle** erreur lint (5 pré-existantes inchangées), **0 cast**, **0 dépendance** ajoutée à part `xrpl@^4.6.0`.

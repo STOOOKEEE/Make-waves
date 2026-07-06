@@ -12,6 +12,7 @@ import type {
   AgentActionsStore,
   Broadcaster,
   CompetitionBackend,
+  LiveCryptoService,
   McpContext,
   PaperBackend,
   PerpBackend,
@@ -33,6 +34,8 @@ export interface ServerConfig {
   readonly actions: AgentActionsStore;
   readonly config?: PublicConfig;
   readonly broadcaster?: Broadcaster;
+  /** Optional — branché au runtime quand Live est activé. */
+  readonly liveCrypto?: LiveCryptoService;
 }
 
 export async function startMcpServer(config: ServerConfig): Promise<void> {
@@ -82,6 +85,7 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
         actions: config.actions,
         config: config.config ?? defaultPublicConfig,
         broadcaster: config.broadcaster,
+        liveCrypto: config.liveCrypto,
       };
       const result = await tool.handler(args ?? {}, ctx);
       return { content: [{ type: "text", text: JSON.stringify(result) }] };

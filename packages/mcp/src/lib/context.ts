@@ -2,6 +2,7 @@ import type {
   Agent,
   AgentActionsStore,
   CompetitionBackend,
+  LiveCryptoService,
   Mandate,
   McpContext,
   PaperBackend,
@@ -31,6 +32,8 @@ export interface ContextStores {
   readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
   readonly config: PublicConfig;
+  /** Optional — required only for Live mode (place_order, etc.). */
+  readonly liveCrypto?: LiveCryptoService;
 }
 
 export async function loadContext(
@@ -62,5 +65,6 @@ export async function loadContext(
     competitions: stores.competitions,
     actions: stores.actions,
     config: stores.config,
+    liveCrypto: stores.liveCrypto,
   };
 }
