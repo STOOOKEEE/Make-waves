@@ -98,6 +98,20 @@ function makeCtx(priceFeed: PriceFeed): McpContext {
         return { realizedPnl: 0 };
       },
     },
+    competitions: {
+      async list() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+      async join() {
+        return { txJson: {} };
+      },
+      async getLeaderboard() {
+        return [];
+      },
+    },
   };
 }
 

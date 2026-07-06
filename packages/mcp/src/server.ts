@@ -10,6 +10,7 @@ import { McpError, ERROR_CODES, sanitizeError } from "./lib/errors";
 import type {
   AgentActionsStore,
   Broadcaster,
+  CompetitionBackend,
   McpContext,
   PaperBackend,
   PerpBackend,
@@ -26,6 +27,7 @@ export interface ServerConfig {
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
   readonly perp: PerpBackend;
+  readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
   readonly broadcaster?: Broadcaster;
 }
@@ -73,6 +75,7 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
         paper: config.paper,
         trading: config.trading,
         perp: config.perp,
+        competitions: config.competitions,
         actions: config.actions,
         broadcaster: config.broadcaster,
       };

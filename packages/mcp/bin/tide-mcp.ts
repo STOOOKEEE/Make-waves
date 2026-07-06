@@ -2,6 +2,7 @@
 import { startMcpServer } from "../src/server";
 import type {
   AgentActionsStore,
+  CompetitionBackend,
   PaperBackend,
   PerpBackend,
   PriceFeed,
@@ -64,6 +65,22 @@ const bootstrapPerp: PerpBackend = {
   },
 };
 
+// Stub Tâche 16 — câblage runtime via loadContext (Tâche câblage).
+const bootstrapCompetitions: CompetitionBackend = {
+  async list() {
+    throw new Error("competitions non câblé — utiliser loadContext");
+  },
+  async get() {
+    throw new Error("competitions non câblé — utiliser loadContext");
+  },
+  async join() {
+    throw new Error("competitions non câblé — utiliser loadContext");
+  },
+  async getLeaderboard() {
+    throw new Error("competitions non câblé — utiliser loadContext");
+  },
+};
+
 const bootstrapActions: AgentActionsStore = {
   async record() {
     throw new Error("actions non câblé — utiliser loadContext");
@@ -89,6 +106,7 @@ startMcpServer({
   paper: bootstrapPaper,
   trading: bootstrapTrading,
   perp: bootstrapPerp,
+  competitions: bootstrapCompetitions,
   actions: bootstrapActions,
 }).catch((err: unknown) => {
   // stderr uniquement — ne pas polluer stdout qui porte le protocole MCP.

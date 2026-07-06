@@ -62,6 +62,7 @@ export interface McpContext {
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
   readonly perp: PerpBackend;
+  readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
   /** Optional SSE broadcaster — emits one event per successful agent action. */
   readonly broadcaster?: Broadcaster;
@@ -114,6 +115,19 @@ export interface PerpBackend {
     userId: string;
     positionId: string;
   }): Promise<{ realizedPnl: number }>;
+}
+
+/**
+ * Backend façade pour les compétitions (list, get, join, leaderboard).
+ * `join` renvoie le `txJson` (Payment de buy-in) **non signé** : l'agent ne signe
+ * jamais automatiquement (Xaman requis) — l'user signe de son côté. En v2,
+ * l'agent pourrait détenir un compte dédié qui auto-signe.
+ */
+export interface CompetitionBackend {
+  list(): Promise<readonly unknown[]>;
+  get(id: string): Promise<unknown | null>;
+  join(userId: string, competitionId: string): Promise<{ txJson: unknown }>;
+  getLeaderboard(competitionId: string, limit: number): Promise<readonly unknown[]>;
 }
 
 export interface MarketRow {

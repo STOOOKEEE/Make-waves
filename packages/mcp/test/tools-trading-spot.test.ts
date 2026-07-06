@@ -178,6 +178,20 @@ function makeCtx(opts: {
         return { realizedPnl: 0 };
       },
     },
+    competitions: {
+      async list() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+      async join() {
+        return { txJson: {} };
+      },
+      async getLeaderboard() {
+        return [];
+      },
+    },
     actions: opts.actions,
     broadcaster: opts.broadcaster,
   };

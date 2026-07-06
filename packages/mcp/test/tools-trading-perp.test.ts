@@ -179,6 +179,20 @@ function makeCtx(opts: {
     paper,
     trading,
     perp: opts.perp,
+    competitions: {
+      async list() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+      async join() {
+        return { txJson: {} };
+      },
+      async getLeaderboard() {
+        return [];
+      },
+    },
     actions: opts.actions,
     broadcaster: opts.broadcaster,
   };

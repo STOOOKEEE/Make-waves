@@ -14,6 +14,12 @@ import {
 } from "./portfolio";
 import { placeOrderTool, cancelOrderTool } from "./trading-spot";
 import { openPositionTool, closePositionTool } from "./trading-perp";
+import {
+  listCompetitionsTool,
+  getCompetitionTool,
+  joinCompetitionTool,
+  getCompetitionLeaderboardTool,
+} from "./competitions";
 
 export interface ToolDef {
   readonly name: string;
@@ -35,4 +41,8 @@ export const tools: readonly ToolDef[] = [
   cancelOrderTool,
   openPositionTool,
   closePositionTool,
+  listCompetitionsTool,
+  getCompetitionTool,
+  joinCompetitionTool,
+  getCompetitionLeaderboardTool,
 ];

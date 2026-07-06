@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentActionsStore,
+  CompetitionBackend,
   Mandate,
   McpContext,
   PaperBackend,
@@ -26,6 +27,7 @@ export interface ContextStores {
   readonly paper: PaperBackend;
   readonly trading: TradingBackend;
   readonly perp: PerpBackend;
+  readonly competitions: CompetitionBackend;
   readonly actions: AgentActionsStore;
 }
 
@@ -55,6 +57,7 @@ export async function loadContext(
     paper: stores.paper,
     trading: stores.trading,
     perp: stores.perp,
+    competitions: stores.competitions,
     actions: stores.actions,
   };
 }
