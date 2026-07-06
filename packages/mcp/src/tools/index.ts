@@ -20,6 +20,8 @@ import {
   joinCompetitionTool,
   getCompetitionLeaderboardTool,
 } from "./competitions";
+import { getMandateTool, getRiskLimitsTool } from "./mandate";
+import { getConfigTool, getAgentStatusTool } from "./meta";
 
 export interface ToolDef {
   readonly name: string;
@@ -45,4 +47,8 @@ export const tools: readonly ToolDef[] = [
   getCompetitionTool,
   joinCompetitionTool,
   getCompetitionLeaderboardTool,
+  getMandateTool,
+  getRiskLimitsTool,
+  getConfigTool,
+  getAgentStatusTool,
 ];
