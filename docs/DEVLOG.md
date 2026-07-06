@@ -1154,3 +1154,46 @@ typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : ren
 **Bugs & fix.** Aucun (pas encore de code).
 
 **Suite.** Phase 0 : inscription au hackathon, réserver le `SourceTag`, poser les questions orga (SPEC §10, notamment la définition d'« active account » et si le volume self-généré compte), puis prototype « hello world » (Xaman + 1 swap taggé en mainnet) pour vérifier que l'attribution monte au compteur.
+
+---
+
+## 2026-07-06 — AI Agent : `open_position` + `close_position` (perp) [Tâche 15/33]
+
+**Quoi.** Deux outils MCP d'**écriture** pour les positions perp à levier (vs spot Tâche 14). `open_position(symbol, side, qty, leverage, tp?, sl?, client_order_id?)` applique le **même garde-fou dur** que `place_order` mais adapté : `capitalEngaged = (qty * px) / leverage` (la marge réservée, pas le notionnel), `leverage ∈ [1, mandate.maxLeverage]`, conversion `side → buy/sell` pour le guard (long = buy / short = sell). Succès → `recordAction` (idempotencyKey = client_order_id) + broadcast SSE. Échec → audit quand même enregistré, codes McpError préservés (RISK_LIMIT ≠ TRADING_ERROR ≠ MARKET_ERROR ≠ MANDATE_INVALID ≠ INVALID_PARAMS). `close_position(position_id)` = miroir simple (closing position **réduit** l'exposition, pas de guard à l'ouverture — mais audit obligatoire). **646/646** (+15 vs 631), typecheck vert 8/8, **0 nouvelle** erreur lint.
+
+**Pourquoi.** Le perp = levier = risque systémique. Un agent LLM qui appelle `open_position` ne peut pas dépasser `maxLeverage`, trader hors `pairesAutorisees`, spammer au-delà de `maxTradesPerDay`, ni saturer `capitalMax` (la marge réservée cumulée + la nouvelle tradeValue notionnelle ne doivent pas dépasser). `close_position` est l'inverse : il réduit l'exposition, donc pas de guard (mais l'audit reste obligatoire pour tracer qui ferme quoi).
+
+**Cheminement (4 écarts au brief, tous défendables — pattern additif Tâches 11-14).**
+- **`(ctx as any).perp`/`mandate`/`actions` retirés partout.** Le brief les utilisait à 5 endroits (violation « jamais `as any` »). Refacto : `McpContext` étendu avec **`perp: PerpBackend`** + nouvelle interface `PerpBackend` dans `src/types.ts` (`openPosition` + `closePosition`). Tool accède maintenant à `ctx.perp.openPosition(...)` typé naturellement. **0 cast dans le livrable.**
+- **`MANDATE_INVALID` ajouté à `close_position`** (le brief l'oubliait — sinon un `ctx.mandate?.userId` crashait en `TypeError` silencieux si pas de mandate). Coût : 2 lignes. Cohérence avec `cancel_order` (Tâche 14) qui check déjà ce cas.
+- **`broadcaster?.emit(...)` ajouté aux deux outils** (le brief ne l'incluait pas explicitement, mais le pattern additif Tâche 14 sur `place_order` l'a fait — les events SSE sont la passerelle UI live, déjà consommés par le front pour `agent_action`).
+- **15 tests au lieu de 3 minimum brief.** Couverture ajoutée : `RISK_LIMIT` × 3 (leverage exceeds, symbol hors paires, capitalMax saturé via tradeValue), `MARKET_ERROR`, `TRADING_ERROR` × 2 (open + close), `MANDATE_INVALID` × 2, `INVALID_PARAMS` × 3 (qty ≤ 0, side invalide, leverage < 1), idempotency, broadcaster × 2. Verrouille les 5 codes McpError distincts sur chaque outil.
+
+**Modifications collatérales (12 fichiers, additive-only — même pattern que Tâches 11-14).**
+- `src/types.ts` : `PerpBackend` interface + `perp: PerpBackend` ajouté à `McpContext` (+27).
+- `src/lib/context.ts` : `perp: PerpBackend` dans `ContextStores`, propagé dans `loadContext` (+3).
+- `src/server.ts` : `perp: PerpBackend` dans `ServerConfig`, ctx construit (+4).
+- `bin/tide-mcp.ts` : `bootstrapPerp` stub throw-loud (+7), câblé dans `startMcpServer` (+1).
+- `src/tools/index.ts` : `openPositionTool` + `closePositionTool` enregistrés (+2).
+- **5 tests existants** : `tools-market.test.ts`, `tools-market-extras.test.ts`, `tools-portfolio.test.ts`, `tools-trading-spot.test.ts`, `context.test.ts` (ajout `fakePerp` + 4 callsites `loadContext(...)` propagés) — leurs `makeCtx`/`loadContext` reçoivent le nouveau champ `perp` no-op. Sans ces ajouts, typecheck échouait (l'interface `McpContext` exige `perp`).
+
+**Fichiers créés (additive-only).** `packages/mcp/src/tools/trading-perp.ts` (179 lignes) — les deux outils. `packages/mcp/test/tools-trading-perp.test.ts` (337 lignes) — 15 tests.
+
+**Décisions de design clés.**
+- **Conversion `side → buy/sell` pour le guard.** Le guard raisonne en `buy/sell` (`lib/guard.ts:7`). Convention posée : `long = buy` (profit sur hausse), `short = sell` (profit sur baisse). Documenté en commentaire au callsite. Test verrouille le contrat.
+- **`capitalEngaged = (qty * px) / leverage`.** C'est la marge réservée cumulée. Le guard re-calcule `tradeValue = qty * pxUsd * leverage` (le notionnel), borne `capitalEngaged + tradeValue ≤ capitalMax`. Test verrouille le cas saturé.
+- **`tp`/`sl` optionnels, `margin` non collecté.** Cohérent avec les perps : à leverage N, la marge est **calculée par le backend** (qty × entry / N) — un input `margin` séparé serait redondant et ouvrirait une porte à des états incohérents. `tp`/`sl`/`clientOrderId` sont propagés verbatim au backend.
+- **Idempotence uniquement sur `open_position`.** Fermer une position est **idempotent par nature** côté backend (2e appel → `PositionNotFoundError`), pas besoin de clé. Test verrouille `idempotencyKey: null` sur `close_position`.
+
+**Bugs & fix.** 1 incident mineur : 3 nouvelles erreurs lint sur `tools-market.test.ts` après ajout de `PaperBackend`/`PerpBackend`/`TradingBackend` aux imports (`no-unused-vars` — réflexe pris en éditant, mais ces types ne sont pas utilisés **directement** dans ce test, juste inline). Fix : retirer les 3 imports inutiles. Vérification : `pnpm lint` après fix = **5 erreurs pré-existantes** (4 dans stores SQLite Tâche 3, 1 dans `guard.test.ts` Tâche 7), **0 nouvelle** de mon fait.
+
+**Dette tracée.**
+- `bootstrapPerp` dans `bin/tide-mcp.ts` = stub throw loud (volontaire, câblage runtime `PerpBackend` dans `@tide/api` arrive en Tâche câblage). Identique au pattern Tâches 12-14 (bootstrapPaper, bootstrapTrading, bootstrapActions tous en stub).
+- Pas de test isolé vérifiant que `tradesJour + 1 > maxTradesPerDay` lève `RISK_LIMIT`. Verrouillé indirectement par les autres cas RISK_LIMIT.
+- Le test `short side to sell for the guard` ne capture pas *directement* le side envoyé au guard — il vérifie le contrat observable (perp backend reçoit `side: "short"`). Le mapping est dans le code, documenté. YAGNI pour cette granularité.
+
+**Note mineure — brief à 2 outils, pas 3.** Le titre du brief annonçait `open_position`/`close_position`/`list_positions`, mais le Step 2 du brief ne spécifiait que 2 outils. **Le livrable suit le brief d'implémentation** : 2 outils. `listPositions` est déjà couvert via `McpContext.paper.listPositions` (Tâche 13, `get_positions` tool).
+
+**Suite logique.** Tâches 16+ : `place_limit_order` (limite perp), `set_tp_sl` (mise à jour TP/SL d'une position ouverte). Même structure : `try/catch` global, guard sur les inputs critiques, audit, broadcast, `McpError`-preserved. Tâche câblage runtime : impl `PerpBackend` dans `@tide/api` (PaperService étendu de `openPosition`/`closePosition`, déjà existant depuis F17). Le `bootstrapPerp` stub sera remplacé à ce moment-là.
+
+**Rapport détaillé** : `.superpowers/sdd/task-15-report.md`. **Commit** : `b6a0f2a`.
