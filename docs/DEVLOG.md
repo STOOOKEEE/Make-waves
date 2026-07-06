@@ -4,6 +4,51 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — AI Agent : `get_mandate` + `get_risk_limits` + `get_config` + `get_agent_status` (4 read-only meta tools) [Tâche 17/33]
+
+**Quoi.** 4 outils MCP **lecture-seule** (vs lecture+écriture T11-T16). `get_mandate()` → `{ mandate }` (null si pas branché). `get_risk_limits()` → `{ capitalMax, capitalEngaged, perteMaxJour, perteJour, maxTradesPerDay, tradesToday, maxLeverage, pairesAutorisees }` (placeholders explicites `capitalEngaged`/`perteJour`=0, traçables au câblage runtime). `get_config()` → `{ mode, sourceTag, availablePairs }` (config serveur). `get_agent_status()` → `{ agentId, status, hasLiveAccount, lastAction }` (dernière action via `actions.listByAgent(agentId, 1)`). Nouveau type **`PublicConfig`** dans `src/types.ts` + helper `defaultPublicConfig` dans `lib/public-config.ts` (mode paper, 9 majors alignées CoinGecko, réutilisé partout). `McpContext` étendu avec `config: PublicConfig` (requis, cohérent avec les autres deps critiques). **669/669** (+10 vs 659), typecheck 8/8 vert, **0 nouvelle** erreur lint (5 pré-existantes inchangées).
+
+**Pourquoi.** Un agent doit pouvoir **s'auto-inspecter** sans risque de muter quoi que ce soit — base de la « self-awareness » avant décision (les outils T11-T16 mutent). Couvre les 4 questions qu'un LLM doit pouvoir se poser avant d'agir : quel est mon mandate ? quelles sont mes limites ? dans quel mode tourne le serveur ? quel est mon statut courant (actif/paused/stoppé) ? Pas de garde-fou dur (pas de mutation), pas d'audit (read-only, traçabilité implicite via log SSE côté serveur au runtime), pas de `McpError` (retours null/empty gracieux).
+
+**Cheminement (5 écarts au brief, tous défendables — pattern additif T11-T16).**
+- **`(ctx as any).mandate` / `(ctx as any).actions` / `(ctx as any).config` retirés partout.** Le brief utilisait ce cast à 5 endroits (violation « jamais `as any` »). Refacto : tous les champs sont maintenant typés dans `McpContext` (mandate existait déjà, actions depuis T14, config ajouté par cette tâche). **0 cast dans le livrable.**
+- **`(ctx as any).config ?? default` remplacé par `ctx.config` typé directement.** Le brief faisait un fallback runtime. Refacto : `config: PublicConfig` est **requis** dans `McpContext` (cohérent avec les autres deps critiques). Le default `defaultPublicConfig` est injecté **au boot** (`bin/tide-mcp.ts`) ou par `loadContext` (passé via `ContextStores.config`). Avantage : l'agent peut **toujours** compter sur `ctx.config` non-null ; le câblage runtime n'a qu'à overrider.
+- **`PublicConfig` interface + helper `defaultPublicConfig` ajoutés.** Le brief faisait un fallback inline. Refacto : interface `PublicConfig` dans `types.ts` (`mode: "paper" | "live"`, `sourceTag: number | null`, `availablePairs: readonly string[]`) + helper `defaultPublicConfig` dans `lib/public-config.ts` (mode `paper`, pas de SourceTag, 9 majors alignées CoinGecko). Helper réutilisé par **tous les tests** (1 import au lieu de 9 copies).
+- **`get_risk_limits` documente les placeholders `capitalEngaged`/`perteJour` = 0.** Le brief les mettait sans commentaire. Commentaire JSDoc au callsite explique que ces valeurs viennent du backend (snapshots positions + PnL réalisé du jour) et seront câblées à la Tâche câblage runtime. Pas de fausse donnée : un 0 explicite et tracé vaut mieux qu'une absence silencieuse.
+- **10 tests (vs ~5 minimum brief).** Couverture ajoutée : `get_mandate` branche `mandate: null` défensive ; `get_risk_limits` forwarding des 5 champs du mandate + isolation du store (`actions.countCalls` capture `(agentId, userId)` du mandate) + branche null sans toucher actions + freshly-issued mandate = 0 trades ; `get_config` retour verbatim du default + config live câblée ; `get_agent_status` `lastAction: null` quand vide + appel borné à 1, retour de la dernière action quand présente, reflection des overrides `status`/`hasLiveAccount`.
+
+**Modifications collatérales (16 fichiers, additive-only — même pattern que T11-T16).**
+- `src/types.ts` : `PublicConfig` interface + `config: PublicConfig` ajouté à `McpContext` (+19).
+- `src/lib/public-config.ts` : **créé** — `defaultPublicConfig` exporté (+18).
+- `src/lib/context.ts` : `PublicConfig` import, `config: PublicConfig` dans `ContextStores`, propagé dans `loadContext` (+3).
+- `src/server.ts` : `PublicConfig` import, `config?: PublicConfig` dans `ServerConfig`, fallback `defaultPublicConfig` dans le bootstrap ctx (+5).
+- `bin/tide-mcp.ts` : `defaultPublicConfig` import + propagation au `startMcpServer(...)` (+2).
+- `src/tools/index.ts` : 4 outils ajoutés au registre `tools` (+4).
+- **6 tests existants** : `context.test.ts` (4 callsites `loadContext` propagés), `tools-market.test.ts`, `tools-market-extras.test.ts`, `tools-portfolio.test.ts`, `tools-trading-perp.test.ts`, `tools-trading-spot.test.ts`, `tools-competitions.test.ts` — leurs `makeCtx`/`loadContext` reçoivent le nouveau champ `config: defaultPublicConfig` (+8 dans chaque fichier). Sans ces ajouts, typecheck échouait (l'interface `McpContext` exige `config`).
+
+**Décisions de design clés.**
+- **`config: PublicConfig` REQUIS dans `McpContext`** : cohérent avec `paper`/`trading`/`perp`/`competitions`/`actions`. Le bootstrap fournit `defaultPublicConfig` ; le câblage runtime fournira le vrai (mode/sourceTag/paires du serveur).
+- **`getMandateTool` retourne `mandate: null` (pas throw)** : branche défensive conservée même si `loadContext` throw `MANDATE_INVALID` en pratique — utile si quelqu'un instancie un `McpContext` à la main pour un test/unitaire.
+- **`getRiskLimitsTool` propage `tradesToday` du store, 0 partout ailleurs** : placeholder honnête, `capitalEngaged`/`perteJour` à câbler au runtime quand `PaperService` exposera ces snapshots.
+- **`getConfigTool` retourne `ctx.config` verbatim** : pas de projection, l'agent reçoit la config serveur telle quelle.
+- **`getAgentStatusTool` borne `listByAgent` à 1 action** : on veut la dernière, pas l'historique (un outil dédié plus tard si besoin).
+
+**Bugs & fix.** 1 incident typecheck dans `tools-meta.test.ts` : `lastActionCalls.push({ agentId, limit })` levait TS2322 car `limit` est `number | undefined` dans l'interface `AgentActionsStore.listByAgent(agentId: string, limit?: number)`. **Fix** : `const safeLimit = limit ?? 0;` (capture explicite, propage aux pushes et à l'appel). Test passe, typecheck vert.
+
+**Leçon opérationnelle (hors code).** Pendant l'impl, `git stash` + `git stash pop` a **perdu une partie** des modifications sur des fichiers déjà modifiés (effet de bord du stash pop avec modifs concurrentes). J'ai ré-appliqué les 7 fichiers concernés (`lib/context.ts`, `bin/tide-mcp.ts`, `server.ts`, `types.ts`, 6 tests existants) manuellement. Tous re-vérifiés : typecheck + tests verts. **Pour plus tard** : ne pas stash en plein milieu d'une impl additive, ou utiliser `git diff > patch` + `git apply`.
+
+**Dette tracée.**
+- `capitalEngaged` / `perteJour` à 0 dans `get_risk_limits` : à câbler au runtime quand `PaperService` exposera ces snapshots.
+- Pas d'outil d'historique d'actions dédié (`list_agent_actions` filtrable par période/outcome) — YAGNI aujourd'hui, dérive de `get_agent_status` en réutilisant `listByAgent` avec `limit` paramétrable si besoin.
+- `hasLiveAccount` reflète le snapshot agent, pas l'état temps réel.
+- `mode` dans `PublicConfig` est figé à la session (snapshot du boot) — acceptable en MVP, le toggle UI recrée une session MCP.
+
+**Suite logique.** Tâches 18+ : autres outils restants (`place_limit_order`, `set_tp_sl`, etc.). Le pattern additif (interface dans types.ts + champ dans McpContext + propagation à loadContext + bootstrap + tests existants) se généralise. Tâche câblage runtime : remplacer `bootstrapPaper`/`bootstrapTrading`/etc. par les vrais adapters de `@tide/api` ; remplacer `defaultPublicConfig` par la config serveur.
+
+**Rapport détaillé** : `.superpowers/sdd/task-17-report.md`. **Commit** : `502f4f7`.
+
+---
+
 ## 2026-07-06 — AI Agent : `place_order` (Paper + guard + audit + idempotency) + `cancel_order` [Tâche 14/33]
 
 **Quoi.** Premiers outils d'**écriture** MCP (vs lecture seule Tâches 11-13). `place_order(symbol, side, qty, type, price?, client_order_id?)` applique les **garde-fous durs** du mandate **avant** l'appel trading (`enforceRiskLimits`) : capital max, perte max / jour, max trades / jour, max levier, kill switch agent.stopped, paires autorisées. Succès → `recordAction` (idempotencyKey = `client_order_id`) + broadcast SSE (`agent_action`). Échec (guard ou backend) → audit quand même enregistré, code McpError préservé (RISK_LIMIT ≠ TRADING_ERROR ≠ MARKET_ERROR ≠ MANDATE_INVALID). `cancel_order(order_id)` = miroir simple : `trading.cancelOrder(userId, orderId)` + audit. **631/631** (+12 vs 619), typecheck vert, 0 nouvelle erreur lint.
