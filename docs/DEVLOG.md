@@ -4,6 +4,43 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Agent : SSE agent-broadcaster + `GET /api/agents/events` + kill broadcast [Tâche 18/33]
+
+**Quoi.** Bus d'événements agent en SSE. `apps/api/src/sse/agent-broadcast.ts` expose `AgentBroadcaster extends EventEmitter` (type discriminé `AgentEvent` = `agent_killed | agent_action`) + singleton `agentBroadcaster` (avec `setMaxListeners(100)`). `apps/api/src/services/agent-service.ts` : `kill(id, reason?)` — la signature existante devient `reason?` **optionnel** (rétrocompat 7 callsites) et diffuse `agent_killed` après la mutation DB + révocation des mandats actifs. `apps/api/src/http/server.ts` : nouvelle route **`GET /api/agents/events`** montée sous `deps.agentService !== undefined` (à côté de `/api/agents/:id/kill`), avec headers `text/event-stream`/`no-cache`/`keep-alive`, `reply.hijack()`, ping commentaire `: ping\n\n` toutes les 30 s, cleanup `req.raw.on("close")` → `clearInterval` + `agentBroadcaster.off`. 3 tests (`emit` / multi-listeners / `off`) → **673/673** (+3), typecheck vert 8/8, **0 nouvelle** erreur lint (5 pré-existantes inchangées).
+
+**Pourquoi.** Sans bus d'événements, un agent tué côté serveur est invisible pour les dashboards/UI temps réel — l'user clique « kill » et l'UI ne montre le statut « stopped » qu'au prochain poll. Le SSE ferme cette boucle. Choix d'étendre `EventEmitter` plutôt que d'envelopper : API standard `on/off/emit` + `setMaxListeners` + mémoire partagée out-of-the-box, pas de wrapper maison à débugger. Type discriminé pour que les listeners narrow sur `event.type` sans projection. `emitEvent` au lieu d'exposer `emit` directement → impossible d'émettre un event malformé (`{type: "x"}` au lieu de `AgentEvent`).
+
+**Cheminement (4 écarts au brief, tous défendables).**
+- **Barrel `sse/index.ts` non créé.** Le brief listait « Modify : apps/api/src/sse/index.ts (export broadcaster) » mais le répertoire n'existait pas → pas de barrel à modifier. Imports directs (`../sse/agent-broadcast`) suffisent pour 2 callsites. YAGNI : barrel si > 3 fichiers SSE.
+- **`reason?` rendu optionnel** (vs obligatoire dans le snippet du brief). Rétrocompatibilité avec `agent-service.test.ts:47` (`svc.kill(agent.id)`) et `agent-routes.test.ts:149` (`svc.kill(request.params.id)`). Coût : 0 ligne, préserve 7 callsites existants.
+- **Route SSE montée sous `deps.agentService !== undefined`** plutôt que top-level. Cohérent avec `/api/agents/:id/kill` juste au-dessus — l'agent existe ⇔ le bus d'événements a du sens. Sans `agentService` câblé, la route n'existe pas (404, comme les autres routes agent).
+- **Test « multiple listeners » renforcé** : ajouté `toHaveBeenCalledWith(...)` pour verrouiller le **payload exact** reçu, pas seulement le nombre d'appels (`toHaveBeenCalled` était plus faible). Décision de test, pas de comportement.
+
+**Modifications collatérales (3 fichiers, additive-only).**
+- `apps/api/src/services/agent-service.ts` : 1 import (`agentBroadcaster`), 1 appel `emitEvent(...)` après les mutations DB. JSDoc du service mis à jour (mention de la diffusion SSE).
+- `apps/api/src/http/server.ts` : 1 import (`agentBroadcaster`), 25 lignes pour la route SSE. Import inséré après les types Fastify/externes (cohérent avec l'ordre existant).
+- **Aucun autre fichier modifié.** Pas de nouveau test sur les routes existantes (le `kill` route est testé par `agent-routes.test.ts:118` qui ne vérifie que la mutation DB — étendre pour vérifier aussi le broadcast est YAGNI aujourd'hui, le contrat « kill appelle broadcast » est garanti par le fait qu'ils partagent la même méthode service).
+
+**Décisions de design clés.**
+- **Type discriminé `AgentEvent`** plutôt que `Record<string, unknown>` : listeners font `switch(event.type)` narrowing strict.
+- **`emitEvent` au lieu d'exposer `emit`** : wrapper garantit que seuls des `AgentEvent` valides passent. Évite qu'un futur dev fasse `broadcaster.emit("event", "oops")` par erreur.
+- **Cleanup sur `req.raw.on("close")`** (pas `once`) — `close` peut être émis plusieurs fois sur certains proxies, mais `clearInterval` + `agentBroadcaster.off` sont idempotents (no-op si déjà fait), donc pas de bug. Simple > défensif.
+- **`setMaxListeners(100)`** plutôt que `0` (illimité) ou `10` (défaut Node) — assez pour dashboard + agents UI + tests parallèles sans bruit `MaxListenersExceededWarning`, garde-fou contre une boucle qui ajouterait des listeners à l'infini.
+
+**Bugs & fix.** Aucun (impl + tests verts dès le premier jet). Typecheck, lint et tests full-suite verts en une passe.
+
+**Dette tracée.**
+- **Pas d'authentification sur `/api/agents/events`** : n'importe qui peut s'abonner. Acceptable en MVP (les événements `agent_killed`/`agent_action` sont des infos de surface, pas des secrets), à protéger par token/ACL si on expose ce flux publiquement.
+- **Pas de filtre `?agentId=`** : tous les clients reçoivent tous les événements. Si le nombre d'agents devient grand, ajouter un filtrage côté serveur (le handler ne push que les events pertinents).
+- **`agent_action` pas encore émis** : seul `agent_killed` est diffusé (depuis `AgentService.kill`). L'événement `agent_action` est défini dans le type mais aucun producteur ne l'émet encore — à brancher dans `recordAction` du `@tide/mcp` (côté tools, quand un tool mute). C'est la Tâche 19+.
+- **`setMaxListeners(100)`** : si un déploiement voit > 100 clients SSE concurrents sur un seul process, warning. À monitorer, monter si besoin (ou `0` si vraiment illimité).
+
+**Suite logique.** Tâche 19+ : brancher l'émission `agent_action` côté MCP dans `recordAction` (après trade réussi, audit, broadcast). Puis câblage runtime côté MCP (`@tide/mcp` consomme l'API HTTP/SSE de l'API quand les stubs sont remplacés par les vrais adapters — Tâche câblage runtime en parallèle du plan 33-tâches).
+
+**Rapport détaillé** : `.superpowers/sdd/task-18-report.md`. **Commit** : `979148e`.
+
+---
+
 ## 2026-07-06 — Fix critique MCP : les 4 outils Tâche 17 n'étaient pas enregistrés dans `tools/index.ts`
 
 **Quoi.** `packages/mcp/src/tools/index.ts` n'importait pas `mandate.ts`/`meta.ts`. Conséquence : le tableau `tools` exporté contenait **16 entrées** au lieu de 20 ; `tools/list` MCP exposait `get_market`/`get_markets`/`get_history`/`get_orderbook` + `get_balance`/`get_portfolio`/`get_positions`/`get_leaderboard` + `place_order`/`cancel_order` + `open_position`/`close_position` + `list_competitions`/`get_competition`/`join_competition`/`get_competition_leaderboard` — mais **PAS** `get_mandate`, `get_risk_limits`, `get_config`, `get_agent_status`. Code mort : les fichiers étaient testés (`tools-mandate.test.ts`, `tools-meta.test.ts`) mais jamais exposés. Diff : +2 imports + 4 entrées dans l'array `tools` à la fin. **670/670** (+1), typecheck vert, **0 cast**.
