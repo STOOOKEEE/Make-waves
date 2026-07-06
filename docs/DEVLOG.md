@@ -4,6 +4,51 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Agent : AgentXrplAccountService (generate / decryptSeed / revoke) + chiffré au repos [Tâche 20/33]
+
+**Quoi.** `apps/api/src/services/agent-xrpl-account-service.ts` : 3 méthodes (`generate` / `decryptSeed` / `revoke`) qui s'appuient sur les helpers AES-256-GCM livrés en T19 (`@tide/mcp/crypto` — `encryptPrivateKey` / `decryptPrivateKey` / `readMasterKey`). `apps/api/src/store/agent-xrpl-keys-store.ts` : interface `AgentXrplKeysStore` + `InMemoryAgentXrplKeysStore`. `apps/api/src/store/sqlite-agent-xrpl-keys-store.ts` : persistance `node:sqlite` sur la table `agent_xrpl_keys` (déjà créée par `migrateAgentTables`). `apps/api/src/config/env.ts` : `readAgentKeyMaster()` valide `TIDE_AGENT_KEY_MASTER` (64 hex chars ; lève si invalide, `undefined` si absent). **682/682** (+6), typecheck vert 7/7, **0 nouvelle** erreur lint (5 pré-existantes inchangées), **0 cast**, **0 dépendance** ajoutée à part `xrpl@^4.6.0`.
+
+**Pourquoi.** Le seed XRPL d'un agent est la **clé privée** d'un compte L1 — il ne peut transiter en clair sur disque. Le chiffrement au repos (AES-256-GCM, master key 32 bytes = 64 hex chars) garantit qu'un dump de `tide.db` ne donne pas accès aux avoirs. `decryptSeed` est le seul point où la clé réapparaît en clair — c'est l'entrée du futur câblage runtime (`Wallet.fromSeed(seed).sign(txJson)` pour les swaps Live taggés). `revoke` libère la session Tide sans toucher aux fonds on-chain (le user peut garder le contrôle via Xaman). Indispensable avant toute tâche qui fait signer un agent LLM.
+
+**Cheminement (6 écarts au brief, tous défendables).**
+- **`Wallet.generate()` au lieu de `generateKeypair`**. `xrpl.js` v4.6.0 (vérifié dans `node_modules/.pnpm/xrpl@4.6.0/.../dist/npm/Wallet/index.d.ts:13`) n'expose **que** `Wallet.generate()` — `generateKeypair` n'existe pas (ni dans la lib, ni dans le codebase, le commentaire « déjà dispo via @tide/xrpl » du brief est faux). Le wallet retourné porte `classicAddress` (= `address`) + `seed?`. Garde-fou `if (!wallet.seed) throw` au cas où le contrat évoluerait.
+- **`publicKey` du store = adresse** (rXXXX…). Le brief assume cette simplification (`if (existing) return { publicKey: existing.publicKey, address: existing.publicKey }`) et l'assume explicitement en commentaire. Respectée verbatim — l'adresse identifie le compte on-chain de manière unique, ce qui suffit pour le service. Dette tracée pour le jour où on aura besoin de la vraie public key Ed25519 (vérif de signature hors-ligne) : renommer + migration.
+- **`INSERT OR REPLACE` côté Sqlite** (au lieu du `save` Memory brut du brief). Sans contrainte unique, `save` SQLite lèverait sur un revoke→generate ; le store du brief était non-idempotent côté SQLite. `INSERT OR REPLACE` sur PK `agent_id` rend `save` idempotent — cohérent avec le `Map.set` InMemory.
+- **`readAgentKeyMaster` ajouté sans étendre `AppConfig`**. `AppConfig` est défini dans `app.ts:29`, pas dans `env.ts`. Étendre `AppConfig` prématurément serait YAGNI (le câblage runtime arrive plus tard). Ajouté uniquement le reader dans `env.ts` — frontière minimale qu'impose le brief.
+- **6 tests au lieu de 3-5**. Le 6e vérifie qu'une **mauvaise master key** casse le déchiffrement — le vrai garde-fou du chiffrement, qui sinon n'est testé que via « roundtrip OK » (ne prouverait pas qu'une clé différente échoue).
+- **Assertion « seed absent du payload » corrigée**. Première version `expect(stored.encryptedPrivateKey).not.toContain("s")` — fausse (le ciphertext hex 0-9a-f peut contenir un `s` au hasard, et `masterKeyId: "v1"`). Remplacée par `expect(payload["ciphertext"]).toMatch(/^[0-9a-f]+$/)` : le payload est bien hex, et le roundtrip de `decryptSeed` (test 2) prouve que chiffrement/déchiffrement fonctionne.
+
+**Modifications collatérales (3 fichiers, toutes imposées par le brief).**
+- `packages/mcp/package.json` : subpath export `./crypto` ajouté (`./src/lib/crypto.ts`). Le brief demande `import { ... } from "@tide/mcp/crypto"`, l'export n'existait pas par défaut.
+- `apps/api/package.json` : `"@tide/mcp": "workspace:*"` ajouté. Sans cette dep, pnpm ne crée pas le symlink `apps/api/node_modules/@tide/mcp` et vitest ne résout pas `@tide/mcp/crypto` (vérifié : `Failed to load url @tide/mcp/crypto` avant l'ajout).
+- `apps/api/package.json` : `"xrpl": "^4.6.0"` ajouté aux deps directes. Le brief suppose `import { generateKeypair } from "xrpl"` (cf. écart n°1) — besoin d'accès direct à la lib, pas seulement transitive.
+
+**Décisions de design clés.**
+- **`save` idempotent (`INSERT OR REPLACE`)** : `revoke` suivi de `generate` ne lève pas d'unique-constraint. Cohérent avec `Map.set` Memory. Coût : 0 ligne, supprimable le jour où l'unicité stricte a un sens.
+- **`masterKeyId` versionné** dans `AgentXrplKey` (`"v1"` par défaut). Pas de routine `rotateMasterKey` implémentée — YAGNI aujourd'hui, mais le champ est en place pour le jour où on veut faire tourner : `decrypt with v1 → encrypt with v2 → update row`.
+- **`revoke` ne supprime pas l'agent** : juste `hasLiveAccount=false` + drop la clé. Les fonds on-chain restent à leur adresse ; l'agent peut être re-prompted plus tard sans changer son id.
+- **`decryptSeed` throw `Error` générique** (le brief l'écrit tel quel). Améliorations futures (`NoLiveAccountError` typée) triviales mais YAGNI maintenant.
+- **`.revoke` idempotent** : delete sans clé = no-op ; update d'agent inconnu = no-op.
+
+**Bugs & fix.**
+- **Stash pop perdu 3 fichiers** (cf. entrée T17 06/06 et DEVLOG 30/06) : `git stash --keep-index --include-untracked` + `git stash pop` ont **rembobiné** mes modifs sur `env.ts`, `apps/api/package.json` et `packages/mcp/package.json` (phénomène récurrent : le stash pop ne restore pas toujours proprement les modifs additives). Ré-appliquées manuellement avec Edit. **Leçon** : ne pas utiliser `git stash` en milieu d'impl additive, ou utiliser `git diff > patch` + `git apply`. Leçon déjà tracée 2 fois — devient un motif.
+- **Vitest ne résolvait pas `@tide/mcp/crypto`** (`Failed to load url ... Does the file exist?`). Deux fixes combinés : subpath export `./crypto` dans `packages/mcp/package.json` + dep `@tide/mcp` dans `apps/api/package.json`. Sans les deux, ça ne résolvait pas.
+- **`expect(stored.encryptedPrivateKey).not.toContain("s")` fausse** : retirée, remplacée par check hex (cf. écart n°6).
+
+**Dette tracée.**
+- `publicKey` dans le store = adresse (pas la vraie Ed25519 public key). Acceptable pour le service agent. Le jour où on veut vérifier une signature hors-ligne : renommer la colonne, ajouter la vraie public key, migration Sqlite.
+- Pas de rotation de master key implémentée — YAGNI, le champ versionné est en place.
+- `decryptSeed` re-déchiffre à chaque appel (pas de cache mémoire par `agentId`). Acceptable en MVP. Si abus côté agent LLM (boucle d'appels `decryptSeed`), wrap dans un cache borné 5 min par `agentId`.
+- `revoke` ne purge pas la clé des processus externes (Xaman-like) qui l'auraient déjà mémorisée. À documenter côté UX : un revoke local Tide n'est pas un revoke on-chain — l'agent a peut-être la clé en RAM dans une session ouverte.
+- `readAgentKeyMaster` ajouté mais **non câblé** : le câblage runtime (`main.ts` lit l'env → instancie `AgentXrplAccountService` → branche dans `AppConfig` → expose route HTTP) viendra dans la **tâche câblage runtime**, hors scope ici. Le service est prêt sans modification.
+- `apps/api/test/metrics-route.test.ts` (untracked) n'est pas dans cette tâche — fichier d'une tâche précédente, présent dans le diff `git status` parce que non tracké, mais **non commité** par cette PR.
+
+**Suite logique.** Tâche câblage runtime : instancier `AgentXrplAccountService` dans `main.ts`, brancher `readAgentKeyMaster()` au constructeur, exposer routes `/api/agents/:id/live-account/generate` (+ `/decrypt-seed` ou décrypt interne au moment de signer selon le design). Le service est **prêt sans modification**. Tâches MCP restantes : `place_limit_order`, `set_tp_sl` et autres outils du plan 33.
+
+**Rapport détaillé** : `.superpowers/sdd/task-20-report.md`. **Commit** : `b9fff42`.
+
+---
+
 ## 2026-07-06 — Agent : SSE agent-broadcaster + `GET /api/agents/events` + kill broadcast [Tâche 18/33]
 
 **Quoi.** Bus d'événements agent en SSE. `apps/api/src/sse/agent-broadcast.ts` expose `AgentBroadcaster extends EventEmitter` (type discriminé `AgentEvent` = `agent_killed | agent_action`) + singleton `agentBroadcaster` (avec `setMaxListeners(100)`). `apps/api/src/services/agent-service.ts` : `kill(id, reason?)` — la signature existante devient `reason?` **optionnel** (rétrocompat 7 callsites) et diffuse `agent_killed` après la mutation DB + révocation des mandats actifs. `apps/api/src/http/server.ts` : nouvelle route **`GET /api/agents/events`** montée sous `deps.agentService !== undefined` (à côté de `/api/agents/:id/kill`), avec headers `text/event-stream`/`no-cache`/`keep-alive`, `reply.hijack()`, ping commentaire `: ping\n\n` toutes les 30 s, cleanup `req.raw.on("close")` → `clearInterval` + `agentBroadcaster.off`. 3 tests (`emit` / multi-listeners / `off`) → **673/673** (+3), typecheck vert 8/8, **0 nouvelle** erreur lint (5 pré-existantes inchangées).
