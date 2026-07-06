@@ -297,14 +297,17 @@ export class AgentChatService {
 
   /** Projette les `ToolDef` MCP vers le format `tools` du SDK Anthropic. */
   private buildToolDefs(): Anthropic.Tool[] {
-    return Array.from(this.tools.values()).map(
-      (t) =>
-        ({
-          name: t.name,
-          description: t.description,
-          input_schema: t.inputSchema,
-        }) as Anthropic.Tool,
-    );
+    return Array.from(this.tools.values()).map((t) => ({
+      name: t.name,
+      description: t.description,
+      // `ToolDef.inputSchema` est typé `Record<string, unknown>` pour rester
+      // permissif côté MCP ; en pratique chaque schéma porte déjà
+      // `type: "object"` (cf. les définitions des tools). On narrow-cast
+      // vers la shape stricte d'Anthropic juste ici (frontière SDK), puis
+      // `satisfies Anthropic.Tool` valide le reste de l'objet sans cast
+      // global (vs l'ancien `as Anthropic.Tool` qui bypassait tout check).
+      input_schema: t.inputSchema as Anthropic.Tool["input_schema"],
+    }) satisfies Anthropic.Tool);
   }
 
   /** System prompt : consigne de l'agent + signature Tide. */

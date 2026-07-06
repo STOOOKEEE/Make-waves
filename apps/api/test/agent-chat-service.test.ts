@@ -6,15 +6,37 @@ import {
   type AgentChatEvent,
 } from "../src/services/agent-chat-service";
 
+// Surface minimale que le service consomme côté Anthropic — on évite
+// `as unknown as Anthropic` (cast large qui silencieusement passe si la SDK
+// change). Le service lit `client.messages.stream(opts)` puis itère sur
+// l'`AsyncIterable<unknown>` retourné ; c'est tout ce dont on a besoin.
+interface AnthropicLike {
+  readonly messages: {
+    readonly stream: (opts: {
+      readonly model: string;
+      readonly max_tokens: number;
+      readonly system: string;
+      readonly tools: ReadonlyArray<unknown>;
+      readonly messages: ReadonlyArray<unknown>;
+    }) => AsyncIterable<unknown>;
+    readonly create: () => Promise<unknown>;
+  };
+}
+
+/** Helper : convertit un array d'events en async iterable. */
+async function* fromArray(events: unknown[]): AsyncIterable<unknown> {
+  for (const e of events) {
+    yield e;
+  }
+}
+
 // Stub minimal du client Anthropic. Le service appelle
 // `client.messages.stream({...})` puis itère sur les events — chaque appel
 // reçoit un iterable FRAIS (réplique la sémantique réseau). On passe un
 // tableau d'arrays : `eventsPerCall[0]` = 1ʳᵉ itération, `eventsPerCall[1]`
 // = 2ᵉ itération, etc. (deux itérations possibles : une avec tool_use,
 // une avec end_turn).
-// Pas de réseau, pas de clé, pas de mock lourd : `as unknown as Anthropic`
-// suffit (la boucle `for await` accepte n'importe quel `AsyncIterable`).
-function fakeAnthropic(eventsPerCall: unknown[][]): Anthropic {
+function fakeAnthropic(eventsPerCall: unknown[][]): AnthropicLike {
   let callIndex = 0;
   return {
     messages: {
@@ -23,14 +45,7 @@ function fakeAnthropic(eventsPerCall: unknown[][]): Anthropic {
         throw new Error("not used in tests");
       },
     },
-  } as unknown as Anthropic;
-}
-
-/** Helper : convertit un array d'events en async iterable. */
-async function* fromArray(events: unknown[]): AsyncIterable<unknown> {
-  for (const e of events) {
-    yield e;
-  }
+  };
 }
 
 /** Construit un `McpContext` minimal — seuls `agent` + `userId` sont touchés
@@ -116,7 +131,10 @@ function makeService(eventsPerCall: unknown[][]): AgentChatService {
   return new AgentChatService({
     apiKey: "test-key",
     model: "claude-sonnet-4-5",
-    clientFactory: () => fake,
+    // Cast à la frontière de la factory : le service consomme
+    // uniquement `client.messages.stream(...)` (cf. `AnthropicLike`),
+    // pas le reste de la SDK Anthropic (40+ champs, tous optionnels).
+    clientFactory: () => fake as unknown as Anthropic,
   });
 }
 
