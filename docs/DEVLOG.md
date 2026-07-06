@@ -1197,3 +1197,44 @@ typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : ren
 **Suite logique.** Tâches 16+ : `place_limit_order` (limite perp), `set_tp_sl` (mise à jour TP/SL d'une position ouverte). Même structure : `try/catch` global, guard sur les inputs critiques, audit, broadcast, `McpError`-preserved. Tâche câblage runtime : impl `PerpBackend` dans `@tide/api` (PaperService étendu de `openPosition`/`closePosition`, déjà existant depuis F17). Le `bootstrapPerp` stub sera remplacé à ce moment-là.
 
 **Rapport détaillé** : `.superpowers/sdd/task-15-report.md`. **Commit** : `b6a0f2a`.
+
+---
+
+## 2026-07-06 — AI Agent : 4 outils compétitions MCP `list_competitions` / `get_competition` / `join_competition` / `get_competition_leaderboard` [Tâche 16/33]
+
+**Quoi.** Suite de la trousse MCP : 4 outils compétitions, **3 lecture + 1 écriture**. `list_competitions()` → `{ competitions }` (catalogue). `get_competition({id})` → `{ competition }` (vue live d'une compétition, ou `null`). `join_competition({competition_id})` → **renvoie le `txJson` (Payment de buy-in) non signé** — l'agent ne signe JAMAIS automatiquement (Xaman requis), l'user signe de son côté. `get_competition_leaderboard({competition_id, limit?})` → `{ entries }` (classement live de la compétition, limit clampé `[1, 100]` défaut 20). Nouveau type **`CompetitionBackend`** dans `src/types.ts` (4 méthodes asynchrones). `McpContext` étendu avec `competitions: CompetitionBackend`. **`clampLimit` ré-importé depuis `market.ts`** (helper déjà extrait T12, évite la duplication et le bug `NaN` propagé). **659/659** (+13 vs 646), typecheck vert 8/8, **0 nouvelle** erreur lint.
+
+**Pourquoi.** Tour des compétitions côté MCP, parallèlement à `place_order` (T14) et `open_position` (T15) côté trading. Un agent doit **voir** le catalogue (list/get/leaderboard — découverte + contexte concurrentiel) **et pouvoir y inscrire son user** (join — déclenche le buy-in on-chain). La séparation lecture/écriture est nette : lecture = audit best-effort (no-op sans mandate), écriture = `MANDATE_INVALID` strict + audit. Le `txJson` non signé est cohérent avec la posture non-custodiale de Tide (F8) : l'agent **propose**, l'user **dispose** via Xaman.
+
+**Cheminement (5 écarts au brief, tous défendables — pattern additif Tâches 11-15).**
+- **`(ctx as any).competitions.list()` retiré.** Le brief l'utilisait à 1 endroit (violation « jamais `as any` »). Refacto : `McpContext.competitions: CompetitionBackend` ajouté à l'interface, propagation à travers **6 callsites** (`lib/context.ts` + `server.ts` + `bin/tide-mcp.ts` + `test/context.test.ts` + 5 `makeCtx` dans les tests market/portfolio/perp/spot). **0 cast `as any`/`as never` dans le livrable.**
+- **Validation explicite de `id` / `competition_id`** (`/^[A-Z0-9_.-]{1,64}$/i`) — le brief l'oubliait. Coût : 6 lignes (`assertValidId` factorisé). Évite qu'un LLM envoie un id de 5000 chars ou une chaîne vide qui se propagerait jusqu'au backend.
+- **`MANDATE_INVALID` ajouté à `join_competition`** (le brief l'oubliait — sinon `ctx.mandate?.userId` crashait en `TypeError` silencieux). Cohérence avec `place_order` (T14) et `open_position` (T15). `list/get/leaderboard` restent tolérants au mandate `null` (lecture possible sans compte signé, audit best-effort).
+- **`audit()` helper ajouté pour les reads + `recordAction` direct sur `join_competition`** (le brief ne parlait d'audit que pour les mutating). Refacto : `audit()` no-op si pas de mandate, sinon `recordAction`. Verrouille la traçabilité LLM → « l'agent a lu la compète X à 14h32 » est dans le store, même pour les reads.
+- **`get_competition_leaderboard` réutilise `clampLimit`** (helper déjà extrait T12 dans `market.ts`). Évite la duplication et le bug `Number("foo") = NaN` propagé silencieusement (T12 l'avait explicitement corrigé).
+
+**Modifications collatérales (10 fichiers touchés, additive-only — pattern Tâches 11-15).**
+- `src/types.ts` : `CompetitionBackend` interface + `competitions: CompetitionBackend` ajouté à `McpContext` (+14).
+- `src/lib/context.ts` : `CompetitionBackend` import, `competitions: CompetitionBackend` dans `ContextStores`, propagé dans `loadContext` (+3).
+- `src/server.ts` : `competitions: CompetitionBackend` dans `ServerConfig`, ctx construit (+3).
+- `bin/tide-mcp.ts` : `bootstrapCompetitions` stub qui throw loud (volontaire, le câblage runtime arrive en Tâche câblage) (+18).
+- `src/tools/index.ts` : 4 outils ajoutés au registre `tools` (+10).
+- **6 tests existants** : `context.test.ts` (4 `loadContext` callsites), `tools-market.test.ts`, `tools-market-extras.test.ts`, `tools-portfolio.test.ts`, `tools-trading-perp.test.ts`, `tools-trading-spot.test.ts` — leurs `makeCtx`/`loadContext` reçoivent le nouveau champ `competitions` no-op (+86). Sans ces ajouts, typecheck échouait (l'interface `McpContext` exige `competitions`).
+
+**13 tests (vs ~5 minimum brief).** Couverture ajoutée : `list_competitions` (audit quand mandate présent, no-audit quand absent) ; `get_competition` (forward l'id, retourne `null` si inconnu, `INVALID_PARAMS` sur id vide) ; `join_competition` (`txJson` Payment retourné + audité + shape vérifié, `MANDATE_INVALID` sans mandat, `TRADING_ERROR` + audit sur erreur backend, `INVALID_PARAMS` sur id vide) ; `get_competition_leaderboard` (forward limit clampé, default 20, clamp strict `[1, 100]` documenté sur 3 branches, `INVALID_PARAMS` sur id vide). Verrouille les codes McpError (`INVALID_PARAMS`, `MANDATE_INVALID`, `TRADING_ERROR`) et le contrat `number` fini borné pour le backend.
+
+**Bugs & fix.** 1 incident pendant l'impl : assertion `toEqual([20, 20])` sur le clamp — j'avais oublié que `clampLimit` est `[1, 100]`, pas `[1, ∞]` — donc 200 clampe à **100** (max), pas 20 (fallback). **Fix** : assertion corrigée à `[100, 20, 1]` (200→100 max, "foo"→20 fallback, 0→1 min). Test plus strict, documente les 3 branches du helper en un seul endroit.
+
+**Note mineure — `join_competition` ne fait pas de `broadcaster.emit`.** Choix assumé : l'événement significatif est la **signature du Payment Xaman**, qui n'est pas du ressort du MCP. Le store d'actions capture l'intention côté agent. (Tâche câblage runtime pourra brancher un event `agent_buy_in_proposed` si le front veut le voir avant la signature Xaman.)
+
+**Dette tracée.**
+- `bootstrapCompetitions` dans `bin/tide-mcp.ts` = stub throw loud (volontaire, câblage runtime arrive en Tâche câblage). Identique au pattern T12-T15 (bootstrapPaper, bootstrapTrading, bootstrapActions, bootstrapPerp tous en stub).
+- `CompetitionBackend.list()`/`get()`/`getLeaderboard()` retournent `readonly unknown[]` / `unknown | null` — choix assumé (l'impl @tide/api branchera ses vrais types de domaine). Le tool passe la donnée **telle quelle** au LLM, sans projection (les compétitions sont de la donnée de présentation, l'agent n'a pas besoin de typage strict côté MCP).
+- Pas de garde-fou `RISK_LIMIT` sur `join_competition` (le buy-in n'est pas du trading — pas d'engagement de capital, pas de levier). Si demain le buy-in devient risqué (cap par user, fenêtre de buy-in), la garde sera branchée ici.
+- Pas de test isolé vérifiant que `join_competition` propage `MANDATE_INVALID` **sans** appeler `recordAction` (la branche throw avant le try/catch). Verrouillé indirectement par le test « throws MANDATE_INVALID when no active mandate » qui vérifie `competitions.calls` à 0. YAGNI pour un test supplémentaire.
+
+**Note sur les conflits de planning.** La « Suite logique » de Tâche 15 annonçait `place_limit_order` + `set_tp_sl` — mais Tâche 16 a été ré-attribuée aux outils compétitions (le plan 33-tâches s'est réorganisé au fil de l'eau). Les outils `place_limit_order` / `set_tp_sl` restent à planifier ailleurs ; le pattern additif (guard + audit + broadcast + McpError-preserved) leur sera appliqué quand ils reviendront.
+
+**Suite logique.** Tâches 17+ autres outils (cf. plan). Tâche câblage runtime : impl `CompetitionBackend` dans `@tide/api` (probablement un adaptateur qui appelle `CompetitionService.list` / `get` / `join` / `getLeaderboard` — toutes méthodes existantes depuis F11). Le `bootstrapCompetitions` stub sera remplacé à ce moment-là.
+
+**Rapport détaillé** : `.superpowers/sdd/task-16-report.md`. **Commit** : `1e53fe9`.
