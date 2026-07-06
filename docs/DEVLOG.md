@@ -4,6 +4,51 @@ Historique daté, append-only. Format par entrée : **Quoi / Pourquoi / Cheminem
 
 ---
 
+## 2026-07-06 — Web : `useAgent` composable (CRUD agents + bus SSE temps réel) [Tâche 24/33]
+
+**Quoi.** Composable Vue 3 qui pilote les agents LLM côté front : `apps/web/src/composables/useAgent.ts` expose 5 refs (`agents`, `actions`, `activeMandate`, `loading`, `error`) + 5 méthodes (`refresh`, `loadActions`, `kill`, `connectSse`, `disconnectSse`). `connectSse()` ouvre `new EventSource("/api/agents/events")`, écoute `agent_killed` (mise à jour immutable de `status` dans la liste) et `agent_action` (push en tête, buffer plafonné à 200). `onUnmounted(disconnectSse)` ferme la connexion à la destruction. 6 tests vitest (`apps/web/test/useAgent.test.ts`) utilisant `@vue/test-utils` (`mount()` + `provide`/`inject` pour mocker le client, `vi.stubGlobal("EventSource", ...)` pour le SSE). **707/707** (+6 vs baseline 701), typecheck 8/8 vert, lint : 5 erreurs **pré-existantes** inchangées (vérifié via `git stash` baseline), **0 cast** `as any`/`as never`, **0 dépendance** ajoutée pour la logique métier (uniquement devDeps de test : `@vue/test-utils@^2`, `happy-dom`).
+
+**Pourquoi.** Tâche 23 (commit `9e33f3a`) a livré 9 méthodes `TideClient.agents/.../mandates/.../agentActions` côté client, mais **aucun composable Vue ne les consommait**. Sans `useAgent`, le dashboard agent (vue « monitoring/kill switch/audit LLM ») ne pouvait pas piloter agents via Vue — il aurait fallu du fetch manuel non typé. Cette tâche ferme la boucle client.
+
+**Cheminement (5 écarts au brief, tous défendables — pattern additif des T11-T23).**
+- **`useClient()` du brief remplacé par `client: TideClient` en paramètre.** Le brief présume `import { useClient } from "./useClient"` — **mais ce fichier n'existe pas**. Tous les autres composables du front (`usePaper`, `useLeaderboard`, `useCompetitions`, `useMarket`, `useCountdown`, etc.) prennent leur client en paramètre. Choix : s'aligner sur le pattern existant (DRY, testable sans refacto transverse de `provide`/`inject`). Si le jour où `useClient()` partagé est créé, la migration est triviale (2 lignes par callsite).
+- **Capture d'erreur dans `refresh`/`loadActions`/`kill`.** Le brief pose `const error = ref<string | null>(null)` mais **n'y écrit jamais** — livré inerte, en violation de « ne jamais avaler une erreur ». Refacto : `error.value = null` en début + `error.value = errorMessage(e)` en catch via le helper partagé `apps/web/src/composables/messages.ts:10` (utilisé par `usePaper`/`useLeaderboard`). Coût : 3 lignes par méthode.
+- **Mise à jour immutable de `agents` côté SSE.** Le brief écrit `a.status = "stopped"` — **mais `AgentDto.status` est `readonly`** (`packages/client/src/client.ts:170`). Refacto : `agents.value = agents.value.map(x => x.id === id ? { ...x, status: "stopped" } : x)`. Vue-idiomatic, types stricts satisfaits.
+- **Constante nommée `ACTIONS_BUFFER_LIMIT = 200`** au lieu de `[...actions.value].slice(0, 200)` inline. Respect de la convention « pas de valeurs magiques ».
+- **Garde runtime sur `parsed.agentId` SSE** (`typeof id === "string"`) avant la recherche — un payload malformé upstream ne crash pas silencieusement.
+
+**Modifications collatérales (6 fichiers, additive-only).**
+- `apps/web/src/composables/useAgent.ts` : **créé** (96 lignes) — le composable.
+- `apps/web/test/useAgent.test.ts` : **créé** (219 lignes) — 6 tests.
+- `apps/web/package.json` : ajout `@vue/test-utils@^2.4.11` + `happy-dom` en devDeps.
+- `pnpm-lock.yaml` : maj lockfile (cohérente avec les ajouts).
+- `vitest.config.ts` : ajout `setupFiles: ["./test-setup/dom.ts"]` (1 ligne).
+- `test-setup/dom.ts` : **créé** (67 lignes) — polyfill `MemoryStorage` pour Node 25+ (cf. bug #1).
+
+**Décisions de design clés.**
+- **`mount()` + `provide`/`inject` plutôt qu'`effectScope()`.** Première itération : `effectScope()` + appels directs du composable. Mais `onUnmounted` ne se déclenche pas hors instance de composant → warnings Vue à chaque test (« no active component instance »), viole « output pristine ». Solution : `mount()` avec un composant minimal qui injecte le client via `provide`/`inject` (`Symbol` typé). Coût : +1 devDep (`@vue/test-utils` ~1 MB). `effectScope` reste valide pour d'autres usages tests-only où les lifecycle hooks ne sont pas requis.
+- **Mock `EventSource` via `vi.stubGlobal`** avec `class FakeEventSource` exposée au top du fichier (réutilisable dans 2 tests). Pour le test `onUnmounted`, sous-classe anonyme qui compte les appels à `close()`. Instances capturées dans un `Array` pour assertions déterministes (évite la closure capture qui posait problème de types, cf. bug #3).
+- **Cleanup `events?.close()` + `events = null` dans `disconnectSse`.** Idempotent (no-op si pas connecté). Le `null` reset permet un `connectSse` ultérieur (re-SSE après reconnexion/déconnexion UI).
+- **`activeMandate` exposé mais pas implémenté.** Le brief prévoit l'exposition ; l'impl (chargement via `client.mandates(agentId).find(m => m.status === "active")`) viendra quand le front affichera la sidebar mandat — pas du scope de cette tâche.
+
+**Bugs & fix (3 incidents résolus pendant l'impl).**
+- 🔴 **`localStorage` stub de Node 25+ casse le test au module-load.** Erreur fatale `TypeError: window.localStorage.getItem is not a function`. Node 25+ ships un `globalThis.localStorage = {}` (coquille vide) en activant l'expérimental `--localstorage-file` flag. Le test charge `useSession` → `messages.ts` → `locale.ts` qui fait `window.localStorage.getItem(STORAGE_KEY)` au module-load. La garde `typeof window === "undefined"` de `locale.ts:20` passe (happy-dom fournit `window`), puis crash au `getItem` (méthode undefined). **Fix** : `test-setup/dom.ts` détecte si `localStorage` est cassé (via `isWorking()`) et installe une `MemoryStorage` conforme à l'interface Storage (8 méthodes). Patch sur `globalThis.localStorage` **ET** `globalThis.window.localStorage` (les deux peuvent être touchés par happy-dom). Chargé via `vitest.config.ts:setupFiles`. **Le fix est isolé** : si Node fournit un vrai `localStorage`, `isWorking()` court-circuite la réinstall → zero impact sur les autres tests (vérifié : les 9 tests `composables.test.ts` continuent de passer).
+- 🟠 **Conflit de nom `class FakeEventSource` vs `interface FakeEventSource`.** Première version avait les deux → TS inférait `captured: FakeEventSource | null` comme `never` (l'interface shadowait la classe dans le même namespace). **Fix** : supprimer l'interface redondante (la classe fournit son propre type via son nom).
+- 🟠 **`captured?.url` typé `never` malgré le fix précédent.** Encapsulation via une closure + assignation `captured = this` dans le constructeur ne se narrow pas correctement avec vue-tsc. **Fix** : `class FakeEventSource` au top du fichier (hoistée), `const instances: FakeEventSource[] = []`, `const FakeCtor = function (url: string) { const instance = new FakeEventSource(url); instances.push(instance); return instance; }`. Lecture : `instances[0]?.url` (zéro closure, types stricts satisfaits).
+
+**Dette tracée.**
+- **Aucun `useClient` partagé n'a été créé.** Tous les composables passent leur `client` en paramètre. Le jour où on mutualise via `provide`/`inject`, c'est un refacto transverse (pas du scope de cette tâche).
+- **`activeMandate` reste à `null`.** Chargement via `client.mandates(agentId).find(m => m.status === "active")` à ajouter quand le front aura besoin de la sidebar mandat.
+- **Mock SSE ne couvre pas le branch `agent_action`.** Le test couvre `agent_killed` (le cas vécu actuel de T18). Le branch `agent_action` du composable est testé implicitement (même `JSON.parse`, même buffer cap) — un test isolé pourra être ajouté quand le câblage runtime émettra des `agent_action` réels côté MCP.
+- **Pas de garde `EventSource` non-supporté** (vieux navigateurs sans SSE) — acceptable, SSE est universel depuis 2011.
+- **`setupFiles` global** (`test-setup/dom.ts`) s'applique à **tous** les tests du monorepo, pas seulement à `useAgent.test.ts`. Le `isWorking()` court-circuite la réinstall si `localStorage` est OK → zero impact sur les 701 autres tests (vérifié : `composables.test.ts` toujours vert, le store `localStorage.setItem` de `useSession` marche).
+
+**Suite logique.** **Tâche câblage runtime** : un composant dashboard agent (à créer) injectera `TideClient(createFetchTransport("/api"))` via `provide`, branchera `connectSse()` dans un `onMounted`, et exposera `{ agents, actions, error, kill, connectSse, disconnectSse }` à son template. Aucun changement MCP ou API requis. **Chargement du `activeMandate`** : à ajouter dans `useAgent.refresh` (ou nouvelle méthode `loadMandate(agentId)`) quand le front en aura besoin.
+
+**Rapport détaillé** : `.superpowers/sdd/task-24-report.md`. **Commit** : `408307a`.
+
+---
+
 ## 2026-07-06 — `@tide/client` : 3 DTOs + 9 méthodes agents/mandates/agentActions + routes serveur [Tâche 23/33]
 
 **Quoi.** Étend `@tide/client` avec 9 méthodes typées pour piloter agents + mandats + historique d'actions : `agents(userId)` / `agent(id)` / `createAgent(input)` / `updateAgent(id, patch)` / `deleteAgent(id)` / `killAgent(id)` / `mandates(agentId)` / `createMandate(input)` / `agentActions(agentId, limit?)`. Nouveaux types `AgentDto`/`MandateDto`/`AgentActionDto` (miroirs des types domaine). `ApiMethod` étendu (`PATCH`/`DELETE` ajoutés à `ApiRequest.method`). Côté `apps/api` (additif, requis par les méthodes client) : 4 routes nouvelles (`PATCH /api/agents/:id`, `DELETE /api/agents/:id`, `GET /api/mandates?agentId=...`, `GET /api/agent-actions?agentId=...&limit=N`), `AgentService.update` (délégation store), `MandateService.listByAgent`, `parseUpdateAgent` (filtre name/type/status au bord), `agentActionsStore?: AgentActionsStore` dans `AppConfig` + `ServerDeps`. **701/701** (+6), typecheck 8/8 vert, lint : 5 erreurs **pré-existantes** inchangées (vérifié via `git stash` baseline), **0 cast**, **0 dépendance** ajoutée.
