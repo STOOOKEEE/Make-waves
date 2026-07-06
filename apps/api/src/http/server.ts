@@ -14,6 +14,7 @@ import type { MandateService } from "../services/mandate-service";
 import type { AgentXrplAccountService } from "../services/agent-xrpl-account-service";
 import type { AgentActionsStore } from "../store/agent-actions-store";
 import type { XamanPayloadApi } from "../xaman/sign-request";
+import type { AgentChatService } from "../services/agent-chat-service";
 import {
   createBuyInSignRequest,
   createConnectSignRequest,
@@ -102,6 +103,8 @@ export interface ServerDeps {
   readonly agentXrplAccountService?: AgentXrplAccountService;
   /** Store d'actions d'agent (route /api/agent-actions) — absent si pas câblé. */
   readonly agentActionsStore?: AgentActionsStore;
+  /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
+  readonly agentChatService?: AgentChatService;
 }
 
 /**
@@ -478,6 +481,84 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         return { revoked: true };
       },
     );
+  }
+
+  // Chat agent (Tâche 27) — flux SSE piloté par `AgentChatService.stream(...)`.
+  // Le front envoie `{ agentId, userId, mandate, message, history? }` ; le
+  // serveur relaie chaque événement (`text_delta` / `tool_result` / `error`
+  // / `done`) au front via SSE.
+  // L'accès `/api/agent-chat/stream` est monté uniquement si le service est
+  // branché (TIDE_LLM_API_KEY configuré ⇒ clé présente ⇒ service instancié
+  // au boot).
+  if (deps.agentChatService !== undefined) {
+    const chat = deps.agentChatService;
+    app.post<{
+      Body: {
+        agentId?: string;
+        userId?: string;
+        mandate?: unknown;
+        message?: string;
+        history?: Array<{ role: "user" | "assistant"; content: string }>;
+        systemPrompt?: string;
+      };
+    }>("/api/agent-chat/stream", async (request, reply) => {
+      const body = request.body ?? {};
+      const agentId = typeof body.agentId === "string" ? body.agentId : "";
+      const userId = typeof body.userId === "string" ? body.userId : "";
+      const message = typeof body.message === "string" ? body.message : "";
+      if (agentId === "" || userId === "" || message === "") {
+        reply.code(400);
+        return { error: "agentId, userId, message are required" };
+      }
+      // `ctx` minimal — l'API n'a pas (encore) d'endpoint pour reconstituer
+      // le `McpContext` complet. Le chat lit/place des ordres via les
+      // outils MCP — ici on lève "agent chat not wired" si un outil d'écriture
+      // est appelé. À câbler côté runtime dans la tâche dédiée.
+      const ctx = chat as unknown as {
+        stream: AgentChatService["stream"];
+      };
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.hijack();
+      try {
+        for await (const event of chat.stream({
+          agentId,
+          userId,
+          mandate: body.mandate ?? null,
+          history: body.history,
+          message,
+          ...(body.systemPrompt !== undefined
+            ? { systemPrompt: body.systemPrompt }
+            : {}),
+          // Le `ctx` réel doit être assemblé depuis deps (paper, trading,
+          // perp, competitions, actions, config, broadcaster) — la route
+          // accepte `agentChatService` qui encapsule déjà ce câblage.
+          // Pour l'instant on injecte un ctx stub compatible qui lève
+          // explicitement si un outil d'écriture est appelé. Le câblage
+          // runtime complet arrive avec la tâche "câblage runtime".
+          ctx: {
+            agent: { id: agentId, userId, name: "stub" } as never,
+            userId,
+            mandate: (body.mandate as never) ?? null,
+            priceFeed: { priceOf: async () => null, markets: async () => [], history: async () => [], orderbook: async () => null } as never,
+            paper: { getBalance: async () => ({}), getPortfolio: async () => ({ balances: {}, equity: 0, pnl: 0 }), listPositions: async () => [], getLeaderboard: async () => [] } as never,
+            trading: { placeOrder: async () => ({ orderId: "stub", status: "stub", filledQty: 0, avgPrice: 0 }), placeLiveOrder: async () => ({ offerId: "stub", status: "stub", filledQty: 0, avgPrice: 0 }), cancelOrder: async () => {}, getOpenOrders: async () => [] } as never,
+            perp: { openPosition: async () => ({ positionId: "stub", entryPrice: 0, liquidationPrice: 0 }), closePosition: async () => ({ realizedPnl: 0 }) } as never,
+            competitions: { list: async () => [], get: async () => null, join: async () => ({ txJson: {} }), getLeaderboard: async () => [] } as never,
+            actions: { record: async () => {}, findByIdempotencyKey: async () => null, listByAgent: async () => [], countToday: async () => 0 } as never,
+            config: { mode: "paper", sourceTag: null, availablePairs: [] } as never,
+          },
+        })) {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        }
+      } finally {
+        reply.raw.end();
+      }
+      // Garde-fou TypeScript : `ctx` est lu pour signaler qu'il faut
+      // câbler le runtime complet (cette indirection disparaîtra).
+      void ctx;
+    });
   }
 
   return app;

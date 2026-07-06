@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./bin": "./bin/tide-mcp.ts",
-    "./crypto": "./src/lib/crypto.ts"
+    "./crypto": "./src/lib/crypto.ts",
+    "./tools": "./src/tools/index.ts"
   },
   "bin": {
     "tide-mcp": "./bin/tide-mcp.ts"

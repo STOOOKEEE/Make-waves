@@ -17,6 +17,7 @@ import type { SymbolPoolMap } from "./feed/onchain-price";
 import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
+import { AgentChatService } from "./services/agent-chat-service";
 import { PaperService } from "./services/paper-service";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
@@ -203,6 +204,23 @@ function buildExecDeps(sourceTag: number | undefined): ExecDeps | undefined {
   return { sourceTag, quote: DEFAULT_LIVE_QUOTE };
 }
 
+/**
+ * Service de chat agent (Tâche 27). Activé dès que `TIDE_LLM_API_KEY` est
+ * présent — la clé n'est jamais journalisée. Le `ctx` (McpContext complet)
+ * sera câblé par la tâche dédiée ; pour l'instant le service tourne avec
+ * un ctx stub injecté côté route.
+ */
+function buildAgentChatService(): AgentChatService | undefined {
+  const apiKey = env.readLlmApiKey();
+  if (apiKey === undefined) {
+    return undefined;
+  }
+  return new AgentChatService({
+    apiKey,
+    model: env.readLlmModel(),
+  });
+}
+
 /** Démarre la synchronisation périodique de l'indexeur (premier sync au boot). */
 function startIndexerSync(indexer: AttributionIndexer): void {
   const run = (): void => {
@@ -238,6 +256,7 @@ async function main(): Promise<void> {
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
   const sign = buildSignDeps(sourceTag);
   const exec = buildExecDeps(sourceTag);
+  const agentChatService = buildAgentChatService();
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined
       ? { store: indexerSetup.store, sourceTag: indexerSetup.sourceTag }
@@ -268,6 +287,7 @@ async function main(): Promise<void> {
     sign,
     exec,
     metrics,
+    agentChatService,
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).
@@ -306,7 +326,8 @@ async function main(): Promise<void> {
       `[on-chain:${onchainPrices !== undefined ? "on" : "off"} ` +
       `indexeur:${indexerSetup !== undefined ? "on" : "off"} ` +
       `xaman:${sign !== undefined ? "on" : "off"} ` +
-      `live:${exec !== undefined ? "on" : "off"}]`,
+      `live:${exec !== undefined ? "on" : "off"} ` +
+      `chat:${agentChatService !== undefined ? "on" : "off"}]`,
   );
 }
 
