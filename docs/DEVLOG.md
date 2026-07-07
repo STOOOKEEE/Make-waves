@@ -1761,3 +1761,32 @@ typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : ren
 **Rapports détaillés** : `.superpowers/sdd/task-{23..32}-report.md`. **Commits** : T23 `9e33f3a`, T24 `408307a`, T25 `28d3d60`, T26-T29 (composants), T30 AgentView, T31 `27ab43e`, T32 `9b8e65d`. **Total plan 33-tâches** : **complété** sur branche `feat/agent-mcp`.
 
 **Suite logique.** **Câblage runtime MCP** (tâche parallèle, hors plan 33) : remplacer les `bootstrapPaper`/`bootstrapTrading`/`bootstrapPerp`/`bootstrapActions`/`bootstrapCompetitions` de `bin/tide-mcp.ts` par les vrais adapters HTTP `@tide/api` (`HttpPaperBackend`/`HttpTradingBackend`/etc.). **Packaging release** : publier `@tide/mcp` sur npm (ou tarball GitHub) pour que `npx -y @tide/mcp` résolve depuis `McpConfigInstructions`. **Outils MCP restants** (`place_limit_order` / `set_tp_sl` selon plan original) — ré-attribution de scope en cours de route, pattern additif (guard + audit + broadcast + McpError-preserved) déjà rodé sur T14-T17. **Activation runtime** (mainnet) : les routes agents/mandates sont testées et prêtes, leur activation côté `main.ts` viendra quand Armand câblera `.env` (`TIDE_AGENT_KEY_MASTER`, `TIDE_LLM_API_KEY` pour le chat intégré optionnel). **Vérification navigateur runtime** de l'écran `AgentView` + du streaming SSE chat = à faire de tes yeux sur un mainnet ou un environnement de démo (`pnpm --filter @tide/api start` + `pnpm --filter @tide/web dev` → `http://localhost:5173/agent`).
+
+## 2026-07-07 — AI Agent : clôture (33/33 tâches livrées, branche `feat/agent-mcp` poussée) [chemin critique]
+
+**Quoi.** Fin de l'impl de la couche AI Agent (spec `7409e4d` → plan `76127de` → 33 commits sur `feat/agent-mcp` → push `6f73d51`). Bilan chiffré :
+- 22 commits dédiés sur la branche + 2 commits de fermeture (lint cleanup `6f73d51`).
+- 72 fichiers, +7613/-72 lignes, fusion finale `feat/agent-mcp` base `d60a456`.
+- **738/738 tests verts** (+219 vs baseline 519, dont 20 outils MCP, 7 composables Vue, 2 services API, 1 AgentChatService streaming Claude API, 1 E2E agent flow).
+- Typecheck 7/8 packages vert (le 8e est Foundry).
+- Lint propre sur le code ajouté (5 fixes de dead imports en `6f73d51`).
+- Build web 279KB JS (gzip 81KB).
+
+**Pourquoi.** Phase finale de l'AI Agent : audit final + push de la branche pour ouvrir une PR hackathon.
+
+**Audit final** (`final-review.md`) : ✅ Approved, 0 critical, **1 important post-merge** — isolation cross-user côté serveur (un user authentifié peut agir sur les agents d'un autre user s'il devine l'UUID). Borné au dev local (HTTP non routable), dette estimée 2-3h + 5-10 tests d'intégration. **À fermer impérativement avant toute publication partagée.**
+
+**Bugs critiques attrapés en route par les reviews per-task** (sans elles, le code serait passé) :
+- **Task 17** : 4 outils MCP non enregistrés dans `tools/index.ts` (code mort invisible aux clients MCP). Fix `71081fb`.
+- **Task 27** : stubs `ctx` qui renvoyaient des `{orderId: "stub", status: "stub"}` silencieux sur `place_order` — un LLM aurait cru qu'un trade était passé alors que rien ne s'était passé. Plus 9 casts `as never`. Fix `5d0a302`.
+
+**1 incident d'API** : Token Plan MiniMax saturé à mi-chemin de Task 30 (48 turns utilisés avant 429). Plan reset le lendemain, re-dispatch de Task 30 a complété proprement.
+
+**Coût total MiniMax (smoke + reviews + impls + fixes)** : ~$310. Les reviews per-task ont coûté ~$40 sur ~$270 d'impls, mais ont attrapé 2 bugs critiques (Task 17 + Task 27) qui auraient silencieusement cassé la prod.
+
+**Suite.**
+1. Fixer l'isolation cross-user côté serveur (middleware `assertAgentOwnership(agentId, sessionUserId)`).
+2. Activer le runtime : `TIDE_AGENT_KEY_MASTER`, `TIDE_SOURCE_TAG`, `TIDE_LLM_API_KEY`, `TIDE_INDEXED_ACCOUNTS` + câblage des vrais backends MCP (`priceFeed`, `paper`, `trading`, `perp`, `competitions`, `actions`) qui sont actuellement stub `throw loud` dans `bin/tide-mcp.ts`.
+3. Smoke E2E dans le navigateur (Claude Desktop + Tide UI).
+4. PR review par le jury Make Waves.
+5. Merge `feat/agent-mcp` → `dev` une fois les points 1+2 fermes.
