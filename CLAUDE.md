@@ -5,6 +5,7 @@ App de paper trading + compétitions on-chain sur **XRPL Mainnet**, avec passage
 - **Spec complète** : [`docs/SPEC.md`](docs/SPEC.md)
 - **Roadmap d'exécution** : [`docs/ROADMAP.md`](docs/ROADMAP.md)
 - **Historique** : [`docs/DEVLOG.md`](docs/DEVLOG.md)
+- **Audit d'état (basé sur le code, 2026-07-07)** : [`docs/audit-2026-07-07/`](docs/audit-2026-07-07/README.md) — état réel feature par feature + checklist mainnet
 
 ## Le produit en bref
 
@@ -43,10 +44,10 @@ make-waves/
 │   ├── api/           # backend Node : services + HTTP (Fastify) + feed + store SQLite
 │   │   └── src/{services, http, feed, store, app.ts, main.ts}
 │   └── web/           # front Vue 3 + Vite (composables + vues terminal/leaderboard/compét)
-├── docs/              # SPEC, ROADMAP, DEVLOG
+├── docs/              # SPEC, ROADMAP, DEVLOG, audit-2026-07-07
 └── CLAUDE.md          # ce fichier (état courant)
 ```
-*Branche de travail : `dev` (main = baseline). Équipe 2-3, full-time.*
+*Branche de travail : `main` (branche `dev` supprimée le 2026-07-07, tout était fusionné). Équipe 2-3, full-time.*
 
 ## Commandes
 
