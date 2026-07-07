@@ -9,6 +9,13 @@ export const DROPS_PER_XRP = 1_000_000;
 /** MemoType identifiant une inscription à un tournoi Tide. */
 export const MEMO_TYPE_JOIN = "tide/join";
 
+/** MemoType identifiant un versement de gain (payout depuis le prize pool). */
+export const MEMO_TYPE_PAYOUT = "tide/payout";
+
+/** Bornes du nombre de signataires d'une SignerList XRPL. */
+export const MIN_SIGNERS = 1;
+export const MAX_SIGNERS = 32;
+
 /** MemoFormat par défaut pour nos memos textuels. */
 export const MEMO_FORMAT_TEXT = "text/plain";
 

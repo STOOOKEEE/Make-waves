@@ -63,6 +63,100 @@ for (const { name, make } of stores) {
       (service.balancesOf("a") as Record<string, number>).RLUSD = 1;
       expect(service.balancesOf("a")).toEqual({ RLUSD: 1000 });
     });
+
+    it("ouvre une position perp : marge réservée, frais débités, equity inclut le PnL", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      const pos = service.openPosition("a", {
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 1000,
+        entry: 0.5,
+        leverage: 5,
+        margin: 100,
+        fee: 1,
+      });
+      expect(pos.id).not.toBe("");
+      expect(service.balancesOf("a")).toEqual({ RLUSD: 999 }); // cash - fee
+      expect(service.equityOf("a", { XRP: 0.5 })).toBeCloseTo(999); // PnL nul à l'entrée
+      expect(service.equityOf("a", { XRP: 0.6 })).toBeCloseTo(1099); // +100 de PnL
+      expect(service.positionsOf("a")).toHaveLength(1);
+    });
+
+    it("ferme une position perp : PnL réalisé crédité au cash", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      const pos = service.openPosition("a", {
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 1000,
+        entry: 0.5,
+        leverage: 5,
+        margin: 100,
+        fee: 0,
+      });
+      const { realizedPnl } = service.closePosition("a", pos.id, { XRP: 0.6 });
+      expect(realizedPnl).toBeCloseTo(100);
+      expect(service.balancesOf("a")).toEqual({ RLUSD: 1100 });
+      expect(service.positionsOf("a")).toHaveLength(0);
+    });
+
+    it("plafonne la perte à la marge à la fermeture (isolated margin)", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      const pos = service.openPosition("a", {
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 1000,
+        entry: 0.5,
+        leverage: 5,
+        margin: 100,
+        fee: 0,
+      });
+      // PnL brut = (0.1 - 0.5) * 1000 = -400, plafonné à -100 (la marge).
+      const { realizedPnl } = service.closePosition("a", pos.id, { XRP: 0.1 });
+      expect(realizedPnl).toBe(-100);
+      expect(service.balancesOf("a")).toEqual({ RLUSD: 900 });
+    });
+
+    it("refuse une marge supérieure au cash disponible", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      expect(() =>
+        service.openPosition("a", {
+          product: "perp",
+          symbol: "XRP",
+          side: "long",
+          qty: 1,
+          entry: 0.5,
+          leverage: 1,
+          margin: 2000,
+          fee: 0,
+        }),
+      ).toThrow(InsufficientBalanceError);
+    });
+
+    it("classe les comptes en incluant le PnL des positions", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      service.openAccount("b");
+      service.openPosition("b", {
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 1000,
+        entry: 0.5,
+        leverage: 5,
+        margin: 100,
+        fee: 0,
+      });
+      const board = service.leaderboard({ XRP: 0.6 }); // b : 1000 cash + 100 PnL
+      expect(board.map((e) => e.userId)).toEqual(["b", "a"]);
+      expect(board[0]?.equity).toBeCloseTo(1100);
+    });
   });
 }
 
@@ -80,8 +174,41 @@ describe("SqliteAccountStore — spécifique", () => {
     store.open("a", { RLUSD: 1000, XRP: 50 });
     expect(store.getBalances("a")).toEqual({ RLUSD: 1000, XRP: 50 });
     expect(store.snapshots()).toEqual([
-      { userId: "a", balances: { RLUSD: 1000, XRP: 50 } },
+      { userId: "a", balances: { RLUSD: 1000, XRP: 50 }, positions: [] },
     ]);
+    store.close();
+  });
+
+  it("persiste et relit les positions ouvertes", () => {
+    const store = new SqliteAccountStore();
+    store.open("a", { RLUSD: 1000 });
+    store.openPosition("a", { RLUSD: 999 }, {
+      id: "pos-1",
+      product: "perp",
+      symbol: "XRP",
+      side: "short",
+      qty: 200,
+      entry: 0.5,
+      leverage: 3,
+      margin: 33.3,
+      fee: 1,
+    });
+    expect(store.getPositions("a")).toEqual([
+      {
+        id: "pos-1",
+        product: "perp",
+        symbol: "XRP",
+        side: "short",
+        qty: 200,
+        entry: 0.5,
+        leverage: 3,
+        margin: 33.3,
+        fee: 1,
+      },
+    ]);
+    store.closePosition("a", { RLUSD: 1010 }, "pos-1");
+    expect(store.getPositions("a")).toEqual([]);
+    expect(store.getBalances("a")).toEqual({ RLUSD: 1010 });
     store.close();
   });
 });

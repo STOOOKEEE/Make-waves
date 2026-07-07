@@ -1,0 +1,7 @@
+# Foundry
+out/
+cache/
+broadcast/
+# Dépendances installées par `forge install` (submodules) ou soldeer
+# (on garde lib/ versionné via submodule ; ignore les artefacts seulement)
+.env

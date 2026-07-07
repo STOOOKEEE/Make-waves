@@ -17,7 +17,7 @@ Projet pour le hackathon **Make Waves XRPL** (22 juin → 21 septembre 2026).
 packages/core   # domaine pur : moteur paper, compétitions, PnL (testable sans I/O)
 packages/xrpl   # intégration XRPL : tx builders + SourceTag, Xaman, feed prix
 apps/api        # backend (API + DB)
-apps/web        # front Nuxt
+apps/web        # front Vue 3 + Vite
 ```
 
 ## Commandes
@@ -31,4 +31,4 @@ pnpm lint         # linter (eslint)
 
 ## Stack
 
-Nuxt + TypeScript · Node + DB · `xrpl.js` · Xaman (XUMM SDK). Aucun smart contract (tout en primitives natives XRPL + backend off-chain).
+Vue 3 + Vite + TypeScript · Node + DB · `xrpl.js` · Xaman (XUMM SDK). Aucun smart contract (tout en primitives natives XRPL + backend off-chain).

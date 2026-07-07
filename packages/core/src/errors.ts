@@ -42,3 +42,11 @@ export class InvalidCompetitionError extends Error {
     this.name = "InvalidCompetitionError";
   }
 }
+
+/** Paramètre de position invalide (quantité, entrée, levier, marge...). */
+export class InvalidPositionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidPositionError";
+  }
+}

@@ -10,3 +10,6 @@ export const PAPER_STARTING_EQUITY = 10_000;
 
 /** Tolérance pour la somme des poids de répartition des gains (flottants). */
 export const WEIGHT_SUM_EPSILON = 1e-9;
+
+/** Levier maximal autorisé sur une position paper (perp simulé, garde-fou). */
+export const MAX_PAPER_LEVERAGE = 100;

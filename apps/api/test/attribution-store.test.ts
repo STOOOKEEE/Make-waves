@@ -85,4 +85,28 @@ describe("SqliteAttributionStore", () => {
       txCount: 0,
     });
   });
+
+  it("dé-duplique par hash (idempotent : ré-observer ne double-compte pas)", () => {
+    const observed: ObservedTx = {
+      account: "a",
+      sourceTag: TIDE_TAG,
+      volume: 100,
+      ledgerIndex: 100,
+      hash: "HASH_1",
+    };
+    store.record(observed);
+    store.record(observed); // ex. après redémarrage de l'indexeur
+    expect(store.all()).toHaveLength(1);
+    expect(store.metrics(TIDE_TAG)).toEqual({
+      totalVolume: 100,
+      activeAccounts: 1,
+      txCount: 1,
+    });
+  });
+
+  it("conserve des tx à hash distinct", () => {
+    store.record({ account: "a", sourceTag: TIDE_TAG, volume: 10, ledgerIndex: 100, hash: "H1" });
+    store.record({ account: "a", sourceTag: TIDE_TAG, volume: 20, ledgerIndex: 101, hash: "H2" });
+    expect(store.all()).toHaveLength(2);
+  });
 });

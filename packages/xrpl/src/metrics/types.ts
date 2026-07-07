@@ -12,6 +12,12 @@ export interface ObservedTx {
   readonly volume: number;
   /** Index du ledger (pour le fenêtrage, ex. leaderboard hebdo). */
   readonly ledgerIndex: number;
+  /**
+   * Hash de la tx — clé d'idempotence : permet au store de dé-dupliquer
+   * (anti-double-comptage au redémarrage de l'indexeur). Optionnel pour rester
+   * compatible avec les écritures manuelles, mais TOUJOURS fourni par l'indexeur.
+   */
+  readonly hash?: string;
 }
 
 /** Métriques d'attribution = ce que le hackathon mesure pour Tide. */

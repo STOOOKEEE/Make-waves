@@ -17,12 +17,14 @@ export function createFetchTransport(
   fetchLike: FetchLike = defaultFetch,
 ): ApiTransport {
   return async (request: ApiRequest): Promise<ApiResponse> => {
+    const hasBody = request.body !== undefined;
+    // On ne pose `content-type: application/json` QUE s'il y a un corps : sinon
+    // Fastify tente de parser un body JSON vide (POST sans body /sign/connect,
+    // /competitions/:id/close) et renvoie une erreur.
     const response = await fetchLike(baseUrl + request.path, {
       method: request.method,
-      headers: { "content-type": "application/json" },
-      ...(request.body !== undefined
-        ? { body: JSON.stringify(request.body) }
-        : {}),
+      headers: hasBody ? { "content-type": "application/json" } : {},
+      ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
     });
     return { status: response.status, body: await response.json() };
   };

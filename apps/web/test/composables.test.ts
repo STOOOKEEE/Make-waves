@@ -1,9 +1,16 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect } from "vitest";
 import { TideClient } from "@tide/client";
 import type { ApiResponse, ApiTransport } from "@tide/client";
 import { usePaper } from "../src/composables/usePaper";
 import { useLeaderboard } from "../src/composables/useLeaderboard";
 import { useCompetitions } from "../src/composables/useCompetitions";
+import { useSession } from "../src/composables/useSession";
+
+const XRP_ACCOUNT = "rPaperUser11111111111111111111111111111";
+
+beforeEach(() => {
+  useSession().disconnectWallet();
+});
 
 function clientWith(routes: Record<string, ApiResponse>): TideClient {
   const transport: ApiTransport = (request) =>
@@ -28,32 +35,38 @@ describe("usePaper", () => {
   it("connecte et charge soldes + ordres", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
-        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 10000 } },
-        "GET /accounts/a/orders": { status: 200, body: [] },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: XRP_ACCOUNT, created: true },
+        },
+        [`GET /accounts/${XRP_ACCOUNT}/balances`]: { status: 200, body: { RLUSD: 10000 } },
+        [`GET /accounts/${XRP_ACCOUNT}/orders`]: { status: 200, body: [] },
       }),
     );
-    paper.userId.value = "a";
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
     await paper.connect();
     expect(paper.connected.value).toBe(true);
     expect(paper.balances.value).toEqual({ RLUSD: 10000 });
   });
 
-  it("tolère un compte déjà existant (409)", async () => {
+  it("tolère un compte déjà existant via ensureAccount", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 409, body: { error: "déjà ouvert" } },
-        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 5 } },
-        "GET /accounts/a/orders": { status: 200, body: [] },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: XRP_ACCOUNT, created: false },
+        },
+        [`GET /accounts/${XRP_ACCOUNT}/balances`]: { status: 200, body: { RLUSD: 5 } },
+        [`GET /accounts/${XRP_ACCOUNT}/orders`]: { status: 200, body: [] },
       }),
     );
-    paper.userId.value = "a";
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
     await paper.connect();
     expect(paper.connected.value).toBe(true);
     expect(paper.error.value).toBe("");
   });
 
-  it("exige un identifiant", async () => {
+  it("exige un wallet XRP", async () => {
     const paper = usePaper(clientWith({}));
     await paper.connect();
     expect(paper.connected.value).toBe(false);
@@ -63,13 +76,16 @@ describe("usePaper", () => {
   it("place un ordre puis rafraîchit", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
-        "GET /accounts/a/balances": { status: 200, body: { RLUSD: 9950, XRP: 100 } },
-        "GET /accounts/a/orders": { status: 200, body: [FILL] },
-        "POST /accounts/a/orders": { status: 201, body: FILL },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: XRP_ACCOUNT, created: true },
+        },
+        [`GET /accounts/${XRP_ACCOUNT}/balances`]: { status: 200, body: { RLUSD: 9950, XRP: 100 } },
+        [`GET /accounts/${XRP_ACCOUNT}/orders`]: { status: 200, body: [FILL] },
+        [`POST /accounts/${XRP_ACCOUNT}/orders`]: { status: 201, body: FILL },
       }),
     );
-    paper.userId.value = "a";
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
     await paper.connect();
     await paper.placeOrder({
       pair: { base: "XRP", quote: "RLUSD" },
@@ -84,12 +100,15 @@ describe("usePaper", () => {
   it("expose le message d'erreur serveur", async () => {
     const paper = usePaper(
       clientWith({
-        "POST /accounts": { status: 201, body: { userId: "a" } },
-        "GET /accounts/a/balances": { status: 500, body: { error: "Erreur interne" } },
-        "GET /accounts/a/orders": { status: 200, body: [] },
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: XRP_ACCOUNT, created: true },
+        },
+        [`GET /accounts/${XRP_ACCOUNT}/balances`]: { status: 500, body: { error: "Erreur interne" } },
+        [`GET /accounts/${XRP_ACCOUNT}/orders`]: { status: 200, body: [] },
       }),
     );
-    paper.userId.value = "a";
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
     await paper.connect();
     expect(paper.connected.value).toBe(false);
     expect(paper.error.value).toBe("Erreur interne");

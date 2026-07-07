@@ -10,6 +10,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidStartingEquityError: 400,
   InvalidOrderError: 400,
   InvalidCompetitionError: 400,
+  InvalidPositionError: 400,
   InvalidPriceError: 400,
   MissingPriceError: 400,
   InvalidAmountError: 400,
@@ -17,17 +18,25 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidAddressError: 400,
   InvalidMemoError: 400,
   InvalidMetricError: 400,
+  LiveExecError: 400,
+  MandateInvalidError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
+  PositionNotFoundError: 404,
+  AgentNotFoundError: 404,
+  MandateNotFoundError: 404,
   // 409 — conflit d'état
   AccountExistsError: 409,
   AlreadyJoinedError: 409,
   CompetitionExistsError: 409,
   CompetitionClosedError: 409,
   InsufficientBalanceError: 409,
-  // 502 — échec d'un service amont (feed de prix)
+  AgentAlreadyExistsError: 409,
+  MandateAlreadyExistsError: 409,
+  // 502 — échec d'un service amont (feed de prix, Xaman)
   PriceFeedError: 502,
+  XamanError: 502,
 };
 
 /** Code HTTP pour une erreur ; 500 par défaut (cause inconnue). */

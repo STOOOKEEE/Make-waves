@@ -1,4 +1,4 @@
-import type { Balances, Fill, Side } from "@tide/core";
+import type { Balances, Fill, Position, PositionSide, Product, Side } from "@tide/core";
 import { openDatabase } from "./sqlite";
 import type { DatabaseSync } from "./sqlite";
 import type { AccountSnapshotRow, AccountStore } from "./account-store";
@@ -22,10 +22,28 @@ function rowToFill(row: unknown): Fill {
   };
 }
 
+function rowToPosition(row: unknown): Position {
+  const record = asRecord(row);
+  const product: Product = String(record["product"]) === "spot" ? "spot" : "perp";
+  const side: PositionSide = String(record["side"]) === "short" ? "short" : "long";
+  return {
+    id: String(record["id"]),
+    product,
+    symbol: String(record["symbol"]),
+    side,
+    qty: Number(record["qty"]),
+    entry: Number(record["entry"]),
+    leverage: Number(record["leverage"]),
+    margin: Number(record["margin"]),
+    fee: Number(record["fee"]),
+  };
+}
+
 /**
- * Persistance SQLite des comptes (module builtin `node:sqlite`). Trois tables :
- * `accounts`, `balances` (une ligne par devise), `orders`. `applyOrder` est
- * transactionnel : soldes et fill sont écrits atomiquement.
+ * Persistance SQLite des comptes (module builtin `node:sqlite`). Quatre tables :
+ * `accounts`, `balances` (une ligne par devise), `orders`, `positions`. Les
+ * mutations (`applyOrder`, `openPosition`, `closePosition`) sont transactionnelles :
+ * soldes et fill/position sont écrits atomiquement.
  */
 export class SqliteAccountStore implements AccountStore {
   private readonly db: DatabaseSync;
@@ -49,6 +67,18 @@ export class SqliteAccountStore implements AccountStore {
         amount REAL NOT NULL,
         price REAL NOT NULL,
         quote_amount REAL NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS positions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        product TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        side TEXT NOT NULL,
+        qty REAL NOT NULL,
+        entry REAL NOT NULL,
+        leverage REAL NOT NULL,
+        margin REAL NOT NULL,
+        fee REAL NOT NULL
       );
     `);
   }
@@ -86,13 +116,19 @@ export class SqliteAccountStore implements AccountStore {
       .map(rowToFill);
   }
 
+  getPositions(userId: string): readonly Position[] | undefined {
+    if (!this.has(userId)) {
+      return undefined;
+    }
+    return this.readPositions(userId);
+  }
+
   applyOrder(userId: string, balances: Balances, fill: Fill): void {
     if (!this.has(userId)) {
       return;
     }
     this.transaction(() => {
-      this.db.prepare("DELETE FROM balances WHERE user_id = ?").run(userId);
-      this.insertBalances(userId, balances);
+      this.replaceBalances(userId, balances);
       this.db
         .prepare(
           "INSERT INTO orders (user_id, pair_base, pair_quote, side, amount, price, quote_amount) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -109,13 +145,54 @@ export class SqliteAccountStore implements AccountStore {
     });
   }
 
+  openPosition(userId: string, balances: Balances, position: Position): void {
+    if (!this.has(userId)) {
+      return;
+    }
+    this.transaction(() => {
+      this.replaceBalances(userId, balances);
+      this.db
+        .prepare(
+          "INSERT INTO positions (id, user_id, product, symbol, side, qty, entry, leverage, margin, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          position.id,
+          userId,
+          position.product,
+          position.symbol,
+          position.side,
+          position.qty,
+          position.entry,
+          position.leverage,
+          position.margin,
+          position.fee,
+        );
+    });
+  }
+
+  closePosition(userId: string, balances: Balances, positionId: string): void {
+    if (!this.has(userId)) {
+      return;
+    }
+    this.transaction(() => {
+      this.replaceBalances(userId, balances);
+      this.db
+        .prepare("DELETE FROM positions WHERE user_id = ? AND id = ?")
+        .run(userId, positionId);
+    });
+  }
+
   snapshots(): AccountSnapshotRow[] {
     return this.db
       .prepare("SELECT user_id FROM accounts ORDER BY rowid")
       .all()
       .map((row) => {
         const userId = String(asRecord(row)["user_id"]);
-        return { userId, balances: this.readBalances(userId) };
+        return {
+          userId,
+          balances: this.readBalances(userId),
+          positions: this.readPositions(userId),
+        };
       });
   }
 
@@ -133,6 +210,12 @@ export class SqliteAccountStore implements AccountStore {
     }
   }
 
+  /** Remplace l'intégralité des soldes d'un compte (à appeler dans une transaction). */
+  private replaceBalances(userId: string, balances: Balances): void {
+    this.db.prepare("DELETE FROM balances WHERE user_id = ?").run(userId);
+    this.insertBalances(userId, balances);
+  }
+
   private readBalances(userId: string): Balances {
     const balances: Record<string, number> = {};
     const rows = this.db
@@ -143,6 +226,15 @@ export class SqliteAccountStore implements AccountStore {
       balances[String(record["currency"])] = Number(record["amount"]);
     }
     return balances;
+  }
+
+  private readPositions(userId: string): Position[] {
+    return this.db
+      .prepare(
+        "SELECT id, product, symbol, side, qty, entry, leverage, margin, fee FROM positions WHERE user_id = ? ORDER BY rowid",
+      )
+      .all(userId)
+      .map(rowToPosition);
   }
 
   private transaction(run: () => void): void {

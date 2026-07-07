@@ -1,6 +1,6 @@
 # Tide — Spec technique
 
-> Statut : validée · Plateforme : XRPL Mainnet (L1) · Contexte : hackathon Make Waves XRPL, fin 2026-09-21 · Mis à jour : 2026-06-21
+> Statut : validée · Plateforme : XRPL Mainnet (L1) · Contexte : hackathon Make Waves XRPL, fin 2026-09-21 · Mis à jour : 2026-06-29
 > Doc d'idée : note Obsidian `Hackathon/XRP/Make Waves XRPL — Tide` · Faisabilité : validée (voir §3 et `DEVLOG`)
 
 Spec de référence pour coder Tide. Ne liste que des briques vérifiées en mainnet ; tout ce qui reste à trancher est en §10.
@@ -26,11 +26,11 @@ Un backend off-chain porte tout l'état (Paper, leaderboard, compétitions, mét
 ```mermaid
 %%{init: {"theme": "dark", "flowchart": {"useMaxWidth": true}}}%%
 graph TB
-    UI[Nuxt UI<br/>terminal + leaderboard] --> API[Backend Node]
+    UI[Vue 3 + Vite UI<br/>terminal + leaderboard] --> API[Backend Node]
     API --> DB[(DB<br/>paper, compétitions, métriques)]
     API --> PRICE[Feed prix<br/>xrpl.js + API CEX]
     API --> XAMAN[Xaman SDK<br/>payloads signés]
-    XAMAN --> XRPL[XRPL Mainnet<br/>DEX + AMM + Escrow]
+    XAMAN --> XRPL[XRPL Mainnet<br/>DEX + AMM + Payments]
     PRICE --> XRPL
 ```
 
@@ -71,7 +71,7 @@ Section clé : tout ce sur quoi Tide bâtit, avec son état réel en mainnet (ju
 
 | Couche | Choix | Pourquoi |
 |---|---|---|
-| Frontend | Nuxt + TypeScript | Zone de confort d'Armand ; terminal de trading + leaderboard + compétitions |
+| Frontend | Vue 3 + Vite + TypeScript | App SPA légère ; terminal de trading + leaderboard + compétitions |
 | Backend | Node + TypeScript + DB (Postgres ou SQLite) | État Paper, portefeuilles virtuels, leaderboard, compétitions, suivi des métriques taggées |
 | XRPL | `xrpl.js` | Lib officielle : construire `OfferCreate`/`Payment` (avec `SourceTag`/`Memos`), lire carnet + pools AMM, suivre les tx taggées |
 | Wallet / signature | Xaman (XUMM SDK) | Signature non-custodial, payloads = templates de tx, onboarding sans signup email |
@@ -91,7 +91,7 @@ Frontière nette : **le Paper et toute la logique applicative vivent off-chain (
 - `User` — identité = adresse XRPL (connexion Xaman), pas d'email. Profil, date d'activation.
 - `PaperWallet` — solde virtuel par user, devises, valeur de départ.
 - `PaperOrder` — ordre simulé : paire, sens, taille, prix d'exécution (snapshot du feed réel), timestamp.
-- `Competition` — tournoi : id, buy-in, règles, fenêtre, état (ouvert/en cours/clos), `escrow_seq` du prize pool.
+- `Competition` — tournoi : id, buy-in, règles, fenêtre, état (ouvert/en cours/clos), compte prize pool multisig associé.
 - `Entry` — inscription d'un user à un tournoi, hash de la tx de buy-in, `SourceTag`/`Memo` associés.
 - `LeaderboardSnapshot` — classements calculés (PnL Paper, perf Live).
 - `MetricEvent` — chaque tx taggée observée on-chain (type, montant, user) pour suivre volume et comptes actifs distincts.

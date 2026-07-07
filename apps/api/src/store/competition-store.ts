@@ -9,6 +9,8 @@ export interface CompetitionStore {
   has(id: string): boolean;
   create(competition: Competition): void;
   getCompetition(id: string): Competition | undefined;
+  /** Toutes les compétitions (pour exposer la liste publique). */
+  list(): Competition[];
   isClosed(id: string): boolean | undefined;
   participants(id: string): string[] | undefined;
   hasParticipant(id: string, userId: string): boolean;
@@ -43,6 +45,10 @@ export class InMemoryCompetitionStore implements CompetitionStore {
 
   getCompetition(id: string): Competition | undefined {
     return this.competitions.get(id)?.competition;
+  }
+
+  list(): Competition[] {
+    return [...this.competitions.values()].map((state) => state.competition);
   }
 
   isClosed(id: string): boolean | undefined {

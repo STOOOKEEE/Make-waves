@@ -26,6 +26,23 @@ export interface CompetitionResult {
 }
 
 /**
+ * Vue publique d'une compétition : ses paramètres économiques + son état LIVE
+ * (nombre de participants réels, pot courant, clôturée ou non). C'est ce que le
+ * front fusionne avec son catalogue de présentation (nom, visuel, descriptif).
+ */
+export interface CompetitionSummary {
+  readonly id: string;
+  readonly buyIn: number;
+  readonly rakeRatio: number;
+  readonly payoutWeights: readonly number[];
+  /** Nombre de participants réellement inscrits. */
+  readonly participants: number;
+  /** Pot courant = buy-in × participants (devise de référence). */
+  readonly pot: number;
+  readonly closed: boolean;
+}
+
+/**
  * Fournit l'equity courante d'un joueur. Découple la clôture de `PaperService`
  * (le caller câble typiquement `(u) => paperService.equityOf(u, prices)`).
  */
@@ -56,6 +73,32 @@ export class CompetitionService {
     assertValidPayoutWeights(competition.payoutWeights);
 
     this.store.create(competition);
+  }
+
+  /** Liste publique de toutes les compétitions, enrichies de leur état live. */
+  list(): CompetitionSummary[] {
+    return this.store.list().map((competition) => this.toSummary(competition));
+  }
+
+  /** Vue publique d'une compétition. Lève si elle est introuvable. */
+  get(competitionId: string): CompetitionSummary {
+    const competition = this.store.getCompetition(competitionId);
+    if (competition === undefined) {
+      throw new CompetitionNotFoundError(
+        `Compétition introuvable: ${competitionId}`,
+      );
+    }
+    return this.toSummary(competition);
+  }
+
+  private toSummary(competition: Competition): CompetitionSummary {
+    const participants = this.store.participants(competition.id)?.length ?? 0;
+    return {
+      ...competition,
+      participants,
+      pot: competition.buyIn * participants,
+      closed: this.store.isClosed(competition.id) ?? false,
+    };
   }
 
   /** Inscrit un joueur (devient participant). */

@@ -21,6 +21,18 @@ describe("assertValidAmount — drops XRP (string)", () => {
   it("rejette un signe négatif", () => {
     expect(() => assertValidAmount("-1", "amount")).toThrow(InvalidAmountError);
   });
+
+  it("accepte la réserve totale XRP (10^17 drops)", () => {
+    expect(() =>
+      assertValidAmount("100000000000000000", "amount"),
+    ).not.toThrow();
+  });
+
+  it("rejette un montant au-delà de la réserve totale (10^17 + 1)", () => {
+    expect(() =>
+      assertValidAmount("100000000000000001", "amount"),
+    ).toThrow(InvalidAmountError);
+  });
 });
 
 describe("assertValidAmount — token émis (objet)", () => {
@@ -60,6 +72,25 @@ describe("assertValidAmount — token émis (objet)", () => {
     expect(() => assertValidAmount(amount, "amount")).toThrow(
       InvalidAddressError,
     );
+  });
+
+  it("accepte une value décimale valide", () => {
+    const amount: IssuedCurrencyAmount = { currency: "USD", issuer: ISSUER, value: "50.5" };
+    expect(() => assertValidAmount(amount, "amount")).not.toThrow();
+  });
+
+  it("rejette une value en notation scientifique (rippled la refuse)", () => {
+    const amount: IssuedCurrencyAmount = { currency: "USD", issuer: ISSUER, value: "1e+21" };
+    expect(() => assertValidAmount(amount, "amount")).toThrow(InvalidAmountError);
+  });
+
+  it("rejette une value à plus de 15 chiffres significatifs (troncature)", () => {
+    const amount: IssuedCurrencyAmount = {
+      currency: "USD",
+      issuer: ISSUER,
+      value: "12345678901234567", // 17 chiffres significatifs
+    };
+    expect(() => assertValidAmount(amount, "amount")).toThrow(InvalidAmountError);
   });
 });
 

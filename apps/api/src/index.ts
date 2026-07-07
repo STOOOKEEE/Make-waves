@@ -6,6 +6,7 @@ export * from "./http/errors";
 export * from "./http/server";
 export * from "./feed/errors";
 export * from "./feed/cex-price-feed";
+export * from "./feed/coingecko-markets";
 export * from "./feed/price-cache";
 export * from "./store/account-store";
 export * from "./store/sqlite-account-store";

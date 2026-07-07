@@ -34,12 +34,17 @@ export class SqliteAttributionStore {
 
   constructor(path = ":memory:") {
     this.db = openDatabase(path);
+    // `tx_hash UNIQUE` : clé d'idempotence. Avec `INSERT OR IGNORE`, ré-observer
+    // la même tx (ex. après redémarrage de l'indexeur) n'insère pas de doublon →
+    // pas de double-comptage du volume/txCount. Plusieurs NULL restent permis
+    // (écritures manuelles sans hash) : la dédup n'opère que sur un hash présent.
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS observed_tx (
         account TEXT NOT NULL,
         source_tag INTEGER NOT NULL,
         volume REAL NOT NULL,
-        ledger_index INTEGER NOT NULL
+        ledger_index INTEGER NOT NULL,
+        tx_hash TEXT UNIQUE
       )
     `);
   }
@@ -57,9 +62,9 @@ export class SqliteAttributionStore {
     }
     this.db
       .prepare(
-        "INSERT INTO observed_tx (account, source_tag, volume, ledger_index) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO observed_tx (account, source_tag, volume, ledger_index, tx_hash) VALUES (?, ?, ?, ?, ?)",
       )
-      .run(tx.account, tx.sourceTag, tx.volume, tx.ledgerIndex);
+      .run(tx.account, tx.sourceTag, tx.volume, tx.ledgerIndex, tx.hash ?? null);
   }
 
   /** Toutes les transactions observées. */

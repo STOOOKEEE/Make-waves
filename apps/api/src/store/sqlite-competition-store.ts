@@ -7,6 +7,16 @@ function asRecord(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;
 }
 
+function rowToCompetition(row: unknown): Competition {
+  const record = asRecord(row);
+  return {
+    id: String(record["id"]),
+    buyIn: Number(record["buy_in"]),
+    rakeRatio: Number(record["rake_ratio"]),
+    payoutWeights: parseWeights(record["payout_weights"]),
+  };
+}
+
 function parseWeights(value: unknown): number[] {
   let parsed: unknown;
   try {
@@ -81,13 +91,16 @@ export class SqliteCompetitionStore implements CompetitionStore {
     if (row === undefined) {
       return undefined;
     }
-    const record = asRecord(row);
-    return {
-      id: String(record["id"]),
-      buyIn: Number(record["buy_in"]),
-      rakeRatio: Number(record["rake_ratio"]),
-      payoutWeights: parseWeights(record["payout_weights"]),
-    };
+    return rowToCompetition(row);
+  }
+
+  list(): Competition[] {
+    return this.db
+      .prepare(
+        "SELECT id, buy_in, rake_ratio, payout_weights FROM competitions ORDER BY rowid",
+      )
+      .all()
+      .map(rowToCompetition);
   }
 
   isClosed(id: string): boolean | undefined {

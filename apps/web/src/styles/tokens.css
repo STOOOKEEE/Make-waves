@@ -1,111 +1,36 @@
-/*
- * Design tokens — système "Analogue" (achromatique strict, thème dark).
- * Une seule source de vérité ; aucune valeur magique ailleurs dans le front.
+/* ===== TIDE — design tokens (« terminal éditorial ») =====
+ * Source de vérité : docs/BRAND.md (ex design_site/DESIGN.md).
+ * Fond cornflower blue, panneaux sombres en bento, Archivo + JetBrains Mono.
  */
 :root {
-  /* Couleurs — échelle achromatique à 7 pas (Paper → Ink) */
-  --color-ink: #000000;
-  --color-graphite: #1c1c1c;
-  --color-paper: #ffffff;
-  --color-mist: #ededed;
-  --color-ash: #b8b8b8;
-  --color-steel: #7a7a7a;
-  --color-pewter: #a6a6a6;
+  /* Marque & surfaces */
+  --blue: #4f6aff; /* accent primaire / fond app / CTA / états actifs */
+  --blue-dk: #3f57e6; /* variante pressée / hover */
+  --panel: #16161b; /* surface des cartes (sur le bleu) */
+  --panel2: #1f1f26; /* surface enfoncée / hover de ligne / inputs */
 
-  /* Surfaces (du plus profond au plus clair) */
-  --surface-void: #000000;
-  --surface-graphite: #1c1c1c;
-  --surface-paper: #ffffff;
-  --surface-mist: #ededed;
+  /* Texte */
+  --text: #ffffff;
+  --soft: rgba(255, 255, 255, 0.6);
+  --mut2: rgba(255, 255, 255, 0.38);
 
-  /* Voiles d'alpha sur fond sombre (profondeur par teinte, pas par ombre) */
-  --tint-raise: rgba(255, 255, 255, 0.04);
-  --tint-raise-strong: rgba(255, 255, 255, 0.07);
-  --hairline-dark: rgba(255, 255, 255, 0.1);
-  --hairline-light: rgba(0, 0, 0, 0.08);
+  /* Lignes */
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.16);
 
-  /* Texte selon la surface */
-  --text-on-dark: var(--color-paper);
-  --text-on-dark-soft: var(--color-pewter);
-  --text-on-dark-muted: var(--color-steel);
-  --text-on-light: var(--color-graphite);
-  --text-on-light-soft: var(--color-steel);
+  /* Sémantique — RÉSERVÉE à la donnée, jamais décoratif */
+  --up: #bff6ce; /* gain / P&L positif / long / hausse */
+  --down: #ffb9ac; /* perte / P&L négatif / short */
+  --gold: #ffd66b; /* récompenses / cagnottes / podium */
 
-  /* Le light-burst : seule couleur du système (cast bleu-blanc, photographique) */
-  --burst-core: rgba(224, 236, 255, 0.95);
-  --burst-mid: rgba(150, 188, 255, 0.45);
-  --burst-halo: rgba(46, 78, 150, 0.22);
+  /* État Live (argent réel) — signal de mode, pas décoratif */
+  --live: #ff9d3c; /* ambre : mode Live actif, garde-fou anti-erreur */
+  --live-dk: #e8862a;
 
-  /* Familles de police (substituts libres de Graphik / LCDDot) */
-  --font-display:
-    "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, sans-serif;
-  --font-lcd: "VT323", "Courier New", ui-monospace, monospace;
+  /* Typo */
+  --disp: "Archivo", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
 
-  /* Poids — uniquement 400 et 500 (la hiérarchie passe par le ton, pas le gras) */
-  --weight-regular: 400;
-  --weight-medium: 500;
-
-  /* Échelle typographique (taille / interligne / interlettrage) */
-  --text-micro: 11px;
-  --leading-micro: 1.3;
-  --tracking-micro: -0.297px;
-
-  --text-caption: 13px;
-  --leading-caption: 1.25;
-  --tracking-caption: -0.351px;
-
-  --text-body: 17px;
-  --leading-body: 1.3;
-  --tracking-body: -0.4px;
-
-  --text-subheading: 18px;
-  --leading-subheading: 1.1;
-  --tracking-subheading: -0.558px;
-
-  --text-heading: 40px;
-  --leading-heading: 1.05;
-  --tracking-heading: -1.6px;
-
-  --text-display: 60px;
-  --leading-display: 1;
-  --tracking-display: -3px;
-
-  --text-lcd: 20px;
-  --tracking-lcd: 0.6px;
-
-  /* Espacement (densité compacte) */
-  --spacing-5: 5px;
-  --spacing-10: 10px;
-  --spacing-13: 13px;
-  --spacing-20: 20px;
-  --spacing-29: 29px;
-  --spacing-30: 30px;
-  --spacing-40: 40px;
-  --spacing-50: 50px;
-  --spacing-60: 60px;
-  --spacing-70: 70px;
-  --spacing-100: 100px;
-
-  /* Rythme de mise en page */
-  --section-gap: 70px;
-  --card-padding: 30px;
-  --element-gap: 10px;
-  --content-max: 1080px;
-  --reading-max: 640px;
-
-  /* Rayons (le rayon est un signal de rôle, pas un choix de style) */
-  --radius-cards: 10px;
-  --radius-images: 10px;
-  --radius-links: 13px;
-  --radius-buttons: 100px;
-  --radius-navpill: 1000px;
-
-  /* Élévation frostée (réservée à la nav pill) */
-  --shadow-pill: 0 1px 0 rgba(0, 0, 0, 0.05), 0 8px 32px rgba(0, 0, 0, 0.45);
-
-  /* Transitions */
-  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --dur-fast: 200ms;
-  --dur-med: 400ms;
+  /* Motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }

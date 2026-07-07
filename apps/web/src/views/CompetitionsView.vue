@@ -1,193 +1,526 @@
 <script setup lang="ts">
-import { ref } from "vue";
+/*
+ * CompetitionsView — écran des compétitions. Carte vedette (saison 04) +
+ * grille filtrable. Porté depuis design_site/competitions.html.
+ */
+import { computed, onMounted, ref } from "vue";
 import type { TideClient } from "@tide/client";
-import { useCompetitions } from "../composables/useCompetitions";
-import { formatAmount } from "../lib/format";
-import AppPage from "../components/AppPage.vue";
-import SectionHead from "../components/ui/SectionHead.vue";
-import OutlineButton from "../components/ui/OutlineButton.vue";
+import { localizedCompetitions, getComp } from "../data/competitions";
+import type { CompetitionMock, CompetitionStatus } from "../data/competitions";
+import { useCountdown } from "../composables/useCountdown";
+import { useCompetitionsLive } from "../composables/useCompetitionsLive";
+import { useI18n } from "../i18n/useI18n";
+import StatusBadge from "../components/StatusBadge.vue";
+import SegControl from "../components/SegControl.vue";
 
 const props = defineProps<{ client: TideClient }>();
-const { participants, lastResult, error, create, join, close } = useCompetitions(
-  props.client,
+const emit = defineEmits<{ navigate: [path: string] }>();
+
+// État live (participants, pot, clôture) fusionné dans le catalogue de présentation.
+const liveComps = useCompetitionsLive(props.client);
+onMounted(liveComps.load);
+
+const { t, locale } = useI18n({
+  en: {
+    pageTitle: "Competitions",
+    pageSubtitle:
+      "Seasons, flash tournaments and sponsored challenges. Pick your arena.",
+    featBadge: "Live · featured",
+    featTitle1: "Season 04 —",
+    featTitle2: "Grand Championship",
+    featDesc:
+      "TIDE's flagship competition. 6 weeks, $100,000 in virtual capital, the best return takes the pot. Open to all, no entry fee.",
+    featPlayersLabel: "Players",
+    featFormatLabel: "Format",
+    featRankLabel: "Your rank",
+    featFormatValue: "Net return",
+    ctaKeepTrading: "Keep trading →",
+    ctaViewDetails: "View details",
+    potLabel: "Prize pool",
+    cdDays: "Days",
+    cdHours: "Hours",
+    cdMins: "Min",
+    cdSecs: "Sec",
+    cardEntryLabel: "Entry",
+    registered: "{n} registered",
+    countOne: "{n} competition",
+    countMany: "{n} competitions",
+    ctaDetails: "Details",
+    filterAll: "All",
+    filterLive: "Live",
+    filterSoon: "Soon",
+    filterEnded: "Ended",
+  },
+  fr: {
+    pageTitle: "Compétitions",
+    pageSubtitle:
+      "Saisons, tournois éclair et défis sponsorisés. Choisis ton arène.",
+    featBadge: "En cours · vedette",
+    featTitle1: "Saison 04 —",
+    featTitle2: "Grand Championnat",
+    featDesc:
+      "La compétition phare de TIDE. 6 semaines, $100 000 de capital virtuel, le meilleur rendement rafle la cagnotte. Ouvert à tous, sans frais d'entrée.",
+    featPlayersLabel: "Participants",
+    featFormatLabel: "Format",
+    featRankLabel: "Ton rang",
+    featFormatValue: "Rendement net",
+    ctaKeepTrading: "Continuer à trader →",
+    ctaViewDetails: "Voir les détails",
+    potLabel: "Cagnotte",
+    cdDays: "Jours",
+    cdHours: "Heures",
+    cdMins: "Min",
+    cdSecs: "Sec",
+    cardEntryLabel: "Entrée",
+    registered: "{n} inscrits",
+    countOne: "{n} compétition",
+    countMany: "{n} compétitions",
+    ctaDetails: "Détails",
+    filterAll: "Toutes",
+    filterLive: "En cours",
+    filterSoon: "À venir",
+    filterEnded: "Terminées",
+  },
+});
+
+// Compétition vedette + reste de la grille (hors vedette) — réactif à la langue
+// et à l'état live (pot/participants/statut réels écrasent le décor mock).
+const featured = computed(() =>
+  liveComps.merge(getComp("season-04", locale.value)),
+);
+const grid = computed(() =>
+  localizedCompetitions(locale.value)
+    .filter((c) => !c.featured)
+    .map(liveComps.merge),
 );
 
-const compId = ref("");
-const buyIn = ref(10);
-const joinUser = ref("");
+// Compte à rebours de la cagnotte vedette.
+const { dd, hh, mm, ss } = useCountdown({
+  days: 4,
+  hours: 11,
+  mins: 38,
+  secs: 52,
+});
 
-const PAYOUT_WEIGHTS = [0.5, 0.3, 0.2] as const;
+// Filtre segmenté → statut. Valeurs stables ; libellés traduits.
+const FILTERS = computed(() => [
+  { value: "all", label: t("filterAll") },
+  { value: "live", label: t("filterLive") },
+  { value: "soon", label: t("filterSoon") },
+  { value: "ended", label: t("filterEnded") },
+]);
+const filter = ref("all");
 
-async function onCreate(): Promise<void> {
-  await create({
-    id: compId.value,
-    buyIn: buyIn.value,
-    rakeRatio: 0,
-    payoutWeights: [...PAYOUT_WEIGHTS],
-  });
+const filtered = computed<CompetitionMock[]>(() => {
+  const g = grid.value;
+  return filter.value === "all"
+    ? g
+    : g.filter((c) => c.status === filter.value);
+});
+
+const countLabel = computed(() => {
+  const n = filtered.value.length;
+  return t(n > 1 ? "countMany" : "countOne", { n });
+});
+
+// CTA des cartes : elles ouvrent le détail, l'inscription réelle est sur la page détail.
+const CTA = computed<Record<CompetitionStatus, { c: string; l: string }>>(
+  () => ({
+    live: { c: "join", l: t("ctaDetails") },
+    soon: { c: "soon", l: t("ctaDetails") },
+    ended: { c: "ended", l: t("ctaDetails") },
+  }),
+);
+
+function openComp(id: string): void {
+  emit("navigate", `/competition/${id}`);
 }
 </script>
 
 <template>
-  <AppPage>
-    <SectionHead eyebrow="Tournois" title="Compétitions.">
-      Buy-in à l'inscription, classement au mérite, prize pool réparti aux
-      premiers. Le buy-in est une transaction taggée — chaque inscription compte
-      on-chain.
-    </SectionHead>
-
-    <div class="grid">
-      <!-- Créer -->
-      <div class="card">
-        <h3 class="t-subheading">Nouveau tournoi</h3>
-        <form class="form" @submit.prevent="onCreate">
-          <div class="field">
-            <label for="cid">Id du tournoi</label>
-            <input id="cid" v-model="compId" placeholder="esilv-2026" />
-          </div>
-          <div class="field">
-            <label for="buyin">Buy-in</label>
-            <input
-              id="buyin"
-              v-model.number="buyIn"
-              type="number"
-              step="any"
-              placeholder="10"
-            />
-          </div>
-          <OutlineButton solid type="submit">Créer</OutlineButton>
-        </form>
-      </div>
-
-      <!-- Rejoindre / gérer -->
-      <div class="card">
-        <h3 class="t-subheading">Participants</h3>
-        <form class="form" @submit.prevent="join(compId, joinUser)">
-          <div class="field">
-            <label for="player">Joueur à inscrire</label>
-            <input id="player" v-model="joinUser" placeholder="pseudo" />
-          </div>
-          <div class="card__actions">
-            <OutlineButton type="submit">Rejoindre</OutlineButton>
-            <OutlineButton @click="close(compId)">Clôturer</OutlineButton>
-          </div>
-        </form>
-
-        <ul v-if="participants.length > 0" class="players">
-          <li v-for="participant in participants" :key="participant" class="player">
-            {{ participant }}
-          </li>
-        </ul>
-        <p v-else class="empty">Aucun participant.</p>
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <h1>{{ t("pageTitle") }}</h1>
+        <p>{{ t("pageSubtitle") }}</p>
       </div>
     </div>
 
-    <!-- Résultat de clôture -->
-    <div v-if="lastResult" class="result">
-      <div class="result__head">
-        <span class="t-eyebrow">Résultat de clôture</span>
-        <span class="t-caption dim">
-          Reliquat : {{ formatAmount(lastResult.undistributed) }}
-        </span>
+    <!-- vedette -->
+    <div
+      v-reveal
+      class="card feat"
+      @click="openComp(featured.id)"
+    >
+      <div class="glow"></div>
+      <div>
+        <div class="badge"><i></i> {{ t("featBadge") }}</div>
+        <h2>{{ t("featTitle1") }}<br />{{ t("featTitle2") }}</h2>
+        <p>{{ t("featDesc") }}</p>
+        <div class="row">
+          <div>
+            <div class="l">{{ t("featPlayersLabel") }}</div>
+            <div class="v">{{ featured.players }}</div>
+          </div>
+          <div>
+            <div class="l">{{ t("featFormatLabel") }}</div>
+            <div class="v">{{ t("featFormatValue") }}</div>
+          </div>
+          <div>
+            <div class="l">{{ t("featRankLabel") }}</div>
+            <div class="v up">—</div>
+          </div>
+        </div>
+        <div class="acts">
+          <button
+            class="btn btn-white"
+            @click.stop="emit('navigate', '/dashboard')"
+          >
+            {{ t("ctaKeepTrading") }}
+          </button>
+          <button class="btn btn-line" @click.stop="openComp(featured.id)">
+            {{ t("ctaViewDetails") }}
+          </button>
+        </div>
       </div>
-      <ul class="payouts">
-        <li v-for="payout in lastResult.payouts" :key="payout.userId" class="payout">
-          <span class="rank">{{ String(payout.rank).padStart(2, "0") }}</span>
-          <span class="t-subheading">{{ payout.userId }}</span>
-          <span class="amount">{{ formatAmount(payout.amount) }}</span>
-        </li>
-      </ul>
+      <div class="feat-side">
+        <div class="potbox">
+          <div class="l">{{ t("potLabel") }}</div>
+          <div class="pot">{{ featured.pot }}</div>
+          <div class="cd">
+            <div><div class="v">{{ dd }}</div><div class="l2">{{ t("cdDays") }}</div></div>
+            <div><div class="v">{{ hh }}</div><div class="l2">{{ t("cdHours") }}</div></div>
+            <div><div class="v">{{ mm }}</div><div class="l2">{{ t("cdMins") }}</div></div>
+            <div><div class="v">{{ ss }}</div><div class="l2">{{ t("cdSecs") }}</div></div>
+          </div>
+          <div class="lab">RLUSD + NFT · top 50</div>
+        </div>
+      </div>
     </div>
 
-    <p v-if="error" class="error">{{ error }}</p>
-  </AppPage>
+    <div class="controls">
+      <SegControl v-model="filter" :options="FILTERS" />
+      <div class="lab">{{ countLabel }}</div>
+    </div>
+
+    <div class="cgrid">
+      <div
+        v-for="(c, i) in filtered"
+        :key="c.id"
+        v-reveal="(i % 6) * 40"
+        class="card comp"
+        @click="openComp(c.id)"
+      >
+        <div class="top">
+          <span class="ico">{{ c.ico }}</span>
+          <StatusBadge :status="c.status" />
+        </div>
+        <h3>{{ c.name }}</h3>
+        <div class="desc">{{ c.desc }}</div>
+        <div class="meta">
+          <div>
+            <div class="l">{{ t("potLabel") }}</div>
+            <div class="v gold">{{ c.pot }}</div>
+          </div>
+          <div>
+            <div class="l">{{ t("cardEntryLabel") }}</div>
+            <div class="v" style="font-size: 14px">{{ c.fee }}</div>
+          </div>
+        </div>
+        <template v-if="c.cap">
+          <div class="bar"><i :style="{ width: c.pct + '%' }"></i></div>
+          <div class="barl">
+            <span>{{ t("registered", { n: c.players }) }}</span>
+            <span>{{ c.pct }}% · {{ c.cap }} max</span>
+          </div>
+        </template>
+        <div v-else class="barl" style="margin-top: 4px">
+          <span>{{ c.players }}</span>
+          <span></span>
+        </div>
+        <button class="cta" :class="CTA[c.status].c" @click.stop="openComp(c.id)">
+          {{ CTA[c.status].l }}
+        </button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.grid {
+.feat {
+  position: relative;
+  overflow: hidden;
+  padding: 40px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--element-gap);
+  grid-template-columns: 1.3fr 1fr;
+  gap: 40px;
+  align-items: center;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, #1d1d24, #16161b);
 }
-
-.card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-20);
-  padding: var(--card-padding);
-  border-radius: var(--radius-cards);
-  background: var(--tint-raise);
-  border: 1px solid var(--hairline-dark);
+@media (max-width: 900px) {
+  .feat {
+    grid-template-columns: 1fr;
+    padding: 28px;
+  }
 }
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-13);
+.feat .glow {
+  position: absolute;
+  top: -30%;
+  right: -10%;
+  width: 480px;
+  height: 480px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(79, 106, 255, 0.4), transparent 60%);
+  pointer-events: none;
 }
-
-.card__actions {
-  display: flex;
-  gap: var(--spacing-10);
+.feat .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: var(--up);
+  color: #06231a;
+  font-weight: 700;
+  border-radius: 100px;
+  padding: 7px 14px;
+  margin-bottom: 20px;
 }
-
-.players {
+.feat .badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #06231a;
+  animation: bl 1.4s infinite;
+}
+@keyframes bl {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+.feat h2 {
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: clamp(34px, 4.6vw, 58px);
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+  position: relative;
+}
+.feat p {
+  color: var(--soft);
+  font-size: 15.5px;
+  margin: 16px 0 26px;
+  max-width: 440px;
+  position: relative;
+  line-height: 1.55;
+}
+.feat .row {
   display: flex;
+  gap: 30px;
+  margin-bottom: 28px;
+  position: relative;
   flex-wrap: wrap;
-  gap: var(--spacing-10);
 }
-.players .player {
-  font-size: var(--text-caption);
-  letter-spacing: var(--tracking-caption);
-  padding: var(--spacing-5) var(--spacing-13);
-  border-radius: var(--radius-links);
-  border: 1px solid var(--hairline-dark);
-  color: var(--text-on-dark-soft);
+.feat .row .l {
+  font-size: 11px;
+  color: var(--soft);
+  margin-bottom: 5px;
+}
+.feat .row .v {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 20px;
+}
+.feat .acts {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  position: relative;
+}
+.feat-side {
+  position: relative;
+}
+.feat .potbox {
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  padding: 26px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.03);
+}
+.feat .potbox .l {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+.feat .potbox .pot {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(44px, 6vw, 68px);
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+  margin: 10px 0;
+  color: var(--up);
+}
+.cd {
+  display: flex;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+.cd div {
+  flex: 1;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 4px;
+}
+.cd .v {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.cd .l2 {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--soft);
+  margin-top: 5px;
 }
 
-.result {
+.controls {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-20);
-  padding: var(--card-padding);
-  border-radius: var(--radius-cards);
-  background: var(--tint-raise-strong);
-  border: 1px solid var(--hairline-dark);
-}
-.result__head {
-  display: flex;
-  align-items: baseline;
   justify-content: space-between;
-  gap: var(--spacing-20);
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
 }
-
-.payouts {
-  display: flex;
-  flex-direction: column;
-}
-.payout {
+.cgrid {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
-  align-items: baseline;
-  gap: var(--spacing-20);
-  padding: var(--spacing-13) 0;
-  border-bottom: 1px solid var(--hairline-dark);
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
 }
-.rank {
-  font-family: var(--font-lcd);
-  font-size: var(--text-lcd);
-  letter-spacing: var(--tracking-lcd);
-  color: var(--text-on-dark-muted);
+@media (max-width: 1000px) {
+  .cgrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
-.amount {
-  font-size: var(--text-subheading);
-  letter-spacing: var(--tracking-subheading);
-  font-weight: var(--weight-medium);
-}
-
-@media (max-width: 720px) {
-  .grid {
+@media (max-width: 640px) {
+  .cgrid {
     grid-template-columns: 1fr;
   }
+}
+.comp {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  transition:
+    transform 0.3s var(--ease),
+    background 0.2s;
+  cursor: pointer;
+}
+.comp:hover {
+  transform: translateY(-4px);
+  background: var(--panel2);
+}
+.comp .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+.comp .ico {
+  font-size: 24px;
+}
+.comp h3 {
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: 6px;
+}
+.comp .desc {
+  font-size: 13px;
+  color: var(--soft);
+  line-height: 1.5;
+  margin-bottom: 20px;
+  flex: 1;
+}
+.comp .meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.comp .meta .l {
+  font-size: 10.5px;
+  color: var(--soft);
+  margin-bottom: 4px;
+}
+.comp .meta .v {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 16px;
+}
+.comp .meta .v.gold {
+  color: var(--gold);
+}
+.comp .bar {
+  height: 6px;
+  background: var(--panel2);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.comp:hover .bar {
+  background: #111;
+}
+.comp .bar i {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+  border-radius: 3px;
+}
+.comp .barl {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--soft);
+  margin-bottom: 18px;
+}
+.comp .cta {
+  width: 100%;
+  text-align: center;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 10px;
+  padding: 13px;
+  border: none;
+  cursor: pointer;
+}
+.comp .cta.join {
+  background: #fff;
+  color: var(--blue);
+}
+.comp .cta.soon {
+  background: none;
+  border: 1px solid var(--line2);
+  color: #fff;
+}
+.comp .cta.ended {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--mut2);
 }
 </style>

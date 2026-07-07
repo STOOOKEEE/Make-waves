@@ -1,0 +1,26 @@
+# Contrats Solidity de Tide (piste perp v2 — XRPL EVM Sidechain).
+# Contrainte chaîne : EVM Paris, solc <= 0.8.24 (pas de transient storage).
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+libs = ["lib"]
+solc = "0.8.24"
+evm_version = "paris"
+optimizer = true
+optimizer_runs = 200
+remappings = [
+  "forge-std/=lib/forge-std/src/",
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+]
+fs_permissions = []
+
+# Fuzzing : on veut une bonne couverture des montants.
+[fuzz]
+runs = 512
+
+# Invariants : c'est ici qu'on prouve la conservation du collatéral.
+[invariant]
+runs = 256
+depth = 64
+fail_on_revert = false

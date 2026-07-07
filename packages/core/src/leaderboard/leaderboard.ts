@@ -1,5 +1,6 @@
 import { PAPER_STARTING_EQUITY } from "../constants";
-import { equity, pnl } from "../paper/equity";
+import { pnl } from "../paper/equity";
+import { equityWithPositions } from "../position/equity";
 import { rankByEquity } from "../competition/ranking";
 import type { PriceMap } from "../paper/types";
 import type { AccountSnapshot, LeaderboardEntry } from "./types";
@@ -26,7 +27,7 @@ export function buildLeaderboard(
 ): LeaderboardEntry[] {
   const participants = accounts.map((account) => ({
     userId: account.userId,
-    equity: equity(account.balances, prices, quote),
+    equity: equityWithPositions(account.balances, account.positions ?? [], prices, quote),
   }));
 
   return rankByEquity(participants).map((ranked) => ({

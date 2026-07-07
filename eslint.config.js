@@ -9,6 +9,10 @@ export default tseslint.config(
       "**/.nuxt/**",
       "**/.output/**",
       "**/coverage/**",
+      // Maquette statique de référence (HTML/JS navigateur), hors build app.
+      "design_site/**",
+      // Contrats Solidity (Foundry) : hors du périmètre ESLint/TS.
+      "packages/contracts/**",
       // Les .vue sont typés par vue-tsc (eslint TS ne les parse pas).
       "**/*.vue",
     ],
