@@ -1821,3 +1821,44 @@ typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : ren
 2. Phase câblage runtime (apps/api endpoints manquants + isolation cross-user)
 3. Smoke E2E navigateur (Claude Desktop + Tide UI)
 4. Merge vers `dev` une fois les points 2+3 fermes.
+
+## 2026-07-07 — AI Agent : câblage apps/api réel (routes manquantes + loadContext) [post-merge phase 3]
+
+**Quoi.** Remplace les stubs `throw loud` du MCP par de vrais appels HTTP vers apps/api. Le bin/tide-mcp.ts charge maintenant l'agent + le mandate actif via l'API au démarrage, et tous les adapters du client HTTP pointent vers les vrais endpoints. **749/749 tests verts** (toujours 0 régression), typecheck 7/7 packages vert, lint 0 erreur. Branch `feat/agent-mcp` à `84ffff4`.
+
+**Pourquoi.** Sans ce câblage, le serveur MCP restait non-fonctionnel runtime : les 6 stubs `throw new Error("non câblé")` explosaient à chaque appel d'outil. L'isolation cross-user + le câblage Live restent en dette (post-merge).
+
+**apps/api — 4 routes ajoutées** (dans `apps/api/src/http/server.ts`) :
+- `GET  /prices/:symbol` — lookup single dans le cache `/prices` (utilisé par `get_market`).
+- `POST /api/agent-actions` — record d'une action agent (utilisé par les tools MCP après chaque appel). Body validé (agentId, userId, toolName, toolParams requis). Idempotence via `idempotencyKey` côté store.
+- `GET  /api/agent-actions/idempotency?userId=...&key=...` — lookup dedup par clé d'idempotence.
+- `GET  /api/agent-actions/count-today?agentId=...&userId=...` — compteur journalier pour le guard `enforceRiskLimits` (maxTradesPerDay).
+
+**packages/mcp — refonte de l'API client** (`packages/mcp/src/lib/api-client.ts`) :
+- URLs alignées sur les routes apps/api existantes : `/prices/:symbol`, `/markets`, `/history/:symbol`, `/book/:symbol`, `/accounts/:userId/{balances,orders,positions,portfolio}`, `/competitions/:id/{join,participants}`, etc.
+- `placeOrder` : route scopée par userId (`/accounts/:userId/orders`), le userId vient du header `X-Tide-User-Id` thread par le client (cross-user isolation déjà threadée — reste à la faire respecter côté apps/api).
+- `placeLiveOrder` : pointe vers `/api/exec/live-offer` (pas encore câblé → throw 501 tant que Live mode n'est pas implémenté).
+- `cancelOrder` + `getOpenOrders` : no-op pour l'instant (apps/api n'expose pas explicitement ces endpoints ; seront ajoutés au besoin).
+
+**packages/mcp — loadContext câblé** :
+- `ServerConfig.context?: McpContext` ajouté à `startMcpServer` — permet au bin de pré-construire le contexte (avec agent + mandate) et de l'override le stub interne.
+- `bin/tide-mcp.ts` : fonction `loadContext()` async qui fetch `GET /api/agents/:agentId` + cherche le mandate actif dans `GET /api/mandates?agentId=...`. Throw si agent manquant/stopped ou pas de mandate actif. Le contexte complet est passé à `startMcpServer`.
+
+**Bugs & fix.**
+- Lint config refuse les params préfixés `_` (règle `@typescript-eslint/no-unused-vars` sans exception) — résolu via `eslint-disable-next-line` ciblé sur la ligne du param, pas avant la fonction.
+- Doublon de route : le `GET /api/mandates?agentId=...` que j'avais ajouté était déjà présent (ligne 506-513) — supprimé pour éviter le conflit Fastify `Method 'GET' already declared for route`.
+- Différence `request<T>` par défaut `unknown` vs signatures typées : 38 méthodes x 1 annotation `as ReadonlyArray<…>` ou `as {…}[]` pour aligner les retours sur les interfaces `PriceFeed` / `PaperBackend` / etc.
+
+**Bilan runtime.** Le serveur MCP peut maintenant être lancé :
+```
+TIDE_API_BASE_URL=http://localhost:3000 \
+TIDE_AGENT_ID=<agent-uuid> \
+TIDE_USER_ID=<user-uuid> \
+npx tide-mcp
+```
+→ fetch l'agent + le mandate, démarre le serveur stdio MCP, expose les 20 outils. Claude Desktop peut s'y connecter via `claude_desktop_config.json`. Pour un agent en mode Paper sans Live, ça marche end-to-end (place_order → apps/api → portfolio mis à jour). Pour Live mode, le câblage `liveCrypto` reste throw-loud (cf. dette ci-dessous).
+
+**Dette post-merge (documentée dans `final-review.md` + ce commit message) :**
+1. **Live mode `/api/exec/live-offer`** : sign + submit `OfferCreate` côté serveur, nécessite `TIDE_AGENT_KEY_MASTER` + `AgentXrplAccountService.decryptSeed()` exposé.
+2. **Cross-user isolation apps/api** : vérifier `X-Tide-User-Id` ↔ `agent.userId` sur les routes `/api/agents/:id/*` (kill, live-account, getAgent).
+3. **`apps/api/leaderboard` calculé** : `getCompetitionLeaderboard` côté MCP renvoie la liste des participants ; le calcul de classement (par equity) pourrait être un endpoint dédié `/api/competitions/:id/leaderboard`.
