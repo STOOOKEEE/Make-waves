@@ -1,4 +1,3 @@
-import { openDatabase } from "./sqlite";
 import type { DatabaseSync } from "./sqlite";
 import {
   AgentNotFoundError,
@@ -7,17 +6,6 @@ import {
   type AgentStatus,
   type AgentType,
 } from "./agent-store";
-
-type Row = {
-  id: string;
-  user_id: string;
-  name: string;
-  type: string;
-  status: string;
-  has_live_account: number;
-  created_at: number;
-  updated_at: number;
-};
 
 function asRecord(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;

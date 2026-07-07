@@ -46,11 +46,13 @@ const baseMandate: Mandate = {
 interface FakeTrading extends TradingBackend {
   calls: { method: string; args: unknown[] }[];
   placeOrderImpl?: TradingBackend["placeOrder"];
+  placeLiveOrderImpl?: TradingBackend["placeLiveOrder"];
   cancelOrderImpl?: TradingBackend["cancelOrder"];
 }
 
 function makeTrading(overrides: {
   placeOrder?: FakeTrading["placeOrderImpl"];
+  placeLiveOrder?: FakeTrading["placeLiveOrderImpl"];
   cancelOrder?: FakeTrading["cancelOrderImpl"];
 } = {}): FakeTrading {
   const calls: FakeTrading["calls"] = [];
@@ -61,6 +63,16 @@ function makeTrading(overrides: {
       if (overrides.placeOrder) return overrides.placeOrder(input);
       return {
         orderId: "ord_1",
+        status: "filled",
+        filledQty: input.qty,
+        avgPrice: input.price ?? 100,
+      };
+    },
+    async placeLiveOrder(input) {
+      calls.push({ method: "placeLiveOrder", args: [input] });
+      if (overrides.placeLiveOrder) return overrides.placeLiveOrder(input);
+      return {
+        offerId: "of_1",
         status: "filled",
         filledQty: input.qty,
         avgPrice: input.price ?? 100,

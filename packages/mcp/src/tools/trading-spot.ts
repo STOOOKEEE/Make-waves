@@ -1,8 +1,12 @@
 // Outils de trading spot — premier outil d'écriture avec garde-fous durs
 // (RISK_LIMIT) + audit obligatoire (recordAction) + idempotence via client_order_id.
+// `placeOrderTool` branche Paper vs Live selon `ctx.config.mode` ; le path Live
+// (signe + soumet l'`OfferCreate` avec le seed déchiffré de l'agent) vit dans
+// `./trading-live.ts`.
 import { McpError } from "../lib/errors";
 import { enforceRiskLimits } from "../lib/guard";
 import { recordAction } from "../lib/audit";
+import { executeLiveOrder } from "./trading-live";
 import type { ToolDef } from "./index";
 
 const SYMBOL_RE = /^[A-Z0-9]{2,10}$/;
@@ -85,15 +89,30 @@ export const placeOrderTool: ToolDef = {
         priceUsd: px,
       });
 
-      const result = await ctx.trading.placeOrder({
-        userId: mandate.userId,
-        symbol,
-        side,
-        qty,
-        type,
-        price,
-        clientOrderId: clientOrderId ?? undefined,
-      });
+      const mode = ctx.config.mode;
+      const result =
+        mode === "live"
+          ? await executeLiveOrder(
+              ctx,
+              mandate,
+              {
+                symbol,
+                side,
+                qty,
+                type,
+                price,
+                clientOrderId: clientOrderId ?? undefined,
+              },
+            )
+          : await ctx.trading.placeOrder({
+              userId: mandate.userId,
+              symbol,
+              side,
+              qty,
+              type,
+              price,
+              clientOrderId: clientOrderId ?? undefined,
+            });
       await recordAction(ctx.actions, {
         agentId: mandate.agentId,
         userId: mandate.userId,

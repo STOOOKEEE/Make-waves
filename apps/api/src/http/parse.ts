@@ -181,6 +181,7 @@ import type { CreateMandateInput } from "../services/mandate-service";
 import type { MandateStyle } from "../store/mandate-store";
 
 const AGENT_TYPES = ["external", "integrated"] as const;
+const AGENT_STATUSES = ["active", "paused", "stopped"] as const;
 const MANDATE_STYLES = [
   "momentum",
   "mean_reversion",
@@ -266,6 +267,47 @@ export function parseCreateAgent(body: unknown): CreateAgentInput {
   return { userId, name, type };
 }
 
+/**
+ * Corps de mise à jour partielle d'un agent (PATCH /api/agents/:id). Champs
+ * optionnels : `name?`, `type?`, `status?`. Au moins un champ requis (sinon
+ * la requête est un no-op silencieux — on lève pour le détecter).
+ */
+export function parseUpdateAgent(body: unknown): {
+  name?: string;
+  type?: "external" | "integrated";
+  status?: "active" | "paused" | "stopped";
+} {
+  const obj = asRecord(body, "updateAgent");
+  const patch: {
+    name?: string;
+    type?: "external" | "integrated";
+    status?: "active" | "paused" | "stopped";
+  } = {};
+  if (obj["name"] !== undefined) {
+    patch.name = shortString(obj, "name", "updateAgent", 60);
+  }
+  if (obj["type"] !== undefined) {
+    patch.type = oneOf(
+      shortString(obj, "type", "updateAgent", 20),
+      AGENT_TYPES,
+      "updateAgent",
+      "type",
+    );
+  }
+  if (obj["status"] !== undefined) {
+    patch.status = oneOf(
+      shortString(obj, "status", "updateAgent", 20),
+      AGENT_STATUSES,
+      "updateAgent",
+      "status",
+    );
+  }
+  if (patch.name === undefined && patch.type === undefined && patch.status === undefined) {
+    throw new BadRequestError('updateAgent: au moins un champ "name"/"type"/"status" requis');
+  }
+  return patch;
+}
+
 /** Corps de création d'un mandat (POST /api/mandates). */
 export function parseCreateMandate(body: unknown): CreateMandateInput {
   const obj = asRecord(body, "createMandate");
@@ -324,4 +366,24 @@ export function parseSignMandateCallback(body: unknown): { mandateId: string; si
   );
   const signature = shortString(obj, "signature", "signMandateCallback", 2000);
   return { mandateId, signature };
+}
+
+/**
+ * Corps de provision d'un compte Live (POST /api/agents/:id/live-account).
+ * v1 : seul `generate()` (création d'un nouveau wallet) est implémenté.
+ * `seed` est parsé pour valider la forme et documenter l'API, mais l'import
+ * d'un seed existant renvoie 501 côté route (cf. Tâche 21).
+ */
+export function parseProvisionLiveAccount(body: unknown): { seed?: string } {
+  const obj = asRecord(body, "provisionLiveAccount");
+  const seedRaw = obj["seed"];
+  if (seedRaw === undefined) {
+    return {};
+  }
+  if (typeof seedRaw !== "string" || seedRaw.trim() === "") {
+    throw new BadRequestError(
+      'provisionLiveAccount: "seed" doit être une string non vide',
+    );
+  }
+  return { seed: seedRaw };
 }

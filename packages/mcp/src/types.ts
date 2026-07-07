@@ -67,6 +67,18 @@ export interface PublicConfig {
   readonly availablePairs: readonly string[];
 }
 
+/**
+ * Service live optionnel : permet au tool `place_order` de déchiffrer le seed
+ * d'un agent pour signer un `OfferCreate` quand `config.mode === "live"`.
+ * Indisponible hors runtime câblé (bootstrap + tests Papier) : l'appel
+ * renvoie alors une erreur explicite côté tool.
+ */
+export interface LiveCryptoService {
+  decryptAgentSeed(
+    agentId: string,
+  ): Promise<{ seed: string; address: string }>;
+}
+
 export interface McpContext {
   readonly agent: Agent;
   readonly userId: string;
@@ -80,6 +92,33 @@ export interface McpContext {
   readonly config: PublicConfig;
   /** Optional SSE broadcaster — emits one event per successful agent action. */
   readonly broadcaster?: Broadcaster;
+  /**
+   * Optional LiveCryptoService — branché au runtime quand le serveur a un
+   * `AgentXrplAccountService` câblé. Outils Live-only (place_order en mode=live)
+   * lèvent une erreur lisible si ce service est `undefined`.
+   */
+  readonly liveCrypto?: LiveCryptoService;
+}
+
+/** Input d'un ordre Live — le backend signe + soumet l'`OfferCreate` avec `agentSeed`. */
+export interface PlaceLiveOrderInput {
+  readonly userId: string;
+  readonly symbol: string;
+  readonly side: "buy" | "sell";
+  readonly qty: number;
+  readonly type: "market" | "limit";
+  readonly price?: number;
+  readonly slippageTolerance?: number;
+  readonly agentSeed: string;
+  readonly agentAddress: string;
+  readonly clientOrderId?: string;
+}
+
+export interface PlaceLiveOrderResult {
+  readonly offerId: string;
+  readonly status: string;
+  readonly filledQty: number;
+  readonly avgPrice: number;
 }
 
 /** Backend façade pour les ordres spot (impl concrète dans @tide/api). */
@@ -93,6 +132,12 @@ export interface TradingBackend {
     price?: number;
     clientOrderId?: string;
   }): Promise<{ orderId: string; status: string; filledQty: number; avgPrice: number }>;
+  /**
+   * Place un ordre **Live** : signe l'`OfferCreate` avec `agentSeed` et le
+   * soumet sur le DEX XRPL. Réservé à `config.mode === "live"` — l'outil
+   * `place_order` route ici quand l'agent a un compte Live provisionné.
+   */
+  placeLiveOrder(input: PlaceLiveOrderInput): Promise<PlaceLiveOrderResult>;
   cancelOrder(userId: string, orderId: string): Promise<void>;
   getOpenOrders(userId: string): Promise<readonly unknown[]>;
 }

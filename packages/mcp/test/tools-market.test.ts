@@ -70,6 +70,9 @@ function makeCtx(priceFeed: PriceFeed): McpContext {
       async placeOrder() {
         return { orderId: "o", status: "filled", filledQty: 0, avgPrice: 0 };
       },
+      async placeLiveOrder() {
+        return { offerId: "of", status: "filled", filledQty: 0, avgPrice: 0 };
+      },
       async cancelOrder() {
         // no-op
       },

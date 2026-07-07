@@ -7,22 +7,6 @@ import {
   type MandateStyle,
 } from "./mandate-store";
 
-type Row = {
-  id: string;
-  agent_id: string;
-  user_id: string;
-  capital_max: number;
-  perte_max_jour: number;
-  max_trades_per_day: number;
-  max_leverage: number;
-  paires_autorisees: string;
-  style: string | null;
-  valid_until: number;
-  signed_at: number | null;
-  signature: string | null;
-  status: string;
-};
-
 function asRecord(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;
 }

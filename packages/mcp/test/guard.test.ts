@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { enforceRiskLimits } from "../src/lib/guard";
-import { McpError } from "../src/lib/errors";
 import type { Mandate } from "../src/types";
 
 const mandate = (overrides: Partial<Mandate> = {}): Mandate => ({

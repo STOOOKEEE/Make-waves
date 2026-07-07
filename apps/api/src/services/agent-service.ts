@@ -50,6 +50,15 @@ export class AgentService {
   }
 
   /**
+   * Mise à jour partielle d'un agent (name/type/status). L'`id`, `userId` et
+   * `createdAt`/`updatedAt` sont protégés côté store ; le service laisse passer
+   * le patch tel quel — l'appelant ne peut pas forger un autre `userId`.
+   */
+  update(id: string, patch: Partial<Agent>): Promise<Agent> {
+    return this.agents.update(id, patch);
+  }
+
+  /**
    * Tue un agent (status=stopped), révoque tous ses mandats actifs, puis
    * diffuse `agent_killed` sur le bus SSE. `reason?` est optionnel (libre,
    * pas validé) — typiquement "manual", "risk_limit", etc.

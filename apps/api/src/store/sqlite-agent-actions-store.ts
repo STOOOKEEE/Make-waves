@@ -5,18 +5,6 @@ import {
   type AgentActionsStore,
 } from "./agent-actions-store";
 
-type Row = {
-  id: string;
-  agent_id: string;
-  user_id: string;
-  tool_name: string;
-  tool_params: string;
-  result: string | null;
-  error: string | null;
-  idempotency_key: string | null;
-  executed_at: number;
-};
-
 function asRecord(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;
 }

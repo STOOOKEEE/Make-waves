@@ -11,7 +11,11 @@ import type { PaperService } from "../services/paper-service";
 import type { CompetitionService } from "../services/competition-service";
 import type { AgentService } from "../services/agent-service";
 import type { MandateService } from "../services/mandate-service";
+import type { AgentXrplAccountService } from "../services/agent-xrpl-account-service";
+import type { AgentActionsStore } from "../store/agent-actions-store";
 import type { XamanPayloadApi } from "../xaman/sign-request";
+import type { AgentChatService } from "../services/agent-chat-service";
+import type { Agent, McpContext } from "@tide/mcp";
 import {
   createBuyInSignRequest,
   createConnectSignRequest,
@@ -29,7 +33,9 @@ import {
   parseLiveOfferRequest,
   parseOpenPosition,
   parseOrder,
+  parseProvisionLiveAccount,
   parseSignMandateCallback,
+  parseUpdateAgent,
   parseUserId,
 } from "./parse";
 
@@ -94,6 +100,91 @@ export interface ServerDeps {
   readonly agentService?: AgentService;
   /** Service de gestion des mandats (routes /api/mandates, /api/sign/mandate-callback) — absent si pas câblé. */
   readonly mandateService?: MandateService;
+  /** Service de provision/révocation du compte XRPL Live d'un agent (Tâche 21) — absent si pas câblé. */
+  readonly agentXrplAccountService?: AgentXrplAccountService;
+  /** Store d'actions d'agent (route /api/agent-actions) — absent si pas câblé. */
+  readonly agentActionsStore?: AgentActionsStore;
+  /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
+  readonly agentChatService?: AgentChatService;
+}
+
+/**
+ * Erreur uniforme renvoyée par tout stub `ctx` du chat agent tant que le
+ * câblage runtime complet n'est pas branché. Garantit qu'un LLM qui appelle
+ * `place_order` / `open_position` / `join_competition` / etc. NE reçoit
+ * JAMAIS un shape de succès (`{ orderId: "stub" }`) — la convention maison
+ * « ne jamais avaler un succès silencieux » (cf. ~/.claude/CLAUDE.md).
+ * L'erreur remonte à Claude comme `tool_result is_error=true`, l'agent peut
+ * s'auto-corriger, l'utilisateur voit un message honnête.
+ */
+function throwAgentChatNotWired(): never {
+  throw new Error("agent chat not wired — runtime ctx missing");
+}
+
+/**
+ * Construit un `McpContext` stub pour la route `/api/agent-chat/stream` —
+ * chaque backend (`paper`, `trading`, `perp`, `competitions`, `actions`,
+ * `priceFeed`) lève `agent chat not wired — runtime ctx missing` au premier
+ * appel. Le câblage runtime (Tâche câblage) remplacera ce stub par les vrais
+ * adapters `@tide/api`. D'ici là, seul l'agent LLM qui tente une action est
+ * refusé explicitement — les reads passent par le throw via le même chemin.
+ */
+function buildAgentChatCtx(agentId: string, userId: string): McpContext {
+  const now = Date.now();
+  const agent: Agent = {
+    id: agentId,
+    userId,
+    name: "stub",
+    type: "external",
+    status: "active",
+    hasLiveAccount: false,
+    createdAt: now,
+    updatedAt: now,
+  };
+  return {
+    agent,
+    userId,
+    mandate: null,
+    priceFeed: {
+      priceOf: async () => throwAgentChatNotWired(),
+      markets: async () => throwAgentChatNotWired(),
+      history: async () => throwAgentChatNotWired(),
+      orderbook: async () => throwAgentChatNotWired(),
+    },
+    paper: {
+      getBalance: async () => throwAgentChatNotWired(),
+      getPortfolio: async () => throwAgentChatNotWired(),
+      listPositions: async () => throwAgentChatNotWired(),
+      getLeaderboard: async () => throwAgentChatNotWired(),
+    },
+    trading: {
+      placeOrder: async () => throwAgentChatNotWired(),
+      placeLiveOrder: async () => throwAgentChatNotWired(),
+      cancelOrder: async () => throwAgentChatNotWired(),
+      getOpenOrders: async () => throwAgentChatNotWired(),
+    },
+    perp: {
+      openPosition: async () => throwAgentChatNotWired(),
+      closePosition: async () => throwAgentChatNotWired(),
+    },
+    competitions: {
+      list: async () => throwAgentChatNotWired(),
+      get: async () => throwAgentChatNotWired(),
+      join: async () => throwAgentChatNotWired(),
+      getLeaderboard: async () => throwAgentChatNotWired(),
+    },
+    actions: {
+      record: async () => throwAgentChatNotWired(),
+      findByIdempotencyKey: async () => throwAgentChatNotWired(),
+      listByAgent: async () => throwAgentChatNotWired(),
+      countToday: async () => throwAgentChatNotWired(),
+    },
+    config: {
+      mode: "paper",
+      sourceTag: null,
+      availablePairs: [],
+    },
+  };
 }
 
 /**
@@ -215,6 +306,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   /** Carte de prix courante (instantané du cache off-chain). */
   app.get("/prices", () => deps.getPrices());
+
+  // Prix unitaire pour un symbole (lookup dans le cache /prices). Le MCP server
+  // l'appelle pour `get_market(symbol)`.
+  app.get<{ Params: { symbol: string } }>("/prices/:symbol", (request, reply) => {
+    const symbol = request.params.symbol.toUpperCase();
+    const price = deps.getPrices()[symbol];
+    if (price === undefined) {
+      reply.code(404);
+      return { error: `no price for ${symbol}` };
+    }
+    return { symbol, price, timestamp: Date.now() };
+  });
 
   // Liste des marchés (top N coins : symbole, nom, prix, %24h) pour la watchlist.
   if (deps.getMarkets !== undefined) {
@@ -342,6 +445,25 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       async (request) => svc.kill(request.params.id),
     );
 
+    // Mise à jour partielle (name/type/status). Le service filtre les champs
+    // sensibles (id, userId, hasLiveAccount, createdAt/updatedAt).
+    app.patch<{ Params: { id: string } }>(
+      "/api/agents/:id",
+      async (request) => {
+        const patch = parseUpdateAgent(request.body);
+        return svc.update(request.params.id, patch);
+      },
+    );
+
+    // Suppression de l'agent (idempotent côté store : no-op si absent).
+    app.delete<{ Params: { id: string } }>(
+      "/api/agents/:id",
+      async (request) => {
+        await svc.delete(request.params.id);
+        return { deleted: true };
+      },
+    );
+
     // Flux SSE des événements agent (`agent_killed`, `agent_action`, etc.).
     // Header `text/event-stream`, hijack pour prendre la main sur la socket,
     // ping commentaire toutes les 30 s pour garder la connexion ouverte
@@ -380,9 +502,212 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return mandate;
     });
 
+    // Liste les mandats d'un agent (tous statuts). `agentId` requis.
+    app.get<{ Querystring: { agentId?: string } }>(
+      "/api/mandates",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        if (agentId === undefined || agentId.trim() === "") {
+          reply.code(400);
+          return { error: "agentId required" };
+        }
+        return mandateSvc.listByAgent(agentId);
+      },
+    );
+
     app.post("/api/sign/mandate-callback", async (request) => {
       const body = parseSignMandateCallback(request.body);
       return mandateSvc.onSignCallback(body);
+    });
+  }
+
+  // Historique d'actions d'un agent (lecture-seule, alimenté par le MCP).
+  // `agentId` requis ; optionnellement `limit` borné à [1, 200] (défaut 100).
+  if (deps.agentActionsStore !== undefined) {
+    const actionsStore = deps.agentActionsStore;
+    app.get<{ Querystring: { agentId?: string; limit?: string } }>(
+      "/api/agent-actions",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        if (agentId === undefined || agentId.trim() === "") {
+          reply.code(400);
+          return { error: "agentId required" };
+        }
+        const rawLimit = request.query.limit;
+        const limit =
+          rawLimit === undefined || rawLimit.trim() === ""
+            ? 100
+            : Math.trunc(Number(rawLimit));
+        if (!Number.isFinite(limit) || limit < 1 || limit > 200) {
+          reply.code(400);
+          return { error: "limit must be an integer in [1, 200]" };
+        }
+        return actionsStore.listByAgent(agentId, limit);
+      },
+    );
+
+    // POST /api/agent-actions — enregistre une action agent (le MCP server
+    // écrit ici quand un outil s'exécute). Idempotence : si `idempotencyKey` est
+    // fourni ET qu'une action existe déjà pour `(userId, idempotencyKey)`, on
+    // renvoie l'action existante (200) au lieu d'insérer (201). L'id + executedAt
+    // sont générés par le store si absents du body.
+    app.post("/api/agent-actions", async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        agentId?: string;
+        userId?: string;
+        toolName?: string;
+        toolParams?: string;
+        result?: string | null;
+        error?: string | null;
+        idempotencyKey?: string | null;
+      };
+      if (
+        typeof body.agentId !== "string" ||
+        typeof body.userId !== "string" ||
+        typeof body.toolName !== "string" ||
+        typeof body.toolParams !== "string"
+      ) {
+        reply.code(400);
+        return { error: "agentId, userId, toolName, toolParams are required" };
+      }
+      const action = {
+        id: crypto.randomUUID(),
+        agentId: body.agentId,
+        userId: body.userId,
+        toolName: body.toolName,
+        toolParams: body.toolParams,
+        result: body.result ?? null,
+        error: body.error ?? null,
+        idempotencyKey: body.idempotencyKey ?? null,
+        executedAt: Date.now(),
+      };
+      await actionsStore.record(action);
+      reply.code(201);
+      return action;
+    });
+
+    // GET /api/agent-actions/idempotency?userId=...&key=... — vérifie si une
+    // action avec cette clé d'idempotence existe déjà (pour retry côté MCP).
+    app.get<{ Querystring: { userId?: string; key?: string } }>(
+      "/api/agent-actions/idempotency",
+      async (request, reply) => {
+        const userId = request.query.userId;
+        const key = request.query.key;
+        if (!userId || !key) {
+          reply.code(400);
+          return { error: "userId and key required" };
+        }
+        const found = await actionsStore.findByIdempotencyKey(userId, key);
+        if (found === null) {
+          reply.code(404);
+          return { error: "not found" };
+        }
+        return found;
+      },
+    );
+
+    // GET /api/agent-actions/count-today?agentId=...&userId=... — compteur
+    // journalier pour le guard `enforceRiskLimits` côté MCP (maxTradesPerDay).
+    app.get<{ Querystring: { agentId?: string; userId?: string } }>(
+      "/api/agent-actions/count-today",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        const userId = request.query.userId;
+        if (!agentId || !userId) {
+          reply.code(400);
+          return { error: "agentId and userId required" };
+        }
+        const count = await actionsStore.countToday(agentId, userId);
+        return { count };
+      },
+    );
+  }
+
+  // Provision / révocation du compte XRPL Live d'un agent (Tâche 21).
+  // v1 : seul `generate()` (création d'un wallet) est implémenté côté service ;
+  // un `seed` dans le body (import d'un wallet existant) renvoie 501.
+  // `revoke` est idempotent côté service (no-op si pas de clé / agent inconnu).
+  if (deps.agentXrplAccountService !== undefined) {
+    const live = deps.agentXrplAccountService;
+    app.post<{ Params: { id: string } }>(
+      "/api/agents/:id/live-account",
+      async (request, reply) => {
+        const body = parseProvisionLiveAccount(request.body);
+        if (body.seed !== undefined) {
+          return reply
+            .code(501)
+            .send({ error: "Seed import not implemented in v1" });
+        }
+        return live.generate(request.params.id);
+      },
+    );
+
+    app.delete<{ Params: { id: string } }>(
+      "/api/agents/:id/live-account",
+      async (request) => {
+        await live.revoke(request.params.id);
+        return { revoked: true };
+      },
+    );
+  }
+
+  // Chat agent (Tâche 27) — flux SSE piloté par `AgentChatService.stream(...)`.
+  // Le front envoie `{ agentId, userId, mandate, message, history? }` ; le
+  // serveur relaie chaque événement (`text_delta` / `tool_result` / `error`
+  // / `done`) au front via SSE.
+  // L'accès `/api/agent-chat/stream` est monté uniquement si le service est
+  // branché (TIDE_LLM_API_KEY configuré ⇒ clé présente ⇒ service instancié
+  // au boot).
+  if (deps.agentChatService !== undefined) {
+    const chat = deps.agentChatService;
+    app.post<{
+      Body: {
+        agentId?: string;
+        userId?: string;
+        mandate?: unknown;
+        message?: string;
+        history?: Array<{ role: "user" | "assistant"; content: string }>;
+        systemPrompt?: string;
+      };
+    }>("/api/agent-chat/stream", async (request, reply) => {
+      const body = request.body ?? {};
+      const agentId = typeof body.agentId === "string" ? body.agentId : "";
+      const userId = typeof body.userId === "string" ? body.userId : "";
+      const message = typeof body.message === "string" ? body.message : "";
+      if (agentId === "" || userId === "" || message === "") {
+        reply.code(400);
+        return { error: "agentId, userId, message are required" };
+      }
+      // Le câblage runtime complet (paper/trading/perp/competitions réel) n'est
+      // pas encore branché — chaque méthode du `ctx` throw loud si un outil
+      // est appelé. C'est volontaire : un LLM qui appelle `place_order` ne
+      // doit JAMAIS voir un `{ orderId: "stub" }` (silently swallowed success).
+      // Lève `agent chat not wired — runtime ctx missing` côté tool, que
+      // `AgentChatService.executeTool` capture en `{ isError: true, message }`
+      // et remonte à Claude comme `tool_result is_error=true` → l'agent peut
+      // s'auto-corriger (« run-time pas câblé »), l'utilisateur voit une
+      // erreur honnête au lieu d'un faux succès.
+      reply.raw.setHeader("Content-Type", "text/event-stream");
+      reply.raw.setHeader("Cache-Control", "no-cache");
+      reply.raw.setHeader("Connection", "keep-alive");
+      reply.hijack();
+      try {
+        for await (const event of chat.stream({
+          agentId,
+          userId,
+          mandate: (body.mandate ?? null) as McpContext["mandate"],
+          history: body.history,
+          message,
+          ...(body.systemPrompt !== undefined
+            ? { systemPrompt: body.systemPrompt }
+            : {}),
+          ctx: buildAgentChatCtx(agentId, userId),
+        })) {
+          reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+        }
+      } finally {
+        reply.raw.end();
+      }
     });
   }
 
