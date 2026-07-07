@@ -131,6 +131,65 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 
 ---
 
+## Phase 5 — AI Agent (post-MVP stretch) · branche `feat/agent-mcp`
+**⚠️ Livré en parallèle sur branche dédiée, ne bloque pas le funnel MVP.** Spec : [`docs/superpowers/specs/2026-07-05-ai-agent-design.md`](superpowers/specs/2026-07-05-ai-agent-design.md) · Plan 33-tâches : [`docs/superpowers/plans/2026-07-05-ai-agent.md`](superpowers/plans/2026-07-05-ai-agent.md) · DEVLOG : entrées `2026-07-07 — AI Agent Phase 1/2/3/4`.
+
+**Jalon démo :** un user crée un agent (externe via Claude Desktop OU intégré dans l'UI), le dote d'un mandat signé Xaman (bornes capital/perte/trades/leverage/paires), l'agent ouvre une position Paper OU Live en respectant les garde-fous durs serveur, le kill switch arrête tout immédiatement, et tout est tracé dans `agent_actions`. Catalogue **20 outils MCP** partagé entre les 2 populations (externes + intégrés) — pas de duplication. **738/738 tests**, typecheck 8/8 vert.
+
+**Definition of done :** un agent externe (Claude Desktop) branché via `npx -y @tide/mcp` appelle `tools/list` → 20 outils, exécute un `place_order` Paper, et tout est observable côté UI Tide via SSE temps réel.
+
+### A1 — Fondations (data layer + APIs HTTP) · T1→T5
+- [x] T1 : nouveau package `packages/mcp` (skeleton + dep `@modelcontextprotocol/sdk`).
+- [x] T2 : migration SQLite `migrateAgentTables` (tables `agents`/`mandates`/`agent_actions`/`agent_xrpl_keys` conformes spec §3.5).
+- [x] T3 : stores `InMemory*` + `Sqlite*` pour Agent / Mandate / AgentActions.
+- [x] T4 : `AgentService` (CRUD + kill + révocation automatique des mandats actifs) + `MandateService` (create + sign-callback + revoke).
+- [x] T5 : routes HTTP `/api/agents*` + `/api/mandates*` + `/api/sign/mandate-callback`.
+
+### A2 — Serveur MCP stdio + outils core · T6→T14
+- [x] T6 : `lib/errors.ts` (McpError + sanitizeError masque chemins/secrets/stack).
+- [x] T7 : `lib/audit.ts` (`recordAction` idempotent via `idempotency_key UNIQUE`).
+- [x] T8 : `lib/context.ts` (`loadContext` charge mandate actif + agent + actions depuis `agentId`).
+- [x] T9 : `lib/guard.ts` (`enforceRiskLimits` : capital max / perte max/jour / max trades/jour / max levier / kill switch / paires autorisées — **raise avant tout ordre**).
+- [x] T10 : `bin/tide-mcp.ts` + `server.ts` (bootstrap stdio JSON-RPC).
+- [x] T11 : `get_market` (1er outil, branchement du `PriceFeed`).
+- [x] T12 : `get_markets` + `get_history` + `get_orderbook` (OHLC Binance klines + clamp limit).
+- [x] T13 : portfolio (`get_balance` / `get_portfolio` / `get_positions` / `get_leaderboard`).
+- [x] T14 : `place_order` (Paper + guard amont + audit + idempotency + broadcast) + `cancel_order`.
+
+### A3 — Outils restants + mode Live · T15→T22
+- [x] T15 : `open_position` + `close_position` (perp, mapping `long→buy`/`short→sell` pour le guard, marge réservée).
+- [x] T16 : `list_competitions` + `get_competition` + `join_competition` (renvoie le `txJson` non signé — Xaman requis) + `get_competition_leaderboard`.
+- [x] T17 : `get_mandate` + `get_risk_limits` + `get_config` + `get_agent_status` (4 read-only meta tools). *+ fix critique T17-fix : 4 outils non enregistrés dans `tools/index.ts` → test `tools-index.test.ts` verrou de régression.*
+- [x] T18 : SSE agent-broadcaster (`agent_killed`/`agent_action`) + `GET /api/agents/events` + diff `reason?` optionnel pour rétrocompat.
+- [x] T19 : `lib/crypto.ts` (AES-256-GCM helpers `encryptPrivateKey`/`decryptPrivateKey`/`readMasterKey`).
+- [x] T20 : `AgentXrplAccountService` (generate / decryptSeed / revoke) + `AgentXrplKeysStore` (InMemory + SQLite `agent_xrpl_keys`) + `readAgentKeyMaster()` valide `TIDE_AGENT_KEY_MASTER`.
+- [x] T21 : 2 routes HTTP `POST/DELETE /api/agents/:id/live-account` (provision + revoke) + `parseProvisionLiveAccount` + fix latent `AgentNotFoundError.name`/`MandateNotFoundError.name`.
+- [x] T22 : `place_order` branche sur `trading.placeLiveOrder(...)` quand `mode === "live"` (seed déchiffré via `LiveCryptoService.decryptAgentSeed(mandate.agentId)`). Risk guard partagé Paper/Live.
+
+### A4 — UI + chat intégré + E2E · T23→T33
+- [x] T23 : `@tide/client` étendu de 9 méthodes (`agents`/`agent`/`createAgent`/`updateAgent`/`deleteAgent`/`killAgent`/`mandates`/`createMandate`/`agentActions`) + 3 DTOs.
+- [x] T24 : `useAgent` composable (CRUD + bus SSE temps réel + buffer actions capé à 200 + fix Node 25+ `localStorage` dans `test-setup/dom.ts`).
+- [x] T25 : `useMandate` composable (form → create + calcul `validUntil`).
+- [x] T26 : composants `MandateForm.vue` + `KillSwitch.vue` + `ActionLog.vue` (FR/EN i18n).
+- [x] T27 : `AgentChatService` backend (Claude API + tool interception + SSE stream).
+- [x] T28 : `useAgentChat` composable (streaming SSE token-par-token).
+- [x] T29 : `ChatPanel.vue` (interface chat LLM + tool_use blocks).
+- [x] T30 : `AgentView.vue` (~280 lignes, layout 3 colonnes) + nav + i18n câblée + route `/agent` dans `useRoute.ts`.
+- [x] T31 : `McpConfigInstructions.vue` (instructions branchement Claude Desktop, bloc JSON `claude_desktop_config.json` + Copy clipboard). *Orphelin volontaire — intégration AgentView attend câblage MCP runtime.*
+- [x] T32 : E2E test `e2e-agent-flow.test.ts` (147 lignes, 2 tests `inject()` : `createAgent → signMandate → kill` puis vérification `revoked`).
+- [x] T33 : docs update (CLAUDE.md + DEVLOG entries Phase 1/2/3/4 + ce ROADMAP Phase 5).
+
+### Reste (câblage runtime — hors plan 33, post-livraison)
+- [ ] `bin/tide-mcp.ts` : remplacer les stubs `bootstrapPaper`/`bootstrapTrading`/`bootstrapPerp`/`bootstrapActions`/`bootstrapCompetitions` (throw loud) par les vrais adapters HTTP `@tide/api` (`HttpPaperBackend`/`HttpTradingBackend`/etc.).
+- [ ] Packaging release : publier `@tide/mcp` sur npm (ou tarball GitHub) pour que `npx -y @tide/mcp` résolve depuis `McpConfigInstructions`.
+- [ ] Intégrer `<McpConfigInstructions>` dans la sidebar gauche de `AgentView` (`v-if` sur `currentAgent?.type === "external"`).
+- [ ] Brancher `AgentChatService` côté `main.ts` (si clé LLM dispo : `TIDE_LLM_API_KEY`).
+- [ ] Outils MCP restants du catalogue original : `place_limit_order` / `set_tp_sl` (ré-attribution scope, pattern additif rodé sur T14-T17).
+- [ ] Activation runtime mainnet : `.env` (`TIDE_AGENT_KEY_MASTER`, comptes agents indexés, `TIDE_LLM_API_KEY`).
+- [ ] Vérification navigateur runtime de l'écran `AgentView` + streaming SSE chat (chat intégré) + branchement Claude Desktop (chat externe).
+
+---
+
 ## Hors-scope (coupé du MVP)
 Perp/dérivés · oracle on-chain (XLS-47) · EVM sidechain · smart contracts · backtest engine · multi-chain · fiat on-ramp · mobile natif · design léché · atomicité multi-tx (Batch) · Escrow pour le prize pool (remplacé par multisig, cf. SPEC §3).
 
