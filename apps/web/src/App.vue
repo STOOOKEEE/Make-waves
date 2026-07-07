@@ -11,9 +11,11 @@ import CompetitionsView from "./views/CompetitionsView.vue";
 import CompetitionView from "./views/CompetitionView.vue";
 import ArenaView from "./views/ArenaView.vue";
 import AgentView from "./views/AgentView.vue";
+import LearnView from "./views/LearnView.vue";
+import LearnArticleView from "./views/LearnArticleView.vue";
 
 const client = createClient();
-const { current, competitionId, navigate } = useRoute();
+const { current, competitionId, routeId, navigate } = useRoute();
 </script>
 
 <template>
@@ -38,6 +40,12 @@ const { current, competitionId, navigate } = useRoute();
     />
     <ArenaView v-else-if="current === '/arena'" @navigate="navigate" />
     <AgentView v-else-if="current === '/agent'" :client="client" />
+    <LearnView v-else-if="current === '/learn' && !routeId" @navigate="navigate" />
+    <LearnArticleView
+      v-else-if="current === '/learn'"
+      :slug="routeId"
+      @navigate="navigate"
+    />
   </main>
 
   <SignModal :client="client" />

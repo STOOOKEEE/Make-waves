@@ -647,6 +647,30 @@ Première passe du test, j'ai ajouté un `silentLogger` dans les appels `buildSe
 
 ---
 
+## 2026-07-02 — Tide School : section éducative (contenu trading) reliée au site [piste FE/growth]
+
+**Quoi.** Nouvelle section **Tide School** (`/learn`) : un cursus de **16 leçons bilingues FR/EN** sur le trading, intégré au front et au design system. Branche `feat/tide-school`.
+- **Modèle de contenu** (`apps/web/src/data/learn/`) : articles en **blocs typés** (`h/p/list/steps/callout/example/quote/divider`), pas de markdown ni de `v-html`. Champs textuels en `Localized` ({en,fr}) résolus par langue — **même patron que `data/competitions.ts`** (`localizedArticles`/`getArticle`/`featuredArticle`/`relatedArticles`/`localizedCategories`). Un fichier par leçon sous `articles/`, agrégés dans `index.ts`. **Zéro nouvelle dépendance.**
+- **Vues** : `LearnView` (index éditorial : leçon vedette `.card.feat` + filtre de piste `SegControl` + grille `.cgrid`), `LearnArticleView` (en-tête, corps, rangée CTA vers le terminal/compétitions, leçons liées, état « introuvable »). `ArticleBody` mappe chaque bloc aux tokens `docs/DESIGN.md` (bleu = seul accent, mono pour les nombres, pas d'ombres) ; petit parseur inline sûr pour `**gras**` / `` `code` ``.
+- **Routing** : `/learn` + `/learn/:slug` câblés à la main (`useRoute` : `ROUTES` + `parseHash` cas `learn`, `routeId` générique ; branche dans `App.vue`). Onglet nav dans `AppBar` (EN « Learn » / FR « Apprendre »). Entrée depuis la landing (colonne footer « Resources » → Tide School).
+- **4 pistes** : **Bases** (5 : c'est quoi le trading, lire un graphe, types d'ordres, carnet/spread, comment marche Tide), **Perps & levier** (4 : perpétuel, levier & marge, long/short, TP/SL), **Stratégies** (5 : gestion du risque, trend following, mean reversion, breakout, psychologie), **Tide & compétitions** (2 : cagnotte/rake/split-pot, track record on-chain).
+- **Points d'entrée contextuels** : composant `LearnHint` (puce « ? » → leçon via ancre hash). 5 puces posées sur le ticket du terminal (`DashboardView`) : product→perp, order→types d'ordres, execution→carnet/maker-taker, leverage→levier & marge, TP→TP/SL. `bubble=false` dans le ticket (conteneur scrollable qui clipperait la bulle → `title` natif).
+
+**Pourquoi.** Le pitch (« trading trainer ») promet d'apprendre à trader ; il manquait tout le contenu pédagogique (aucun tuto/FAQ/glossaire, ni même une infobulle sur perp/levier/TP-SL). Tide School comble ce trou et renforce le funnel foule→Live.
+
+**Cheminement.** Choix produit (Eli) : nom **« Tide School »**, cursus complet, entrées contextuelles, respect strict de `DESIGN.md` et des surfaces existantes. **Exactitude** verrouillée sur les règles produit : perp **simulé en Paper, sans levier réel** ; cap 100x, marge isolée, PnL **planchonné à −marge à la fermeture**, pas d'auto-liquidation serveur ; TP/SL/limit = **déclencheurs côté client** ; frais **maker 0,02 % / taker 0,06 %** ; **rake** de tournoi (pas de frais sur les swaps) ; Live = **spot XRP non-custodial taggé SourceTag**. Capital de départ formulé de façon neutre (« capital virtuel ») pour ne contredire ni la landing ni la constante code.
+
+**Vérif.** `typecheck` (vue-tsc strict, sans `any`) + `build` verts à chaque étape ; suite complète **515/515** ; `lint` vert. Reste la **vérif navigateur runtime** (rendu des pages, bascule FR/EN, puces du terminal) — non faite ici.
+
+**MAJ (même jour) — refonte design « Coinbase Learn » + SEO + expansion du contenu.** Retour Eli : articles pas centrés/trop à gauche, contenu trop léger, viser la section Learn de Coinbase, **remplacer les emojis par de l'ASCII art custom**. Livré :
+- **Index refondu** : en-tête éditorial + **leçon vedette & colonne « Popular »** + **puces de piste** + **sections groupées par piste**, cartes à **vignette ASCII** (`data/learn/art.ts` : 16 illustrations monospace box-drawing, remplacent tous les emojis).
+- **Page article** : **colonne de lecture centrée** (grille centrée + sommaire collant « On this page » via IntersectionObserver), en-tête ASCII, fil d'ariane, date de MAJ, typographie enrichie.
+- **SEO** : `composables/useSeo.ts` pose `<title>`/description/keywords/Open Graph/Twitter/canonical + **JSON-LD `Article`** par leçon ; modèle de données étendu (`seoTitle`/`seoDescription`/`keywords`/`updated`/`popular`, `art` attaché par slug). Ancres de section (`toc.ts`).
+- **Contenu ×2** : les 16 leçons passées à **~20–29 blocs** (5–7 sections H2, exemples chiffrés, callouts, listes, citation), bilingues, avec champs SEO. Expansion **en parallèle via workflow multi-agents** (15 agents, un fichier chacun), puis re-vérif d'exactitude (perp simulé, TP/SL client, plancher −marge, pas d'auto-liq, frais 0,02/0,06 %, rake, Live spot) — toutes les mentions scannées sont dans un contexte correct. Parité FR/EN garantie par le type `Localized` (les deux clés obligatoires).
+- **Vérif** : `typecheck`/`build`/`lint` verts ; **515 tests** ; dev server HMR OK (200). Reste la vérif visuelle fine (rendu ASCII selon la police).
+
+---
+
 ## 2026-07-01 — Perp v2 : revue de la PR adaptateur (audit 3 lentilles) + correctifs [piste v2]
 
 **Quoi.** Revue de la PR #2 (adaptateur viem + anti-rejeu) : tests re-joués (Foundry 40/40, e2e anvil, 515 TS) puis audit adversarial 3 lentilles (anti-rejeu contrat / adaptateur viem / address+service). Contrat anti-rejeu jugé sain. Correctifs appliqués à l'adaptateur/tests :

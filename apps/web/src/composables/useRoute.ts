@@ -10,6 +10,7 @@ export const ROUTES = [
   "/competition",
   "/arena",
   "/agent",
+  "/learn",
 ] as const;
 export type RoutePath = (typeof ROUTES)[number];
 
@@ -17,7 +18,7 @@ const DEFAULT_ROUTE: RoutePath = "/";
 
 export interface ParsedRoute {
   path: RoutePath;
-  /** Segment d'identifiant pour /competition/:id. */
+  /** Segment d'identifiant pour /competition/:id et /learn/:slug. */
   id?: string;
 }
 
@@ -27,6 +28,9 @@ function parseHash(hash: string): ParsedRoute {
   const candidate = `/${first}` as RoutePath;
   if (first === "competition") {
     return { path: "/competition", id: second || undefined };
+  }
+  if (first === "learn") {
+    return { path: "/learn", id: second || undefined };
   }
   if ((ROUTES as readonly string[]).includes(candidate)) {
     return { path: candidate };
@@ -65,6 +69,8 @@ export function useRoute() {
     route: readonly(route),
     current: computed(() => route.value.path),
     competitionId: computed(() => route.value.id),
+    /** Segment d'identifiant générique (/learn/:slug, etc.). */
+    routeId: computed(() => route.value.id),
     navigate,
   };
 }
