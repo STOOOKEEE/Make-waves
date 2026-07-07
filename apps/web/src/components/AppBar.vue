@@ -36,6 +36,7 @@ const { t } = useI18n({
     leaderboard: "Leaderboard",
     competitions: "Competitions",
     arena: "AI Arena",
+    agent: "AI Agent",
     learn: "Learn",
     rank: "Season rank",
     equity: "Equity · S04",
@@ -48,6 +49,7 @@ const { t } = useI18n({
     leaderboard: "Classement",
     competitions: "Compétitions",
     arena: "Arène IA",
+    agent: "Agent IA",
     learn: "Apprendre",
     rank: "Rang saison",
     equity: "Équité · S04",
@@ -102,6 +104,7 @@ const tabs = computed<{ path: RoutePath; label: string }[]>(() => [
   { path: "/leaderboard", label: t("leaderboard") },
   { path: "/competitions", label: t("competitions") },
   { path: "/arena", label: t("arena") },
+  { path: "/agent", label: t("agent") },
   { path: "/learn", label: t("learn") },
 ]);
 

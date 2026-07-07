@@ -19,16 +19,21 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidMemoError: 400,
   InvalidMetricError: 400,
   LiveExecError: 400,
+  MandateInvalidError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
   PositionNotFoundError: 404,
+  AgentNotFoundError: 404,
+  MandateNotFoundError: 404,
   // 409 — conflit d'état
   AccountExistsError: 409,
   AlreadyJoinedError: 409,
   CompetitionExistsError: 409,
   CompetitionClosedError: 409,
   InsufficientBalanceError: 409,
+  AgentAlreadyExistsError: 409,
+  MandateAlreadyExistsError: 409,
   // 502 — échec d'un service amont (feed de prix, Xaman)
   PriceFeedError: 502,
   XamanError: 502,

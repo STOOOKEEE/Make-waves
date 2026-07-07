@@ -71,3 +71,27 @@ export class CompetitionClosedError extends Error {
     this.name = "CompetitionClosedError";
   }
 }
+
+/** Un agent avec cet identifiant existe déjà. */
+export class AgentAlreadyExistsError extends Error {
+  constructor(id: string) {
+    super(`Agent ${id} already exists`);
+    this.name = "AgentAlreadyExistsError";
+  }
+}
+
+/** Un mandat avec cet identifiant existe déjà. */
+export class MandateAlreadyExistsError extends Error {
+  constructor(id: string) {
+    super(`Mandate ${id} already exists`);
+    this.name = "MandateAlreadyExistsError";
+  }
+}
+
+/** Mandat dans un état invalide pour l'opération demandée. */
+export class MandateInvalidError extends Error {
+  constructor(reason: string) {
+    super(`Mandate invalid: ${reason}`);
+    this.name = "MandateInvalidError";
+  }
+}

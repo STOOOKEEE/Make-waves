@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, readonly, ref } from "vue";
 
-/** Chemins du site (landing + les 5 écrans app). */
+/** Chemins du site (landing + les écrans app). */
 export const ROUTES = [
   "/",
   "/dashboard",
@@ -9,6 +9,7 @@ export const ROUTES = [
   "/competitions",
   "/competition",
   "/arena",
+  "/agent",
   "/learn",
 ] as const;
 export type RoutePath = (typeof ROUTES)[number];

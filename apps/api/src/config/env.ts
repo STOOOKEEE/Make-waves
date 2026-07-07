@@ -151,3 +151,39 @@ export function readXamanCredentials(): XamanCredentials | undefined {
   }
   return { apiKey, apiSecret };
 }
+
+/**
+ * Master key AES-256-GCM (32 bytes / 64 hex chars) utilisée pour chiffrer les
+ * clés privées XRPL des agents au repos. Validée strictement quand déclarée
+ * (mauvais format = config cassée, on lève). `undefined` si non déclarée —
+ * l'agent-service Live ne peut alors pas tourner, mais l'API reste démarrable.
+ */
+export function readAgentKeyMaster(): string | undefined {
+  const raw = optional("TIDE_AGENT_KEY_MASTER");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error("TIDE_AGENT_KEY_MASTER must be 64 hex chars (32 bytes)");
+  }
+  return raw;
+}
+
+/** Modèle Claude par défaut pour le chat agent (Tâche 27). Surchargeable via
+ * `TIDE_LLM_MODEL`. Format : identifiant nu (`claude-sonnet-4-5`,
+ * `claude-opus-4-8`...) — pas de suffixe de date. */
+export const DEFAULT_LLM_MODEL = "claude-sonnet-4-5";
+
+/**
+ * Clé API Anthropic pour le chat agent (Tâche 27). `undefined` si non
+ * déclarée → la route `/api/agent-chat/stream` n'est pas montée. La valeur
+ * n'est ni journalisée ni renvoyée ailleurs.
+ */
+export function readLlmApiKey(): string | undefined {
+  return optional("TIDE_LLM_API_KEY");
+}
+
+/** Modèle Claude pour le chat agent. Défaut = `DEFAULT_LLM_MODEL`. */
+export function readLlmModel(): string {
+  return optional("TIDE_LLM_MODEL") ?? DEFAULT_LLM_MODEL;
+}

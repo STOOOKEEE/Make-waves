@@ -24,6 +24,7 @@ import { buildServer } from "./http/server";
 import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import type { AccountStore } from "./store/account-store";
 import type { CompetitionStore } from "./store/competition-store";
+import type { AgentActionsStore } from "./store/agent-actions-store";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -57,6 +58,14 @@ export interface AppConfig {
   readonly exec?: ExecDeps;
   /** Métriques d'attribution (route /metrics) — absente si indexeur non câblé. */
   readonly metrics?: MetricsDeps;
+  /** Service de gestion des agents (routes /api/agents/*) — absent si pas câblé. */
+  readonly agentService?: import("./services/agent-service").AgentService;
+  /** Service de gestion des mandats (routes /api/mandates, /api/sign/mandate-callback) — absent si pas câblé. */
+  readonly mandateService?: import("./services/mandate-service").MandateService;
+  /** Store d'actions d'agent (route /api/agent-actions) — absent si pas câblé. */
+  readonly agentActionsStore?: AgentActionsStore;
+  /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
+  readonly agentChatService?: import("./services/agent-chat-service").AgentChatService;
   /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
   readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
   /** Historique DEX réel prioritaire pour les tokens dont la pool est connue. */
@@ -164,6 +173,10 @@ export function createApp(config: AppConfig): App {
     sign: config.sign,
     exec: config.exec,
     metrics: config.metrics,
+    agentService: config.agentService,
+    mandateService: config.mandateService,
+    agentActionsStore: config.agentActionsStore,
+    agentChatService: config.agentChatService,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;
