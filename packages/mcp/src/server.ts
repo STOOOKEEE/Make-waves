@@ -36,6 +36,12 @@ export interface ServerConfig {
   readonly broadcaster?: Broadcaster;
   /** Optional — branché au runtime quand Live est activé. */
   readonly liveCrypto?: LiveCryptoService;
+  /**
+   * Optional — contexte McpContext pré-construit (loadContext via HTTP).
+   * Si fourni, override le stub interne. Le bootstrap est alors responsable
+   * d'avoir chargé l'agent + le mandate actif + tous les backends.
+   */
+  readonly context?: McpContext;
 }
 
 export async function startMcpServer(config: ServerConfig): Promise<void> {
@@ -62,7 +68,7 @@ export async function startMcpServer(config: ServerConfig): Promise<void> {
       };
     }
     try {
-      const ctx: McpContext = {
+      const ctx: McpContext = config.context ?? {
         agent: {
           id: config.agentId,
           userId: config.userId,

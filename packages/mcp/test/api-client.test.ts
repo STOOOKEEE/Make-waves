@@ -30,7 +30,7 @@ describe("TideApiHttp", () => {
     const call = fetchMock.mock.calls[0];
     expect(call).toBeDefined();
     const [url, init] = call as [string, RequestInit];
-    expect(url).toBe("https://api.example/api/prices/BTC");
+    expect(url).toBe("https://api.example/prices/BTC");
     const headers = init.headers as Record<string, string>;
     expect(headers["x-tide-user-id"]).toBe("u1");
     expect(headers["x-tide-agent-id"]).toBe("a1");
@@ -101,7 +101,7 @@ describe("httpPaperBackend adapter", () => {
     globalThis.fetch = ORIGINAL_FETCH;
   });
 
-  it("getBalance forwards userId", async () => {
+  it("getBalance forwards userId (plural balances route)", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ XRP: 100, RLUSD: 50 }));
     const api = new TideApiHttp({ baseUrl: "https://x", userId: "u1", agentId: "a" });
     const paper = httpPaperBackend(api);
@@ -109,7 +109,7 @@ describe("httpPaperBackend adapter", () => {
     expect(balances).toEqual({ XRP: 100, RLUSD: 50 });
     const call = fetchMock.mock.calls[0] as [string, RequestInit];
     const [url] = call;
-    expect(url).toBe("https://x/api/accounts/u42/balance");
+    expect(url).toBe("https://x/accounts/u42/balances");
   });
 });
 

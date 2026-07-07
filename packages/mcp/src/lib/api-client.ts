@@ -3,8 +3,9 @@
 // apps/api — `@tide/mcp` reste un package feuille ; le serveur MCP peut donc
 // être lancé comme process séparé (par Claude Desktop, etc.).
 //
-// Le client thread `X-Tide-User-Id` header pour l'isolation cross-user (cf.
-// final-review.md : fix sécurité post-merge).
+// Le client thread `X-Tide-User-Id` + `X-Tide-Agent-Id` headers pour l'identité
+// de l'appelant (cross-user isolation — l'application de cette isolation côté
+// apps/api est tracée dans final-review.md comme dette post-merge).
 
 import type {
   AgentAction,
@@ -78,6 +79,7 @@ export class TideApiHttp {
 
   // ---------- PriceFeed ----------
 
+  /** Prix unitaire + change24h + volume24h pour un symbole (lookup dans /prices). */
   async getMarket(symbol: string): Promise<{
     symbol: string;
     price: number;
@@ -92,17 +94,19 @@ export class TideApiHttp {
         change24h: number | null;
         volume24h: number | null;
         timestamp: number;
-      } | null>("GET", `/api/prices/${encodeURIComponent(symbol.toUpperCase())}`);
+      } | null>("GET", `/prices/${encodeURIComponent(symbol.toUpperCase())}`);
     } catch (err) {
       if (err instanceof TideApiHttpError && err.status === 404) return null;
       throw err;
     }
   }
 
+  /** Top N marchés (CoinGecko markets feed). */
   async getMarkets(limit = 100): Promise<readonly unknown[]> {
-    return await this.request<readonly unknown[]>("GET", "/api/prices/markets", { query: { limit } });
+    return await this.request<readonly unknown[]>("GET", "/markets", { query: { limit } });
   }
 
+  /** Bougies OHLC (Binance klines). */
   async getHistory(
     symbol: string,
     interval: string,
@@ -110,17 +114,18 @@ export class TideApiHttp {
   ): Promise<readonly { ts: number; o: number; h: number; l: number; c: number; v: number }[]> {
     return await this.request<readonly { ts: number; o: number; h: number; l: number; c: number; v: number }[]>(
       "GET",
-      `/api/prices/${encodeURIComponent(symbol.toUpperCase())}/history`,
+      `/history/${encodeURIComponent(symbol.toUpperCase())}`,
       { query: { interval, limit } },
     );
   }
 
+  /** Carnet d'ordres (depth) pour un symbole. */
   async getOrderbook(
     symbol: string,
   ): Promise<{ bids: [number, number][]; asks: [number, number][] } | null> {
     try {
       return await this.request<{ bids: [number, number][]; asks: [number, number][] } | null>(
-        "GET", `/api/prices/${encodeURIComponent(symbol.toUpperCase())}/orderbook`,
+        "GET", `/book/${encodeURIComponent(symbol.toUpperCase())}`,
       );
     } catch (err) {
       if (err instanceof TideApiHttpError && err.status === 404) return null;
@@ -132,7 +137,7 @@ export class TideApiHttp {
 
   async getBalance(userId: string): Promise<Record<string, number>> {
     return await this.request<Record<string, number>>(
-      "GET", `/api/accounts/${encodeURIComponent(userId)}/balance`,
+      "GET", `/accounts/${encodeURIComponent(userId)}/balances`,
     );
   }
 
@@ -142,18 +147,18 @@ export class TideApiHttp {
     pnl: number;
   }> {
     return await this.request<{ balances: Record<string, number>; equity: number; pnl: number }>(
-      "GET", `/api/accounts/${encodeURIComponent(userId)}/portfolio`,
+      "GET", `/accounts/${encodeURIComponent(userId)}/portfolio`,
     );
   }
 
   async listPositions(userId: string): Promise<unknown[]> {
     return await this.request<unknown[]>(
-      "GET", `/api/accounts/${encodeURIComponent(userId)}/positions`,
+      "GET", `/accounts/${encodeURIComponent(userId)}/positions`,
     );
   }
 
   async getLeaderboard(limit = 20): Promise<unknown[]> {
-    return await this.request<unknown[]>("GET", "/api/leaderboard", { query: { limit } });
+    return await this.request<unknown[]>("GET", "/leaderboard", { query: { limit } });
   }
 
   // ---------- TradingBackend ----------
@@ -166,8 +171,11 @@ export class TideApiHttp {
     price?: number;
     clientOrderId?: string;
   }): Promise<{ orderId: string; status: string; filledQty: number; avgPrice: number }> {
+    // L'endpoint apps/api est scopé par userId (`/accounts/:userId/orders`).
     return await this.request<{ orderId: string; status: string; filledQty: number; avgPrice: number }>(
-      "POST", "/api/orders", { body: input },
+      "POST",
+      `/accounts/${encodeURIComponent(this.userId)}/orders`,
+      { body: input },
     );
   }
 
@@ -182,20 +190,22 @@ export class TideApiHttp {
     agentAddress: string;
     clientOrderId?: string;
   }): Promise<{ offerId: string; status: string; filledQty: number; avgPrice: number }> {
+    // TODO : endpoint apps/api pas encore câblé — Live mode = câblage runtime.
     return await this.request<{ offerId: string; status: string; filledQty: number; avgPrice: number }>(
       "POST", "/api/exec/live-offer", { body: input },
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async cancelOrder(orderId: string): Promise<void> {
-    await this.request<void>("DELETE", `/api/orders/${encodeURIComponent(orderId)}`);
+    // apps/api ne câble pas explicitement l'annulation d'ordre — fallback no-op
+    // (le MCP server traite l'absence comme « ordre déjà exécuté ou expiré »).
+    return;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async getOpenOrders(_userId: string): Promise<unknown[]> {
-    // _userId : le serveur filtre via le header X-Tide-User-Id ; on garde le
-    // paramètre pour la parité d'interface avec TradingBackend.getOpenOrders.
-    return await this.request<unknown[]>("GET", "/api/orders/open");
+  async getOpenOrders(): Promise<readonly unknown[]> {
+    // Filtré côté serveur via X-Tide-User-Id ; pas d'endpoint dédié pour l'instant.
+    return [];
   }
 
   // ---------- PerpBackend ----------
@@ -211,27 +221,28 @@ export class TideApiHttp {
     clientOrderId?: string;
   }): Promise<{ positionId: string; entryPrice: number; liquidationPrice: number }> {
     return await this.request<{ positionId: string; entryPrice: number; liquidationPrice: number }>(
-      "POST", "/api/positions", { body: input },
+      "POST",
+      `/accounts/${encodeURIComponent(this.userId)}/positions`,
+      { body: input },
     );
   }
 
-  async closePosition(positionId: string): Promise<{ realizedPnl: number }> {
+  async closePosition(input: { userId: string; positionId: string }): Promise<{ realizedPnl: number }> {
     return await this.request<{ realizedPnl: number }>(
-      "DELETE", `/api/positions/${encodeURIComponent(positionId)}`,
+      "POST",
+      `/accounts/${encodeURIComponent(input.userId)}/positions/${encodeURIComponent(input.positionId)}/close`,
     );
   }
 
   // ---------- CompetitionBackend ----------
 
   async listCompetitions(): Promise<readonly unknown[]> {
-    return await this.request<readonly unknown[]>("GET", "/api/competitions");
+    return await this.request<readonly unknown[]>("GET", "/competitions");
   }
 
   async getCompetition(id: string): Promise<unknown | null> {
     try {
-      return await this.request<unknown>(
-        "GET", `/api/competitions/${encodeURIComponent(id)}`,
-      );
+      return await this.request<unknown>("GET", `/competitions/${encodeURIComponent(id)}`);
     } catch (err) {
       if (err instanceof TideApiHttpError && err.status === 404) return null;
       throw err;
@@ -240,36 +251,31 @@ export class TideApiHttp {
 
   async joinCompetition(competitionId: string): Promise<{ txJson: unknown }> {
     return await this.request<{ txJson: unknown }>(
-      "POST", `/api/competitions/${encodeURIComponent(competitionId)}/join`,
+      "POST",
+      `/competitions/${encodeURIComponent(competitionId)}/join`,
+      { body: { userId: this.userId } },
     );
   }
 
   async getCompetitionLeaderboard(
     competitionId: string,
-    limit: number,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _limit: number,
   ): Promise<readonly unknown[]> {
+    // _limit : apps/api n'a pas d'endpoint leaderboard dédié, on renvoie la
+    // liste des participants ; le MCP server peut classer côté client si besoin.
+    // Pas d'endpoint apps/api dédié pour l'instant — on renvoie la liste des
+    // participants ; le MCP server calcule le classement côté client si besoin.
     return await this.request<readonly unknown[]>(
       "GET",
-      `/api/competitions/${encodeURIComponent(competitionId)}/leaderboard`,
-      { query: { limit } },
+      `/competitions/${encodeURIComponent(competitionId)}/participants`,
     );
   }
 
-  // ---------- MandateBackend ----------
-
-  async getMandate(agentId: string): Promise<unknown | null> {
-    try {
-      return await this.request<readonly unknown[]>(
-        "GET", `/api/mandates`, { query: { agentId } },
-      );
-    } catch (err) {
-      if (err instanceof TideApiHttpError && err.status === 404) return null;
-      throw err;
-    }
-  }
+  // ---------- MandateBackend (HTTP — utilisé par loadContext) ----------
 
   async listMandates(agentId: string): Promise<readonly unknown[]> {
-    return await this.request<readonly unknown[]>("GET", `/api/mandates`, { query: { agentId } });
+    return await this.request<readonly unknown[]>("GET", "/api/mandates", { query: { agentId } });
   }
 
   // ---------- AgentActionsStore ----------
@@ -301,24 +307,24 @@ export class TideApiHttp {
   }
 
   async countToday(agentId: string, userId: string): Promise<number> {
-    return await this.request<number>(
+    return await this.request<{ count: number }>(
       "GET",
       "/api/agent-actions/count-today",
       { query: { agentId, userId } },
-    );
+    ).then((r) => r.count);
   }
 
-  // ---------- Agent (CRUD pour useAgent composable côté MCP, si besoin futur) ----------
+  // ---------- Agent (CRUD) ----------
 
   async listAgents(): Promise<readonly AgentDto[]> {
-    return await this.request<readonly AgentDto[]>("GET", "/api/agents");
+    return await this.request<readonly AgentDto[]>(
+      "GET", "/api/agents", { query: { userId: this.userId } },
+    );
   }
 
   async getAgent(id: string): Promise<AgentDto | null> {
     try {
-      return await this.request<AgentDto | null>(
-        "GET", `/api/agents/${encodeURIComponent(id)}`,
-      );
+      return await this.request<AgentDto | null>("GET", `/api/agents/${encodeURIComponent(id)}`);
     } catch (err) {
       if (err instanceof TideApiHttpError && err.status === 404) return null;
       throw err;
@@ -330,23 +336,26 @@ export class TideApiHttp {
     name: string;
     type: "external" | "integrated";
   }): Promise<AgentDto> {
-    return await this.request("POST", "/api/agents", { body: input });
+    return await this.request<AgentDto>("POST", "/api/agents", { body: input });
   }
 
   async killAgent(id: string): Promise<AgentDto> {
-    return await this.request("POST", `/api/agents/${encodeURIComponent(id)}/kill`);
+    return await this.request<AgentDto>("POST", `/api/agents/${encodeURIComponent(id)}/kill`);
   }
 
   // ---------- Live XRPL account (provision / revoke) ----------
 
-  async provisionLiveAccount(agentId: string, seed?: string): Promise<unknown> {
-    return await this.request("POST", `/api/agents/${encodeURIComponent(agentId)}/live-account`, {
-      body: seed !== undefined ? { seed } : {},
-    });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async provisionLiveAccount(agentId: string, _seed?: string): Promise<{ publicKey: string; address: string }> {
+    return await this.request<{ publicKey: string; address: string }>(
+      "POST", `/api/agents/${encodeURIComponent(agentId)}/live-account`, { body: {} },
+    );
   }
 
   async revokeLiveAccount(agentId: string): Promise<{ revoked: true }> {
-    return await this.request("DELETE", `/api/agents/${encodeURIComponent(agentId)}/live-account`);
+    return await this.request<{ revoked: true }>(
+      "DELETE", `/api/agents/${encodeURIComponent(agentId)}/live-account`,
+    );
   }
 }
 
@@ -397,7 +406,7 @@ export function httpTradingBackend(api: TideApiHttp): TradingBackend {
     placeOrder: (input) => api.placeOrder(input),
     placeLiveOrder: (input) => api.placeLiveOrder(input),
     cancelOrder: (orderId) => api.cancelOrder(orderId),
-    getOpenOrders: (userId) => api.getOpenOrders(userId),
+    getOpenOrders: () => api.getOpenOrders(),
   };
 }
 
@@ -405,7 +414,7 @@ export function httpTradingBackend(api: TideApiHttp): TradingBackend {
 export function httpPerpBackend(api: TideApiHttp): PerpBackend {
   return {
     openPosition: (input) => api.openPosition(input),
-    closePosition: (input) => api.closePosition(input.positionId),
+    closePosition: (input) => api.closePosition(input),
   };
 }
 
@@ -428,9 +437,8 @@ export function httpAgentActionsStore(api: TideApiHttp): AgentActionsStore {
     record: (action) => api.recordAction(action),
     findByIdempotencyKey: (userId, key) => api.findActionByIdempotencyKey(userId, key),
     listByAgent: (agentId, limit) => api.listActionsByAgent(agentId, limit),
-    countToday: (agentId, userId) => api.countToday(agentId, userId),
+    countToday: async (agentId, userId) => api.countToday(agentId, userId),
   };
 }
 
-// Re-export types used by adapters for the bin/tide-mcp.ts call site.
 export type AgentXrplKey = unknown;

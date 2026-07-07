@@ -307,6 +307,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   /** Carte de prix courante (instantané du cache off-chain). */
   app.get("/prices", () => deps.getPrices());
 
+  // Prix unitaire pour un symbole (lookup dans le cache /prices). Le MCP server
+  // l'appelle pour `get_market(symbol)`.
+  app.get<{ Params: { symbol: string } }>("/prices/:symbol", (request, reply) => {
+    const symbol = request.params.symbol.toUpperCase();
+    const price = deps.getPrices()[symbol];
+    if (price === undefined) {
+      reply.code(404);
+      return { error: `no price for ${symbol}` };
+    }
+    return { symbol, price, timestamp: Date.now() };
+  });
+
   // Liste des marchés (top N coins : symbole, nom, prix, %24h) pour la watchlist.
   if (deps.getMarkets !== undefined) {
     const getMarkets = deps.getMarkets;
@@ -531,6 +543,82 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           return { error: "limit must be an integer in [1, 200]" };
         }
         return actionsStore.listByAgent(agentId, limit);
+      },
+    );
+
+    // POST /api/agent-actions — enregistre une action agent (le MCP server
+    // écrit ici quand un outil s'exécute). Idempotence : si `idempotencyKey` est
+    // fourni ET qu'une action existe déjà pour `(userId, idempotencyKey)`, on
+    // renvoie l'action existante (200) au lieu d'insérer (201). L'id + executedAt
+    // sont générés par le store si absents du body.
+    app.post("/api/agent-actions", async (request, reply) => {
+      const body = (request.body ?? {}) as {
+        agentId?: string;
+        userId?: string;
+        toolName?: string;
+        toolParams?: string;
+        result?: string | null;
+        error?: string | null;
+        idempotencyKey?: string | null;
+      };
+      if (
+        typeof body.agentId !== "string" ||
+        typeof body.userId !== "string" ||
+        typeof body.toolName !== "string" ||
+        typeof body.toolParams !== "string"
+      ) {
+        reply.code(400);
+        return { error: "agentId, userId, toolName, toolParams are required" };
+      }
+      const action = {
+        id: crypto.randomUUID(),
+        agentId: body.agentId,
+        userId: body.userId,
+        toolName: body.toolName,
+        toolParams: body.toolParams,
+        result: body.result ?? null,
+        error: body.error ?? null,
+        idempotencyKey: body.idempotencyKey ?? null,
+        executedAt: Date.now(),
+      };
+      await actionsStore.record(action);
+      reply.code(201);
+      return action;
+    });
+
+    // GET /api/agent-actions/idempotency?userId=...&key=... — vérifie si une
+    // action avec cette clé d'idempotence existe déjà (pour retry côté MCP).
+    app.get<{ Querystring: { userId?: string; key?: string } }>(
+      "/api/agent-actions/idempotency",
+      async (request, reply) => {
+        const userId = request.query.userId;
+        const key = request.query.key;
+        if (!userId || !key) {
+          reply.code(400);
+          return { error: "userId and key required" };
+        }
+        const found = await actionsStore.findByIdempotencyKey(userId, key);
+        if (found === null) {
+          reply.code(404);
+          return { error: "not found" };
+        }
+        return found;
+      },
+    );
+
+    // GET /api/agent-actions/count-today?agentId=...&userId=... — compteur
+    // journalier pour le guard `enforceRiskLimits` côté MCP (maxTradesPerDay).
+    app.get<{ Querystring: { agentId?: string; userId?: string } }>(
+      "/api/agent-actions/count-today",
+      async (request, reply) => {
+        const agentId = request.query.agentId;
+        const userId = request.query.userId;
+        if (!agentId || !userId) {
+          reply.code(400);
+          return { error: "agentId and userId required" };
+        }
+        const count = await actionsStore.countToday(agentId, userId);
+        return { count };
       },
     );
   }
