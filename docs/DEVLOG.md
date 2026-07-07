@@ -1790,3 +1790,34 @@ typecheck + lint + build OK. **Vérifié en navigateur headless (Chrome)** : ren
 3. Smoke E2E dans le navigateur (Claude Desktop + Tide UI).
 4. PR review par le jury Make Waves.
 5. Merge `feat/agent-mcp` → `dev` une fois les points 1+2 fermes.
+
+## 2026-07-07 — AI Agent : câblage réel du MCP (bin/tide-mcp.ts branché sur apps/api via HTTP) [post-merge phase 1/2]
+
+**Quoi.** Le process `bin/tide-mcp.ts` (Claude Desktop ou autre agent MCP externe) appelle maintenant les vrais endpoints apps/api via un client HTTP typé (`TideApiHttp`) plutôt que de throw loud. Les 6 stubs (`bootstrapPriceFeed`, `bootstrapPaper`, `bootstrapTrading`, `bootstrapPerp`, `bootstrapCompetitions`, `bootstrapActions`) sont remplacés par des adapters qui satisfont les interfaces `PriceFeed` / `PaperBackend` / `TradingBackend` / etc. **749/749 tests verts** (738 → +11 tests pour l'API client), typecheck 7/7 packages vert, lint propre. Branch `feat/agent-mcp` à `d840b2d`.
+
+**Pourquoi.** Sans câblage réel, le serveur MCP ne peut pas servir d'outil à un agent — chaque appel aurait explosé sur le `throw new Error("non câblé — utiliser loadContext")`. La séparation `@tide/mcp` package feuille + apps/api serveur HTTP est l'architecture cible du spec (§2.2).
+
+**Adapters** (`packages/mcp/src/lib/api-client.ts`, ~290 lignes) :
+- `TideApiHttp` : 38 méthodes typées par backend. Thread `X-Tide-User-Id` + `X-Tide-Agent-Id` headers (isolation cross-user déjà implémentée côté apps/api dans le commit suivant).
+- `TideApiHttpError` : type d'erreur typée (status + body + message), 404 → `null` pour les read paths (`getMarket`, `getCompetition`, `findActionByIdempotencyKey`) afin de préserver la sémantique « not found ».
+- 6 factory functions d'adapter : `httpPriceFeed`, `httpPaperBackend`, `httpTradingBackend`, `httpPerpBackend`, `httpCompetitionBackend`, `httpAgentActionsStore`.
+
+**Live mode** : `liveCrypto` reste throw-loud avec message explicite « set up TIDE_AGENT_KEY_MASTER ». Le câblage Live (sign OfferCreate côté serveur + endpoint `/api/agents/:id/live-account/seed` pour récupérer le seed déchiffré) est dépendant de l'endpoint apps/api Live qui sera ajouté dans la phase câblage runtime.
+
+**Bugs & fix.** Aucun bug bloquant. TypeScript a forcé plusieurs passes : (1) `request<T>()` retourne `Promise<T>` avec `unknown` par défaut — chaque call site type explicitement le retour (38 méthodes × 1 annotation chacune). (2) Le typing de `Broadcaster` (interface avec `emit(event: {type, ...})`) est incompatible avec `EventEmitter.emit(eventName: string | symbol, ...)` — résolu via composition (`localEmitter` + objet `Broadcaster` qui wrap) plutôt qu'héritage. (3) `getOpenOrders(_userId)` paramètre underscore-prefixé pour la parité d'interface, désactivé en local avec `eslint-disable-next-line` car la config refuse `no-unused-vars` même pour les underscores.
+
+**Tests** (`packages/mcp/test/api-client.test.ts`, 11 tests) :
+- URL building correct (slash trailing stripé sur la base URL, path encoding pour les symbols).
+- Headers threadés (`x-tide-user-id`, `x-tide-agent-id`).
+- `404` → `null` pour les reads optionnels (`getMarket`, `getCompetition`, idempotency).
+- `500` → `TideApiHttpError` propagé.
+- POST body shape vérifié pour `placeOrder`, `openPosition`, `record(action)`.
+- Adapter factories propagent correctement les erreurs.
+
+**Dette documentée dans le commit message** : plusieurs endpoints apps/api n'existent pas encore (`/api/prices/*`, `/api/accounts/:userId/balance`, `/api/exec/live-offer`, etc.) — les adapters les appeleront en 404 fail-loud tant qu'ils ne sont pas ajoutés (jamais de silently-swallowed success, conformément à la convention « pas d'erreur avalée »). La phase câblage runtime (Tâche câblage) ajoutera ces endpoints + appliquera l'isolation cross-user dessus.
+
+**Bilan** : on est à **749/749 tests verts, 0 lint, 0 cast `as any`/`as never`, 0 secret loggé**. La branche `feat/agent-mcp` est pushée et prête pour :
+1. PR (cf. https://github.com/STOOOKEEE/Make-waves/pull/new/feat/agent-mcp)
+2. Phase câblage runtime (apps/api endpoints manquants + isolation cross-user)
+3. Smoke E2E navigateur (Claude Desktop + Tide UI)
+4. Merge vers `dev` une fois les points 2+3 fermes.
