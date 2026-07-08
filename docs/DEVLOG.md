@@ -1886,3 +1886,43 @@ npx tide-mcp
 1. **Live mode `/api/exec/live-offer`** : sign + submit `OfferCreate` côté serveur, nécessite `TIDE_AGENT_KEY_MASTER` + `AgentXrplAccountService.decryptSeed()` exposé.
 2. **Cross-user isolation apps/api** : vérifier `X-Tide-User-Id` ↔ `agent.userId` sur les routes `/api/agents/:id/*` (kill, live-account, getAgent).
 3. **`apps/api/leaderboard` calculé** : `getCompetitionLeaderboard` côté MCP renvoie la liste des participants ; le calcul de classement (par equity) pourrait être un endpoint dédié `/api/competitions/:id/leaderboard`.
+
+## 2026-07-08 — Paper trading MCP : vérif runtime + fix contrat `place_order` + câblage `main.ts`
+
+**Quoi.** Première vérif runtime **réelle** du « paper trading MCP » : vrai serveur MCP (process stdio, JSON-RPC) piloté contre un vrai backend `apps/api`. Elle a révélé que le paper trade via MCP **ne fonctionnait pas** end-to-end (contrairement à ce qu'affirmait l'entrée du 07/07). Deux blocages corrigés et vérifiés.
+
+**Pourquoi (l'écart non détecté).** Les tests unitaires MCP mockaient l'adaptateur HTTP avec le **mauvais contrat** (`api-client.test.ts` codifiait un body `{symbol,qty}` et un retour `{orderId,…}` jamais confrontés à la vraie route paper) → faux vert. Rien n'exerçait le vrai transport MCP contre le vrai backend, d'où l'écart invisible en CI.
+
+**Blocage 1 — contrat `place_order` (400 systématique).** L'adaptateur `packages/mcp/src/lib/api-client.ts::placeOrder` POSTait `{symbol, side, qty, type}` sur `/accounts/:userId/orders`, mais la route paper attend un `MarketOrderInput` du domaine `{pair:{base,quote}, side, amount, price}` avec **`price` obligatoire** → `400 order.pair: objet JSON attendu`. De plus le handler `tools/trading-spot.ts` passait `price` (l'arg brut, `undefined` en market) au lieu du **px résolu** — or la route paper valorise au prix fourni par le client, donc aucun prix = pas d'exécution.
+
+**Blocage 2 — routes agent non montées dans `main.ts`.** `apps/api/src/main.ts` n'instanciait ni ne passait `agentService` / `mandateService` / `agentActionsStore` à `createApp` → `/api/agents`, `/api/mandates`, `/api/agent-actions` absentes du runtime → le serveur MCP échouait au démarrage (`loadContext` → agent introuvable). Ces routes servent aussi la vue **AgentView**.
+
+**Cheminement.** Fix côté MCP (couche anti-corruption = le bon endroit, interface `TradingBackend` et tools inchangés) : `placeOrder` traduit `symbol→pair` (quote = `QUOTE_CURRENCY` = RLUSD), `qty→amount`, exige un prix, et re-mappe le `Fill` du domaine vers le shape MCP `{orderId,status,filledQty,avgPrice}` (orderId dérivé du `clientOrderId` ou uuid — le paper n'a pas d'ordre persistant). `trading-spot.ts` passe désormais `px`. Câblage `main.ts` : stores SQLite (`SqliteAgentStore/MandateStore/AgentActionsStore`, tables déjà migrées par `migrateAgentTables`) + `AgentService`/`MandateService`. Le champ `xaman` de `MandateService` est **vestigial** (`this.xaman` jamais appelé ; la signature passe par `/api/sign/mandate-callback` → `onSignCallback`) → stub **throw-loud** plutôt qu'un faux client silencieux (convention « pas de succès silencieux »).
+
+**Vérifié (runtime).** Vrai MCP stdio contre le vrai `main.ts` sur `:3000` (feed CoinGecko réel) : `place_order BTC buy 0.001 market` → `{status:"filled", avgPrice:63530}` ; portfolio `10000 RLUSD` → `0.001 BTC + 9936.47 RLUSD` ; action tracée dans le store SQLite d'audit. Tests : 3 tests unitaires réalignés sur le contrat correct (`api-client.test.ts` ×2, `tools-trading-spot.test.ts` ×1), **non-régression 399/399** (mcp + api), typecheck mcp + api vert.
+
+**Bugs & fix.** L'entrée du 07/07 affirmait « pour un agent en mode Paper sans Live, ça marche end-to-end » — **faux** (jamais vérifié au runtime : format `place_order` incompatible + routes agent non montées). Corrigé ici.
+
+**Reste.** Cross-user isolation apps/api (`X-Tide-User-Id` ↔ `agent.userId`) toujours en dette ; signature de mandat via Xaman réel non branchée (callback simulé) ; Live mode inchangé.
+
+## 2026-07-08 — Plan de travail : features à coder + blocage tooling (swarm MiniMax)
+
+**Quoi.** Cadrage de ce qu'il **restait à coder** sur Tide après le fix du paper trading MCP, en mode « senior manage des juniors » (les juniors codent, le senior relit/audite). Découpage en **4 lots à fichiers quasi-disjoints** (les juniors écrivent des modules autonomes + tests ; l'assemblage dans `main.ts` — l'assembleur, sensible — reste au senior pour éviter les conflits) :
+
+1. **Chat agent runtime** — remplacer les stubs `throwAgentChatNotWired` (`apps/api/src/http/server.ts`, `buildAgentChatCtx`) par de vrais adapters **in-process** branchés sur les services locaux (paper / competition / prix / actions) → débloque `AgentView` (aujourd'hui chaque outil du chat throw). Nouveau module `apps/api/src/agent/in-process-context.ts` + intégration `server.ts` + instanciation `AgentChatService` dans `main.ts` (`TIDE_LLM_API_KEY`). C'est le blocker #4 de l'audit 07/07.
+2. **Config Live par env** — rendre `ONCHAIN_POOLS` configurable (fini le `{}` **hardcodé** `main.ts:64`), ajouter une notion réseau **testnet/mainnet**, valider l'issuer RLUSD par réseau (`config/env.ts` + `main.ts`). Lève le « trou testnet » (issuer RLUSD mainnet en dur `plan-live.ts:35`).
+3. **Prix on-chain réels** — dans `plan-live.ts`, brancher la vraie lecture **AMM / `book_offers`** (readers `@tide/xrpl` déjà écrits) à la place du feed CEX (aujourd'hui prix AMM *et* carnet = CoinGecko). Dépend du lot 2.
+4. **`get_markets` respecte `limit`** — la route `/markets` (`http/server.ts`) ignore le param (renvoie 250 quand on demande 5). Petit fix (bug trouvé à la vérif du jour).
+
+**Exclus volontairement du swarm.** (a) **Live agent** (`decryptAgentSeed` / clés AES / `TIDE_AGENT_KEY_MASTER`) — path **sécurité** (clés privées), jamais un junior, + décision d'archi à trancher (où vit la master key, comment le MCP externe obtient un seed sans l'exposer). (b) **Swap Live prouvé mainnet / soumission serveur** — bloqué sur l'environnement d'Armand (clés XUMM, SourceTag réservé, mainnet) ; la non-soumission serveur est *by design* (non-custodial).
+
+**Reste global avant mainnet (rappel audit 07/07).** Dépendances **Armand** (hors code) : réserver le **SourceTag**, clés **XUMM**, `XRPL_WSS_URL` mainnet + comptes indexés, adresse **multisig prize pool**, spikes mainnet (1 swap taggé → compteur d'attribution, multisig). **Infra** (rien n'existe) : Dockerfile + host à **volume persistant** pour `tide.db`, backend packagé, `vite build` front, secrets, CI. **Chemin critique hackathon = Phase 2** : passer d'un `OfferCreate` correct à un **swap Live taggé rempli on-chain + compté**.
+
+**Bugs & fix — blocage tooling `minimax-swarm` (post-mortem, pour ne pas re-perdre 2 h).** Le skill lance les juniors via `claude -p` reconfiguré vers l'endpoint Anthropic-compat de MiniMax (`ANTHROPIC_BASE_URL=api.minimax.io/anthropic`, `ANTHROPIC_AUTH_TOKEN=<clé>`). **Échec systématique en 401** depuis toute session Claude Code. Diagnostic exhaustif :
+- **La clé MiniMax est valide** — `curl` direct → HTTP 200, `MiniMax-M3` répond (Bearer *et* x-api-key ; clé `sk-cp-` du Token Plan). Ce n'est PAS la clé (inutile de la régénérer).
+- **Pas la version** — testé 2.1.200 / 201 / 196 / 191 / 204, échec identique. Downgrade inutile.
+- **Cause racine** : le **login OAuth claude.ai prime sur `ANTHROPIC_AUTH_TOKEN`** → `claude -p` envoie le token Anthropic (pas la clé MiniMax) → `Invalid bearer token`. Via `ANTHROPIC_API_KEY` (qui primerait sur l'OAuth), le CLI **refuse une clé non-`sk-ant-`** (`Invalid API key · Fix external API key`), même avec approbation `customApiKeyResponses` / `CLAUDE_CODE_SIMPLE=1`. Proxy d'injection d'auth local → comportement erratique du CLI.
+- **Seul fix** : `claude auth logout` (terminal pur, hors session) pour retirer l'OAuth → `AUTH_TOKEN` reprend la main (curl Bearer le prouve). Sinon : coder via **sous-agents Claude natifs** (tool Agent).
+- Note (utile, non liée à MiniMax) — **downgrade local sans toucher au global** : les versions sont des binaires autonomes dans `~/.local/share/claude/versions/<v>` ; appeler le binaire direct = usage local ; le « global » = symlink `~/.local/bin/claude` ; `DISABLE_AUTOUPDATER=1` pour figer.
+
+**Où on en est.** Fix MCP paper prêt (branche `fix/mcp-paper-order-contract`, **non commit**). **Les 4 lots pas encore codés** — en attente du choix moteur (logout OAuth pour MiniMax, ou juniors Claude natifs).

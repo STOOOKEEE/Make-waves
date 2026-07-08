@@ -41,3 +41,6 @@ __pycache__/
 # Outils Claude Code (local, hors dépôt)
 .claude/
 skills-lock.json
+
+# tokensave (code graph MCP, local)
+.tokensave/

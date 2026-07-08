@@ -18,7 +18,13 @@ import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
 import { AgentChatService } from "./services/agent-chat-service";
+import { AgentService } from "./services/agent-service";
+import { MandateService } from "./services/mandate-service";
+import type { MandateXamanApi } from "./services/mandate-service";
 import { PaperService } from "./services/paper-service";
+import { SqliteAgentStore } from "./store/sqlite-agent-store";
+import { SqliteMandateStore } from "./store/sqlite-mandate-store";
+import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
 import { SqliteAccountStore } from "./store/sqlite-account-store";
@@ -272,6 +278,29 @@ async function main(): Promise<void> {
   const accountStore = new SqliteAccountStore(db);
   seedDemoAccounts(new PaperService(undefined, accountStore), accountStore);
 
+  // Agents & mandats (AI Agent) : montés systématiquement — le serveur MCP et la
+  // vue AgentView consomment ces routes (`/api/agents`, `/api/mandates`,
+  // `/api/agent-actions`). La signature de mandat passe par le callback Xaman
+  // (`/api/sign/mandate-callback`) ; MandateService n'appelle jamais l'API Xaman
+  // directement → on injecte un stub throw-loud plutôt qu'un faux client silencieux.
+  const agentStore = new SqliteAgentStore(db);
+  const mandateStore = new SqliteMandateStore(db);
+  const agentActionsStore = new SqliteAgentActionsStore(db);
+  const mandateXaman: MandateXamanApi = {
+    createSignRequest() {
+      throw new Error(
+        "mandate Xaman signing not wired — le mandat est signé via /api/sign/mandate-callback",
+      );
+    },
+    getPayloadStatus() {
+      throw new Error(
+        "mandate Xaman status not wired — le mandat est signé via /api/sign/mandate-callback",
+      );
+    },
+  };
+  const agentService = new AgentService(agentStore, mandateStore);
+  const mandateService = new MandateService(mandateStore, mandateXaman);
+
   const { app, cache, refreshPrices } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
@@ -288,6 +317,9 @@ async function main(): Promise<void> {
     exec,
     metrics,
     agentChatService,
+    agentService,
+    mandateService,
+    agentActionsStore,
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

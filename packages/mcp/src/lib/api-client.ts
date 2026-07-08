@@ -7,6 +7,7 @@
 // de l'appelant (cross-user isolation — l'application de cette isolation côté
 // apps/api est tracée dans final-review.md comme dette post-merge).
 
+import { randomUUID } from "node:crypto";
 import type {
   AgentAction,
   AgentActionsStore,
@@ -17,6 +18,8 @@ import type {
   TradingBackend,
 } from "../types";
 import type { AgentDto } from "@tide/client";
+import { QUOTE_CURRENCY } from "@tide/core";
+import type { Fill } from "@tide/core";
 
 export interface TideApiHttpConfig {
   readonly baseUrl: string;
@@ -171,12 +174,37 @@ export class TideApiHttp {
     price?: number;
     clientOrderId?: string;
   }): Promise<{ orderId: string; status: string; filledQty: number; avgPrice: number }> {
-    // L'endpoint apps/api est scopé par userId (`/accounts/:userId/orders`).
-    return await this.request<{ orderId: string; status: string; filledQty: number; avgPrice: number }>(
+    // La route paper (`/accounts/:userId/orders`) attend un `MarketOrderInput` du
+    // domaine (`{ pair, side, amount, price }`) et l'exécute au `price` fourni (elle
+    // ne consulte pas le feed). On traduit donc le contrat MCP (`symbol`/`qty`) vers
+    // ce format et on exige un prix — le tool `place_order` résout le px (feed pour un
+    // market, prix explicite pour un limit) et nous le passe. Le `Fill` renvoyé est
+    // re-mappé vers le shape attendu côté MCP (pas d'orderId côté paper → on en dérive un).
+    if (input.price === undefined) {
+      throw new TideApiHttpError(
+        0,
+        undefined,
+        "placeOrder: prix requis (la route paper valorise au prix fourni)",
+      );
+    }
+    const fill = await this.request<Fill>(
       "POST",
       `/accounts/${encodeURIComponent(this.userId)}/orders`,
-      { body: input },
+      {
+        body: {
+          pair: { base: input.symbol.toUpperCase(), quote: QUOTE_CURRENCY },
+          side: input.side,
+          amount: input.qty,
+          price: input.price,
+        },
+      },
     );
+    return {
+      orderId: input.clientOrderId ?? randomUUID(),
+      status: "filled",
+      filledQty: fill.amount,
+      avgPrice: fill.price,
+    };
   }
 
   async placeLiveOrder(input: {

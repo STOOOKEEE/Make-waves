@@ -243,7 +243,9 @@ describe("place_order tool", () => {
           side: "buy",
           qty: 1,
           type: "market",
-          price: undefined,
+          // px résolu via le feed (BTC=100) transmis au backend, pas undefined :
+          // la route paper valorise l'ordre au prix fourni.
+          price: 100,
           clientOrderId: undefined,
         },
       ],

@@ -110,7 +110,10 @@ export const placeOrderTool: ToolDef = {
               side,
               qty,
               type,
-              price,
+              // px = prix résolu (feed pour un market, prix explicite pour un limit).
+              // La route paper exécute au prix fourni → on transmet px, pas l'arg brut
+              // (undefined en market, ce qui ferait échouer la valorisation backend).
+              price: px,
               clientOrderId: clientOrderId ?? undefined,
             });
       await recordAction(ctx.actions, {
