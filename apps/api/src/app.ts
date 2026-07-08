@@ -66,6 +66,11 @@ export interface AppConfig {
   readonly agentActionsStore?: AgentActionsStore;
   /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
   readonly agentChatService?: import("./services/agent-chat-service").AgentChatService;
+  /** Fabrique du `McpContext` runtime du chat agent (backends réels) — absente → stub. */
+  readonly agentChatCtx?: (
+    agentId: string,
+    userId: string,
+  ) => Promise<import("@tide/mcp").McpContext>;
   /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
   readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
   /** Historique DEX réel prioritaire pour les tokens dont la pool est connue. */
@@ -177,6 +182,7 @@ export function createApp(config: AppConfig): App {
     mandateService: config.mandateService,
     agentActionsStore: config.agentActionsStore,
     agentChatService: config.agentChatService,
+    agentChatCtx: config.agentChatCtx,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

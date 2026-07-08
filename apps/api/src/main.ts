@@ -1,6 +1,7 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
 import { connectXrplClient } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
+import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { createApp } from "./app";
 import * as env from "./config/env";
 import type { FetchJson } from "./feed/cex-price-feed";
@@ -308,6 +309,20 @@ async function main(): Promise<void> {
   const agentService = new AgentService(agentStore, mandateStore);
   const mandateService = new MandateService(mandateStore, mandateXaman);
 
+  // Fabrique du contexte de chat agent : backends = adapters HTTP pointés sur
+  // ce serveur (self), agent/mandat/actions = stores locaux. Le port est lu ici
+  // (avant l'écoute) pour construire l'URL de boucle locale. Câblée seulement
+  // si le chat est activé (clé LLM présente).
+  const port = env.readPort();
+  const agentChatCtx =
+    agentChatService === undefined
+      ? undefined
+      : buildAgentChatCtxFactory(
+          `http://127.0.0.1:${String(port)}`,
+          { agents: agentStore, mandates: mandateStore, actions: agentActionsStore },
+          sourceTag,
+        );
+
   const { app, cache, refreshPrices } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
@@ -327,6 +342,7 @@ async function main(): Promise<void> {
     agentService,
     mandateService,
     agentActionsStore,
+    agentChatCtx,
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).
@@ -358,7 +374,6 @@ async function main(): Promise<void> {
     startIndexerSync(indexer);
   }
 
-  const port = env.readPort();
   await app.listen({ port, host: "0.0.0.0" });
   console.log(
     `Tide API à l'écoute sur :${String(port)} ` +

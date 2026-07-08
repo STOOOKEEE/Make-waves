@@ -109,6 +109,13 @@ export interface ServerDeps {
   readonly agentActionsStore?: AgentActionsStore;
   /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
   readonly agentChatService?: AgentChatService;
+  /**
+   * Fabrique du `McpContext` runtime pour le chat agent (câblée par `main.ts`
+   * sur les vrais backends). Absente → repli sur le stub throw-loud
+   * `buildAgentChatCtx`. Peut lever (agent stoppé / mandat absent) : la route
+   * capture et renvoie 400 avant d'ouvrir le flux SSE.
+   */
+  readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
 }
 
 /**
@@ -688,15 +695,21 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.code(400);
         return { error: "agentId, userId, message are required" };
       }
-      // Le câblage runtime complet (paper/trading/perp/competitions réel) n'est
-      // pas encore branché — chaque méthode du `ctx` throw loud si un outil
-      // est appelé. C'est volontaire : un LLM qui appelle `place_order` ne
-      // doit JAMAIS voir un `{ orderId: "stub" }` (silently swallowed success).
-      // Lève `agent chat not wired — runtime ctx missing` côté tool, que
-      // `AgentChatService.executeTool` capture en `{ isError: true, message }`
-      // et remonte à Claude comme `tool_result is_error=true` → l'agent peut
-      // s'auto-corriger (« run-time pas câblé »), l'utilisateur voit une
-      // erreur honnête au lieu d'un faux succès.
+      // Contexte d'exécution des outils : la fabrique runtime (`main.ts`)
+      // branche les vrais backends (self-HTTP + stores locaux) et valide
+      // l'agent + le mandat actif — elle lève si l'agent est stoppé ou sans
+      // mandat, on renvoie alors 400 AVANT d'ouvrir le flux SSE. Sans fabrique
+      // (pas de câblage), on retombe sur le stub throw-loud : un LLM qui
+      // appelle `place_order` ne voit JAMAIS un faux succès.
+      let ctx: McpContext;
+      try {
+        ctx = deps.agentChatCtx
+          ? await deps.agentChatCtx(agentId, userId)
+          : buildAgentChatCtx(agentId, userId);
+      } catch (err) {
+        reply.code(400);
+        return { error: err instanceof Error ? err.message : "context build failed" };
+      }
       reply.raw.setHeader("Content-Type", "text/event-stream");
       reply.raw.setHeader("Cache-Control", "no-cache");
       reply.raw.setHeader("Connection", "keep-alive");
@@ -711,7 +724,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           ...(body.systemPrompt !== undefined
             ? { systemPrompt: body.systemPrompt }
             : {}),
-          ctx: buildAgentChatCtx(agentId, userId),
+          ctx,
         })) {
           reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
         }
