@@ -1926,3 +1926,28 @@ npx tide-mcp
 - Note (utile, non liée à MiniMax) — **downgrade local sans toucher au global** : les versions sont des binaires autonomes dans `~/.local/share/claude/versions/<v>` ; appeler le binaire direct = usage local ; le « global » = symlink `~/.local/bin/claude` ; `DISABLE_AUTOUPDATER=1` pour figer.
 
 **Où on en est.** Fix MCP paper prêt (branche `fix/mcp-paper-order-contract`, **non commit**). **Les 4 lots pas encore codés** — en attente du choix moteur (logout OAuth pour MiniMax, ou juniors Claude natifs).
+
+## 2026-07-08 — Les 4 lots codés (senior direct, pas de swarm) : chat runtime, config Live env, prix on-chain, markets limit
+
+**Quoi.** Les 4 lots cadrés plus haut, codés en direct (le swarm MiniMax restant bloqué en 401). Fix MCP paper d'abord commit (`560dd57`, branche `fix/mcp-paper-order-contract`), puis branche `feat/roadmap-lots`. **766 tests verts** (front+back), typecheck 8/8, **lint 0 erreur**.
+
+**Lot #4 — route `/markets` respecte `limit`.** `server.ts` `app.get("/markets")` ignorait le param (250 renvoyés quoi qu'il arrive). Ajout d'un querystring `limit` borné à la taille de la liste (même patron que `/history` et `/book`), slice au niveau route. Test via `inject` (`server.test.ts`).
+
+**Lot #1 — chat agent runtime (débloque `AgentView`).** La route `/api/agent-chat/stream` construisait un `McpContext` **stub throw-loud** (`buildAgentChatCtx`) → chaque outil du chat explosait. **Décision d'archi (ponytail) : self-HTTP plutôt qu'in-process.** Les adapters HTTP `@tide/mcp` (`httpPaperBackend`, `httpTradingBackend`…) encodent déjà toute la couche de traduction de contrat (symbol→pair, price, `Fill`→result) qu'on venait de corriger ; refaire des adapters in-process aurait **dupliqué** cette couche = 2e endroit pour re-casser le contrat. Donc : nouveau module `apps/api/src/agent/chat-context.ts` (`buildAgentChatCtxFactory`) qui bâtit le `McpContext` via `loadContext` de `@tide/mcp` — backends prix/paper/trading/perp/competitions = adapters HTTP pointés sur **ce serveur** (`http://127.0.0.1:${port}`), agent/mandat/actions = **stores locaux** (CRUD direct, pas de traduction). `loadContext` valide l'agent (non stoppé) + **exige un mandat actif** → sinon lève, et la route renvoie **400 avant** d'ouvrir le SSE (plus de faux succès). Nouveaux exports `@tide/mcp` (`index.ts`) : `TideApiHttp`, les 6 factory `http*Backend`, `loadContext`. Câblage `app.ts` (`agentChatCtx` forward) + `main.ts` (fabrique gated sur `TIDE_LLM_API_KEY`, port lu avant `listen`).
+
+**Lot #2 — config Live par env.** `ONCHAIN_POOLS` (`{}` **en dur** `main.ts:70`) → `env.readOnchainPools()` (format **JSON**, validation shape + adresses issuer, lève si cassé). Notion réseau : `env.readXrplNetwork()` (`mainnet`|`testnet`, défaut mainnet, lève sur valeur inconnue). **Trou testnet fermé** : `buildExecDeps` — Live activé hors mainnet **sans** `TIDE_RLUSD_ISSUER` = quote par défaut = émetteur RLUSD **mainnet** (inexistant ailleurs) → **on lève** au boot (vérifié runtime : `TIDE_XRPL_NETWORK=testnet TIDE_SOURCE_TAG=7777` → refuse de démarrer avec le message exact). Tests `env.test.ts` (9).
+
+**Lot #3 — prix on-chain réels dans `plan-live`.** `planLiveOffer` alimentait `planExecution` avec le **prix CEX dupliqué** en `ammPrice` ET `bookPrice`. Ajout d'un `OnchainExecReader` (sous-ensemble de `XrplClient`, satisfait structurellement) : quand un nœud est câblé, prix réels du DEX = **AMM spot** (`ammSpotPrice`) + **meilleur prix du carnet côté sens** (`bookQuote`, **ask à l'achat / bid à la vente** — insight : un `OfferCreate` matche le carnet, donc le carnet est la référence d'exécution). `planLiveOffer` devient **async** → `planFor`/`/exec/plan` awaités. Repli CEX conservé (mode démo sans nœud). `main.ts` : `buildExecDeps(sourceTag, network, xrpl)` expose `xrpl` comme `onchain`. Tests mock reader (best-exec `venue=book`, side-aware, throw sur carnet incohérent).
+
+**Cheminement (alternatives écartées).**
+- Lot #1 **in-process** (le plan initial nommait `in-process-context.ts`) **écarté** au profit du self-HTTP : DRY (une seule couche de traduction, celle du serveur MCP externe, déjà prouvée le matin). Coût assumé : un aller-retour HTTP local par appel d'outil (négligeable pour un chat) — `ponytail:` ceiling noté.
+- Lot #3 **dégradation mono-source** (si l'AMM tombe, retomber sur le carnet seul) **écartée** : les deux lectures on-chain sont requises, on propage l'erreur — un swap réel doit être prix sur un référentiel cohérent, pas un patchwork. Ceiling noté : prix haut-de-carnet (non pondéré par la quantité), pas de cross-check CEX.
+
+**Bugs & fix.** Aucun bug bloquant. `loadContext` (`@tide/mcp`) existait déjà et attend `agents.get`/`mandates.getActive` (interfaces stores locaux) → les stores SQLite/InMemory d'apps/api sont **structurellement compatibles** avec les types miroir `@tide/mcp` (typecheck le confirme, zéro cast).
+
+**Vérifié (runtime).**
+- Lot #1 : **vrai serveur qui écoute** (`agent-chat-ctx.test.ts`) → fabrique → `ctx.trading.placeOrder(XRP 100 @0.5)` exécuté **self-HTTP → route → PaperService** → XRP crédité / RLUSD débité ; + chemin 400 sans mandat. (Le pilotage LLM lui-même reste couvert par `agent-chat-service.test.ts` avec client mocké.)
+- Lot #2 : boot mainnet → `live:on` ; boot testnet sans issuer → **refus au démarrage** (message exact).
+- Lots #3/#4 : logique par tests (mock on-chain + `inject`), boot mainnet OK après les 4 lots.
+
+**Reste.** Path complet lot #3 contre un **vrai nœud mainnet** (AMM/carnet XRP/RLUSD réels) = env Armand (`XRPL_WSS_URL`). Chat piloté par un **vrai LLM** = `TIDE_LLM_API_KEY`. Dette pré-existante inchangée : cross-user isolation apps/api, signature mandat Xaman réelle, Live agent (clés AES).
