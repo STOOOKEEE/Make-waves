@@ -320,9 +320,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
 
   // Liste des marchés (top N coins : symbole, nom, prix, %24h) pour la watchlist.
+  // `limit` optionnel borné à la taille de la liste ; absent → liste complète.
   if (deps.getMarkets !== undefined) {
     const getMarkets = deps.getMarkets;
-    app.get("/markets", () => getMarkets());
+    app.get<{ Querystring: { limit?: string } }>("/markets", (request) => {
+      const rows = getMarkets();
+      const parsed = Number(request.query.limit);
+      const limit =
+        Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, rows.length) : rows.length;
+      return rows.slice(0, limit);
+    });
   }
 
   // Config publique pour le client : le SourceTag d'attribution (entier public,

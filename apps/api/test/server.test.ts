@@ -236,6 +236,41 @@ describe("book", () => {
   });
 });
 
+describe("markets", () => {
+  const rows = Array.from({ length: 5 }, (_, i) => ({
+    id: `c${String(i)}`,
+    symbol: `S${String(i)}`,
+    name: `Coin ${String(i)}`,
+    price: i + 1,
+    change24h: 0,
+  }));
+
+  it("renvoie la liste complète sans limit", async () => {
+    const marketsApp = buildServer({ paper, competition, getPrices: () => prices, getMarkets: () => rows });
+    try {
+      const res = await marketsApp.inject({ method: "GET", url: "/markets" });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toHaveLength(5);
+    } finally {
+      await marketsApp.close();
+    }
+  });
+
+  it("respecte le param limit (borné à la taille de la liste)", async () => {
+    const marketsApp = buildServer({ paper, competition, getPrices: () => prices, getMarkets: () => rows });
+    try {
+      const two = await marketsApp.inject({ method: "GET", url: "/markets?limit=2" });
+      expect(two.json()).toHaveLength(2);
+      const over = await marketsApp.inject({ method: "GET", url: "/markets?limit=999" });
+      expect(over.json()).toHaveLength(5);
+      const bad = await marketsApp.inject({ method: "GET", url: "/markets?limit=abc" });
+      expect(bad.json()).toHaveLength(5);
+    } finally {
+      await marketsApp.close();
+    }
+  });
+});
+
 describe("compétitions", () => {
   const comp = {
     id: "c1",
