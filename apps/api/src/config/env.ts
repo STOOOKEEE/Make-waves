@@ -1,6 +1,7 @@
 import { assertAttributionTag, assertValidAddress } from "@tide/xrpl";
 import { RLUSD_CURRENCY, RLUSD_SYMBOL } from "../exec/plan-live";
 import type { LiveQuote } from "../exec/plan-live";
+import type { SymbolPoolMap } from "../feed/onchain-price";
 
 /**
  * Lecture et validation des variables d'environnement. Un lecteur renvoie
@@ -67,6 +68,90 @@ export function readSourceTag(): number | undefined {
   }
   assertAttributionTag(tag);
   return tag;
+}
+
+/** Réseau XRPL ciblé. Détermine notamment l'émetteur RLUSD par défaut. */
+export type XrplNetwork = "mainnet" | "testnet";
+
+const XRPL_NETWORKS: readonly XrplNetwork[] = ["mainnet", "testnet"];
+
+/**
+ * Réseau XRPL (`TIDE_XRPL_NETWORK`). Défaut `mainnet` (le hackathon tourne en
+ * mainnet). Toute autre valeur que celles connues = config cassée → on lève.
+ */
+export function readXrplNetwork(): XrplNetwork {
+  const raw = optional("TIDE_XRPL_NETWORK");
+  if (raw === undefined) {
+    return "mainnet";
+  }
+  const network = raw.toLowerCase();
+  if (!XRPL_NETWORKS.includes(network as XrplNetwork)) {
+    throw new Error(
+      `TIDE_XRPL_NETWORK invalide: ${raw} (attendu: ${XRPL_NETWORKS.join(" | ")})`,
+    );
+  }
+  return network as XrplNetwork;
+}
+
+/**
+ * Pools AMM on-chain à lire pour composer le prix (feed), au format JSON :
+ * `{"RLUSD":{"asset":{"currency":"<hex|XRP>","issuer":"r..."},"asset2":{"currency":"XRP"}}}`.
+ * Chaque devise porte un `currency` non vide ; un `issuer` (si présent, requis
+ * pour tout token non-XRP) est validé comme adresse XRPL. JSON ou structure
+ * invalide = config cassée → on lève. `undefined` si non déclaré (feed mono-source CEX).
+ */
+export function readOnchainPools(): SymbolPoolMap | undefined {
+  const raw = optional("TIDE_ONCHAIN_POOLS");
+  if (raw === undefined) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `TIDE_ONCHAIN_POOLS n'est pas un JSON valide: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("TIDE_ONCHAIN_POOLS doit être un objet { symbole: { asset, asset2 } }");
+  }
+  const pools: Record<string, { asset: XrplCurrency; asset2: XrplCurrency }> = {};
+  for (const [symbol, pool] of Object.entries(parsed)) {
+    pools[symbol] = {
+      asset: parseXrplCurrency(pool, "asset", symbol),
+      asset2: parseXrplCurrency(pool, "asset2", symbol),
+    };
+  }
+  return pools;
+}
+
+interface XrplCurrency {
+  readonly currency: string;
+  readonly issuer?: string;
+}
+
+/** Valide une devise XRPL (`asset`/`asset2`) d'un pool. Lève si mal formée. */
+function parseXrplCurrency(pool: unknown, key: "asset" | "asset2", symbol: string): XrplCurrency {
+  if (typeof pool !== "object" || pool === null) {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"] doit être un objet`);
+  }
+  const side: unknown = (pool as Record<string, unknown>)[key];
+  if (typeof side !== "object" || side === null) {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key} manquant`);
+  }
+  const { currency, issuer } = side as Record<string, unknown>;
+  if (typeof currency !== "string" || currency.trim() === "") {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key}.currency manquant`);
+  }
+  if (issuer !== undefined) {
+    if (typeof issuer !== "string") {
+      throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key}.issuer doit être une adresse`);
+    }
+    assertValidAddress(issuer, `TIDE_ONCHAIN_POOLS["${symbol}"].${key}.issuer`);
+    return { currency, issuer };
+  }
+  return { currency };
 }
 
 /** URL WebSocket d'un nœud rippled (active le client on-chain). Lève si non ws/wss. */

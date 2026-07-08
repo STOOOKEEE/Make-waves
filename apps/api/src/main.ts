@@ -61,14 +61,6 @@ const DEX_HISTORY_TOKENS: Readonly<Record<string, GeckoTerminalToken>> = {
   },
 };
 
-/**
- * Pools AMM on-chain par symbole de cotation (`asset` exprimé en `asset2`). VIDE
- * par défaut : à remplir avec les issuers RÉELS des tokens (ex. RLUSD) une fois
- * connus, pour activer le prix on-chain. Sans pool, le feed reste mono-source
- * (CEX) ; avec, le prix on-chain est composé au CEX sous garde de divergence.
- */
-const ONCHAIN_POOLS: SymbolPoolMap = {};
-
 /** Journal runtime (replis de prix, trous d'indexation) — jamais avalés. */
 const logger: FeedLogger = {
   warn: (message) => console.warn(`[runtime] ${message}`),
@@ -117,11 +109,12 @@ function fetchDexHistory(symbol: string, interval: string, limit: number) {
 /** Source de prix on-chain : seulement si un client ET des pools sont configurés. */
 function buildOnchainProvider(
   xrpl: XrplClient | undefined,
+  pools: SymbolPoolMap,
 ): OnchainPriceProvider | undefined {
-  if (xrpl === undefined || Object.keys(ONCHAIN_POOLS).length === 0) {
+  if (xrpl === undefined || Object.keys(pools).length === 0) {
     return undefined;
   }
-  return new AmmOnchainPriceProvider(xrpl, ONCHAIN_POOLS);
+  return new AmmOnchainPriceProvider(xrpl, pools);
 }
 
 /** Configuration de l'indexeur d'attribution (client + SourceTag + comptes + store). */
@@ -193,28 +186,41 @@ function buildSignDeps(sourceTag: number | undefined): SignDeps | undefined {
  * présent (sinon on signerait des swaps non attribués) :
  * - issuer SURCHARGÉ sans SourceTag = config explicitement cassée → on lève ;
  * - défaut sans SourceTag = mode off-chain pur assumé → Live simplement désactivé.
+ * Le quote par défaut est l'issuer RLUSD **mainnet** : hors mainnet sans issuer
+ * explicite, on lèverait des swaps contre un émetteur inexistant → on lève.
  * Le moteur tourne sans Xaman : `/exec/plan` (GemWallet) reste exposé ;
  * `/sign/live-offer` n'apparaît qu'avec Xaman.
  */
-function buildExecDeps(sourceTag: number | undefined): ExecDeps | undefined {
+function buildExecDeps(
+  sourceTag: number | undefined,
+  network: env.XrplNetwork,
+  xrpl: XrplClient | undefined,
+): ExecDeps | undefined {
+  // Lecteur de prix on-chain (AMM + carnet) si un nœud est câblé — le
+  // `XrplClient` satisfait `OnchainExecReader`. Absent → plan sur prix CEX.
+  const onchain = xrpl !== undefined ? { onchain: xrpl } : {};
   const override = env.readLiveQuote();
   if (override !== undefined) {
     if (sourceTag === undefined) {
       throw new Error("TIDE_RLUSD_ISSUER configuré mais TIDE_SOURCE_TAG manquant (attribution requise)");
     }
-    return { sourceTag, quote: override };
+    return { sourceTag, quote: override, ...onchain };
   }
   if (sourceTag === undefined) {
     return undefined;
   }
-  return { sourceTag, quote: DEFAULT_LIVE_QUOTE };
+  if (network !== "mainnet") {
+    throw new Error(
+      `Live activé sur ${network} sans TIDE_RLUSD_ISSUER : le quote par défaut est l'émetteur RLUSD mainnet (inexistant hors mainnet). Fournir TIDE_RLUSD_ISSUER.`,
+    );
+  }
+  return { sourceTag, quote: DEFAULT_LIVE_QUOTE, ...onchain };
 }
 
 /**
  * Service de chat agent (Tâche 27). Activé dès que `TIDE_LLM_API_KEY` est
- * présent — la clé n'est jamais journalisée. Le `ctx` (McpContext complet)
- * sera câblé par la tâche dédiée ; pour l'instant le service tourne avec
- * un ctx stub injecté côté route.
+ * présent — la clé n'est jamais journalisée. Le `McpContext` runtime est câblé
+ * par `buildAgentChatCtxFactory` (backends réels), plus de ctx stub.
  */
 function buildAgentChatService(): AgentChatService | undefined {
   const apiKey = env.readLlmApiKey();
@@ -257,11 +263,12 @@ async function main(): Promise<void> {
   const wsUrl = env.readOnchainWsUrl();
   const xrpl = wsUrl !== undefined ? connectXrplClient(wsUrl) : undefined;
 
+  const network = env.readXrplNetwork();
   const sourceTag = env.readSourceTag();
-  const onchainPrices = buildOnchainProvider(xrpl);
+  const onchainPrices = buildOnchainProvider(xrpl, env.readOnchainPools() ?? {});
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
   const sign = buildSignDeps(sourceTag);
-  const exec = buildExecDeps(sourceTag);
+  const exec = buildExecDeps(sourceTag, network, xrpl);
   const agentChatService = buildAgentChatService();
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined

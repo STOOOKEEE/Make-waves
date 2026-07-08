@@ -23,6 +23,7 @@ import {
   getPayloadStatus,
 } from "../xaman/sign-request";
 import { planLiveOffer } from "../exec/plan-live";
+import type { OnchainExecReader } from "../exec/plan-live";
 import type { LiveQuote } from "../exec/plan-live";
 import { statusForError } from "./errors";
 import {
@@ -61,6 +62,8 @@ export interface SignDeps {
 export interface ExecDeps {
   readonly sourceTag: number;
   readonly quote: LiveQuote;
+  /** Lecteur de prix on-chain (AMM + carnet). Absent → prix CEX de repli. */
+  readonly onchain?: OnchainExecReader;
 }
 
 /** Lecture des métriques d'attribution (le `SqliteAttributionStore` la satisfait). */
@@ -772,19 +775,24 @@ function registerExecRoutes(
 ): void {
   const planFor = (body: unknown) =>
     planLiveOffer(
-      { getPrices, sourceTag: exec.sourceTag, quote: exec.quote },
+      {
+        getPrices,
+        sourceTag: exec.sourceTag,
+        quote: exec.quote,
+        ...(exec.onchain !== undefined ? { onchain: exec.onchain } : {}),
+      },
       parseLiveOfferRequest(body),
     );
 
-  app.post("/exec/plan", (request, reply) => {
-    const plan = planFor(request.body);
+  app.post("/exec/plan", async (request, reply) => {
+    const plan = await planFor(request.body);
     reply.code(201);
     return plan;
   });
 
   if (xamanApi !== undefined) {
     app.post("/sign/live-offer", async (request, reply) => {
-      const plan = planFor(request.body);
+      const plan = await planFor(request.body);
       const signRequest = await createSignRequest(xamanApi, plan.offer);
       reply.code(201);
       return signRequest;

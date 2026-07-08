@@ -61,11 +61,30 @@ export interface LiveOfferIntent {
   readonly slippageTolerance: number;
 }
 
+/**
+ * Lecteur de prix on-chain (AMM + carnet natif XRPL). Sous-ensemble de
+ * `XrplClient` (satisfait structurellement) → injectable/testable sans réseau.
+ */
+export interface OnchainExecReader {
+  ammSpotPrice(asset: XrplCurrency, asset2: XrplCurrency): Promise<number>;
+  bookQuote(
+    base: XrplCurrency,
+    quote: XrplCurrency,
+  ): Promise<{ readonly ask: number; readonly bid: number }>;
+}
+
 /** Dépendances du moteur d'exécution Live (prix de référence + attribution + quote). */
 export interface LivePlanDeps {
+  /** Prix CEX de repli, utilisé seulement si aucun lecteur on-chain n'est câblé. */
   readonly getPrices: () => PriceMap;
   readonly sourceTag: number;
   readonly quote: LiveQuote;
+  /**
+   * Lecteur on-chain optionnel. Présent → l'`OfferCreate` est planifié sur les
+   * vrais prix du DEX (AMM spot + meilleur prix du carnet, côté selon le sens) ;
+   * absent → repli sur le prix CEX (mode démo off-chain).
+   */
+  readonly onchain?: OnchainExecReader;
 }
 
 /** Résout le symbole d'actif tradé en `XrplCurrency` (seul XRP natif supporté). */
@@ -81,33 +100,66 @@ function resolveBaseCurrency(base: string, quote: LiveQuote): XrplCurrency {
   return { currency: NATIVE_BASE };
 }
 
+/** Valide un prix (AMM, carnet ou CEX) : nombre fini strictement positif. */
+function assertUsablePrice(price: number | undefined, label: string): number {
+  if (price === undefined || !Number.isFinite(price) || price <= 0) {
+    throw new LiveExecError(`prix ${label} indisponible`);
+  }
+  return price;
+}
+
 /**
- * Planifie l'exécution d'un swap Live à partir d'une intention : résout les
- * devises (base native, quote configurée), prend le prix de référence du feed
- * et délègue à `planExecution` (compare AMM/carnet, borne le slippage, produit
- * l'`OfferCreate` taggé). Le `sourceTag` et l'issuer du quote restent serveur.
+ * Résout les prix (AMM spot + meilleur prix du carnet côté `side`) qui alimentent
+ * `planExecution`. Deux sources :
+ * - **on-chain** (nœud câblé) : vrais prix du DEX. Le carnet est la référence
+ *   d'exécution d'un `OfferCreate` (il matche le carnet), d'où le prix côté sens
+ *   (ask à l'achat, bid à la vente) ; l'AMM sert de second prix comparé.
+ * - **CEX** (repli démo) : le prix du feed alimente AMM ET carnet (pas de
+ *   divergence) ; la borne de slippage protège quand même l'exécution.
  *
- * Note : faute de pool on-chain câblé, on alimente le plan avec le prix du feed
- * (RLUSD pegué ≈ USD) comme prix AMM ET carnet ; la borne de slippage protège
- * l'exécution réelle. Avec un pool on-chain, ces deux prix divergeraient.
+ * Ceiling (dette) : prix en haut de carnet (non pondéré par la quantité) ; les
+ * deux lectures on-chain sont requises (pas de dégradation mono-source).
  */
-export function planLiveOffer(
+async function resolveExecPrices(
   deps: LivePlanDeps,
   intent: LiveOfferIntent,
-): ExecutionPlan {
-  const base = resolveBaseCurrency(intent.base, deps.quote);
-  const referencePrice = deps.getPrices()[intent.base];
-  if (referencePrice === undefined || !Number.isFinite(referencePrice) || referencePrice <= 0) {
-    throw new LiveExecError(`prix indisponible pour ${intent.base}`);
+  base: XrplCurrency,
+): Promise<{ ammPrice: number; bookPrice: number }> {
+  if (deps.onchain !== undefined) {
+    const quote: XrplCurrency = { currency: deps.quote.currency, issuer: deps.quote.issuer };
+    const ammPrice = await deps.onchain.ammSpotPrice(base, quote);
+    const book = await deps.onchain.bookQuote(base, quote);
+    const bookPrice = intent.side === "buy" ? book.ask : book.bid;
+    return {
+      ammPrice: assertUsablePrice(ammPrice, "AMM on-chain"),
+      bookPrice: assertUsablePrice(bookPrice, "carnet on-chain"),
+    };
   }
+  const referencePrice = assertUsablePrice(deps.getPrices()[intent.base], intent.base);
+  return { ammPrice: referencePrice, bookPrice: referencePrice };
+}
+
+/**
+ * Planifie l'exécution d'un swap Live à partir d'une intention : résout les
+ * devises (base native, quote configurée), obtient les prix d'exécution (DEX
+ * on-chain si câblé, CEX en repli) et délègue à `planExecution` (compare
+ * AMM/carnet, borne le slippage, produit l'`OfferCreate` taggé). Le `sourceTag`
+ * et l'issuer du quote restent serveur.
+ */
+export async function planLiveOffer(
+  deps: LivePlanDeps,
+  intent: LiveOfferIntent,
+): Promise<ExecutionPlan> {
+  const base = resolveBaseCurrency(intent.base, deps.quote);
+  const { ammPrice, bookPrice } = await resolveExecPrices(deps, intent, base);
   return planExecution({
     account: intent.account,
     base,
     quote: { currency: deps.quote.currency, issuer: deps.quote.issuer },
     side: intent.side,
     amountBase: intent.amountBase,
-    ammPrice: referencePrice,
-    bookPrice: referencePrice,
+    ammPrice,
+    bookPrice,
     slippageTolerance: intent.slippageTolerance,
     sourceTag: deps.sourceTag,
   });
