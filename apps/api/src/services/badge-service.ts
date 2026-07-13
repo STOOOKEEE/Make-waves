@@ -40,6 +40,17 @@ export class BadgeNotEarnedError extends Error {
   }
 }
 
+/** Claim on-chain indisponible : aucun issuer NFT configuré (→ 503). */
+export class BadgeClaimUnavailableError extends Error {
+  constructor() {
+    super("Claim on-chain indisponible (issuer NFT non configuré)");
+    this.name = "BadgeClaimUnavailableError";
+  }
+}
+
+/** Base publique par défaut des URI de métadonnées NFT. */
+const DEFAULT_METADATA_BASE_URL = "http://localhost:3000";
+
 /** Source du nombre d'ordres exécutés (implémentée par `PaperService`). */
 export interface BadgeOrdersSource {
   ordersOf(userId: string): readonly unknown[];
@@ -55,10 +66,12 @@ export interface BadgeServiceDeps {
   readonly paper: BadgeOrdersSource;
   readonly competition: BadgeCompetitionSource;
   readonly store: BadgeStore;
-  readonly issuer: NftIssuer;
-  readonly sourceTag: number;
+  /** Issuer NFT (signature serveur). Absent → l'affichage marche, le claim renvoie 503. */
+  readonly issuer?: NftIssuer;
+  /** SourceTag d'attribution (requis avec l'issuer). */
+  readonly sourceTag?: number;
   /** Base publique des URI de métadonnées (sans slash final). */
-  readonly metadataBaseUrl: string;
+  readonly metadataBaseUrl?: string;
 }
 
 /**
@@ -110,6 +123,10 @@ export class BadgeService {
     nftTokenId: string;
     acceptTx: NFTokenAcceptOffer;
   }> {
+    const { issuer, sourceTag } = this.deps;
+    if (issuer === undefined || sourceTag === undefined) {
+      throw new BadgeClaimUnavailableError();
+    }
     assertValidAddress(walletAddress, "walletAddress");
     const badge = badgeByCode(code);
     if (!badge) {
@@ -124,8 +141,9 @@ export class BadgeService {
       throw new BadgeAlreadyClaimedError(userId, code);
     }
 
-    const uri = `${this.deps.metadataBaseUrl}/nft-metadata/${code}`;
-    const issued = await this.deps.issuer.issueBadge({
+    const base = this.deps.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL;
+    const uri = `${base}/nft-metadata/${code}`;
+    const issued = await issuer.issueBadge({
       uri,
       taxon: badge.taxon,
       destination: walletAddress,
@@ -146,7 +164,7 @@ export class BadgeService {
     const acceptTx = buildBadgeAcceptOffer({
       account: walletAddress,
       sellOfferId: issued.sellOfferId,
-      sourceTag: this.deps.sourceTag,
+      sourceTag,
     });
 
     return {

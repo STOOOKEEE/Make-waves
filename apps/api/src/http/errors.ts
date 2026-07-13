@@ -39,6 +39,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   AgentAlreadyExistsError: 409,
   MandateAlreadyExistsError: 409,
   BadgeAlreadyClaimedError: 409,
+  // 503 — dépendance non configurée
+  BadgeClaimUnavailableError: 503,
   // 502 — échec d'un service amont (feed de prix, Xaman)
   PriceFeedError: 502,
   XamanError: 502,

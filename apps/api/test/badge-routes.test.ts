@@ -110,4 +110,28 @@ describe("badge routes", () => {
     const res = await app.inject({ method: "GET", url: "/nft-metadata/nope" });
     expect(res.statusCode).toBe(404);
   });
+
+  it("sans issuer : affichage 200, claim on-chain 503", async () => {
+    const orders: BadgeOrdersSource = { ordersOf: () => [0] };
+    const comps: BadgeCompetitionSource = { list: () => [], participants: () => [] };
+    const badgeService = new BadgeService({
+      paper: orders,
+      competition: comps,
+      store: new InMemoryBadgeStore(),
+    });
+    const app = buildServer({
+      paper: new PaperService(1000),
+      competition: new CompetitionService(),
+      getPrices: () => ({}),
+      badgeService,
+    });
+    const list = await app.inject({ method: "GET", url: "/accounts/u1/badges" });
+    expect(list.statusCode).toBe(200);
+    const claim = await app.inject({
+      method: "POST",
+      url: "/badges/first_trade/claim",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    expect(claim.statusCode).toBe(503);
+  });
 });
