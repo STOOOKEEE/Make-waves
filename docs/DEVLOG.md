@@ -2092,6 +2092,24 @@ Constat d'Armand, juste : aujourd'hui l'agent est **réactif** (il faut le promp
 
 **Reste.** L'API tourne avec un **SourceTag de test (100)** (ancien `apps/api/.env`) — pour le Live réel : éditer `deploy/api.env` (`TIDE_SOURCE_TAG` + `XRPL_WSS_URL=wss://s1.ripple.com`) puis `docker compose restart api`.
 
+## 2026-07-13 — Session : commit du lot DeepSeek/deploy + décisions (LLM providers, crédits, wallet paper)
+
+**Quoi.** Session de reprise (brief `/reprise`). Trois volets : (a) **commit + push** du gros lot non-commit de la session précédente + du scaffolding de déploiement ; (b) **décisions produit/archi** (providers LLM, crédits, identité paper) ; (c) feature **badges NFT** (entrée dédiée ci-dessous). Branche `feat/roadmap-lots` (upstream posé, poussée).
+
+**Commits de reprise.**
+- `6cfb0a8` **feat(agent)** : le lot DeepSeek non-commit (chat multi-provider via `TIDE_LLM_BASE_URL`, 3 fixes SSE/CORS, UX mandat, open/close position, mémoire, ACTION LOG, `inline-markdown`). *488 tests verts au moment de l'écriture par la session d'avant, non re-exécutés à ce commit.*
+- `0a4fd80` **chore(deploy)** : scaffolding déploiement isolé (Docker `Dockerfile.api` + `docker-compose.prod.yml` + `nginx.conf` + `api.env.example`), `landing/` (page statique + compose), `.dockerignore`, `.gitignore` (ignore `api.env` réel, garde le `.example`). *Non documenté auparavant ; aucun secret détecté au scan.*
+
+**Décision — providers LLM (NVIDIA vs DeepSeek).**
+- Le chat agent est câblé sur le **SDK Anthropic + override `baseURL`** → marche pour tout endpoint **Anthropic-compatible** : DeepSeek (`https://api.deepseek.com/anthropic`, `deepseek-v4-flash`) est déjà prouvé end-to-end.
+- **build.nvidia.com (NIM)** est **OpenAI-compatible** (`https://integrate.api.nvidia.com/v1`, clé `nvapi-`), **PAS** Anthropic-compat → **ne se branche pas** via le `baseURL` actuel (le SDK Anthropic envoie `/v1/messages` + blocs `tool_use` ; NVIDIA attend `/v1/chat/completions` + `tool_calls`). Pour l'utiliser : soit un **driver OpenAI** dans `AgentChatService` (~100 lignes, sélection par `TIDE_LLM_PROTOCOL=openai|anthropic`), soit un proxy de traduction (Anthropic↔OpenAI). **Reco** = driver OpenAI in-process (pas d'infra en plus). **Caveat** : le tool-calling NVIDIA dépend du modèle → prendre Llama 3.3 70B / Nemotron. Free tier ~1000 crédits, 40 req/min. À implémenter quand Armand fournit la clé.
+
+**Décision — système de crédits (produit, à venir).** 10 prompts gratuits/compte → **$2 = 50 prompts**, métrage **par prompt** (lisible ; marge positive avec un modèle pas cher), top-up en **envoyant du XRP** à une adresse Tide (détection réutilise l'**indexeur d'attribution** F4). Chantier couplé à l'autonomie (le scheduler consomme du LLM en continu).
+
+**Décision — identité paper (pourquoi aucun wallet généré/fundé).** Confirmé sur le code : le paper trading n'utilise **aucun wallet XRPL**. Identité = **id local anonyme** `tide.paperUserId` (`apps/web/src/composables/usePaper.ts`) ; le « funding » = **solde virtuel** auto-semé par `PaperService.open(userId, { [QUOTE] : PAPER_STARTING_EQUITY })` au premier accès (`apps/api/src/services/paper-service.ts:94`). Wallet connecté (Xaman/Gem) → l'id bascule sur l'**adresse XRPL réelle** (`useSession`). Générer + funder un vrai wallet par visiteur = **écarté** : coûte la réserve de base (~1 XRP/wallet post-baisse déc. 2024) en argent réel, rend Tide **custodial**, et signe une ferme de sybils. Le code de génération de wallet chiffré existe (`agent-xrpl-account-service` + `@tide/mcp/crypto`) mais il est réservé au **compte Live de l'agent**, pas aux users paper. Live = connexion d'un wallet existant (non-custodial). Cette réflexion a directement conduit au design badges (claim signé par un humain plutôt que wallet auto-généré).
+
+**Reste.** Brancher la clé LLM (driver NVIDIA OpenAI **ou** clé DeepSeek sur le câblage actuel) ; spécifier le système de crédits ; statut de `deploy/`+`landing/` à confirmer (garder ?). Feature badges : cf. entrée suivante.
+
 ## 2026-07-13 — Badges off-chain + claim NFT on-chain (XLS-20 soulbound) [8 tâches, brainstorm → spec → plan → TDD]
 
 **Quoi.** Nouvelle feature d'acquisition : badges de trading **gagnés off-chain gratuitement** (anime la démo, 0 gas) que le user peut **réclamer en NFT XLS-20 soulbound taggé**, minté on-demand par un issuer serveur et **accepté (signé) par le user** (preuve humaine + funnel Live). Spec [`docs/superpowers/specs/2026-07-13-onchain-badge-rewards-design.md`], plan [`docs/superpowers/plans/2026-07-13-onchain-badge-rewards.md`]. Livré en 8 commits TDD :
