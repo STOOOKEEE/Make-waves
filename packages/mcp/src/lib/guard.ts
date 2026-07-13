@@ -34,9 +34,12 @@ export async function enforceRiskLimits(input: GuardInput): Promise<void> {
     throw new McpError("RISK_LIMIT",
       `Perte journalière ${input.perteJour.toFixed(2)} >= max ${mandate.perteMaxJour.toFixed(2)}`);
   }
-  const tradeValue = input.qty * input.priceUsd * input.leverage;
-  if (input.capitalEngaged + tradeValue > mandate.capitalMax) {
+  // Capital (marge) réellement engagé par ce trade — déjà calculé par le tool
+  // appelant (perp : notionnel/levier ; spot : notionnel plein, levier 1). On le
+  // borne par capitalMax. NB : borne PAR TRADE — l'engagement cumulé entre
+  // positions ouvertes n'est pas suivi ici (dette assumée en paper).
+  if (input.capitalEngaged > mandate.capitalMax) {
     throw new McpError("RISK_LIMIT",
-      `Capital engaged ${input.capitalEngaged.toFixed(2)} + new trade ${tradeValue.toFixed(2)} would exceed max ${mandate.capitalMax.toFixed(2)}`);
+      `Capital engaged ${input.capitalEngaged.toFixed(2)} exceeds mandate max ${mandate.capitalMax.toFixed(2)}`);
   }
 }

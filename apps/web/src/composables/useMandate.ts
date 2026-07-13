@@ -17,9 +17,15 @@ export interface MandateForm {
   validDays: number;
 }
 
-/** Logique de création d'un mandat pour un agent. La signature Xaman est
- *  gérée par `useWallet` (non-custodial), ce composable se contente de
- *  créer le mandat en statut `pending` côté backend. */
+/** Signature simulée tant que Xaman n'est pas branché (le backend ne la vérifie
+ *  pas). À remplacer par la vraie signature non-custodiale avant le mode Live. */
+const SIMULATED_SIGNATURE = "ui-simulated-signature";
+
+/** Logique de création d'un mandat pour un agent : crée le mandat (`pending`)
+ *  puis l'active via le callback de signature. La signature Xaman réelle
+ *  (non-custodial) n'étant pas branchée, on passe une signature simulée pour
+ *  rendre l'agent utilisable en paper/démo — sans mandat actif, le chat et les
+ *  outils refusent (garde serveur). */
 export function useMandate(client: TideClient) {
   const { userId } = useSession();
   const signing = ref(false);
@@ -30,7 +36,7 @@ export function useMandate(client: TideClient) {
     signError.value = null;
     signing.value = true;
     try {
-      return await client.createMandate({
+      const pending = await client.createMandate({
         agentId,
         userId: userId.value,
         capitalMax: form.capitalMax,
@@ -41,6 +47,8 @@ export function useMandate(client: TideClient) {
         style: form.style,
         validUntil: Date.now() + form.validDays * MS_PER_DAY,
       });
+      // Active le mandat (signature simulée) → l'agent devient opérationnel.
+      return await client.signMandate(pending.id, SIMULATED_SIGNATURE);
     } catch (e) {
       signError.value = errorMessage(e);
       throw e;

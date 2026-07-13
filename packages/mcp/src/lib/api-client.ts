@@ -27,6 +27,20 @@ export interface TideApiHttpConfig {
   readonly agentId: string;
 }
 
+/** Frais taker prélevé à l'ouverture d'une position (0,06 % du notionnel) —
+ * règle produit Tide (maker 0,02 % / taker 0,06 %). */
+const PERP_TAKER_FEE_RATE = 0.0006;
+
+/**
+ * Prix de liquidation indicatif d'une position à levier (marge isolée, frais
+ * ignorés). Purement informatif : Tide n'a PAS de liquidation auto côté serveur
+ * (le PnL réalisé est planchonné à −marge à la fermeture).
+ */
+function liquidationPrice(side: "long" | "short", entry: number, leverage: number): number {
+  const move = entry / leverage;
+  return side === "long" ? entry - move : entry + move;
+}
+
 export class TideApiHttpError extends Error {
   constructor(
     public readonly status: number,
@@ -248,11 +262,44 @@ export class TideApiHttp {
     sl?: number;
     clientOrderId?: string;
   }): Promise<{ positionId: string; entryPrice: number; liquidationPrice: number }> {
-    return await this.request<{ positionId: string; entryPrice: number; liquidationPrice: number }>(
+    // La route paper attend un `OpenPositionInput` du domaine
+    // `{ product, symbol, side, qty, entry, leverage, margin, fee }`. Le contrat
+    // MCP ne porte que symbol/qty/leverage → on résout le prix d'entrée (feed),
+    // la marge (notionnel/levier) et le frais taker (0,06 %), et on pose
+    // product="perp". `liquidationPrice` est calculé pour l'affichage (pas de
+    // liquidation serveur). Même couche anti-corruption que `placeOrder`.
+    const price = await this.request<{ price: number }>(
+      "GET",
+      `/prices/${encodeURIComponent(input.symbol)}`,
+    );
+    const entry = price.price;
+    if (!Number.isFinite(entry) || entry <= 0) {
+      throw new TideApiHttpError(0, undefined, `openPosition: prix indisponible pour ${input.symbol}`);
+    }
+    const notional = input.qty * entry;
+    const margin = input.margin ?? notional / input.leverage;
+    const fee = notional * PERP_TAKER_FEE_RATE;
+    const position = await this.request<{ id: string; entry: number }>(
       "POST",
       `/accounts/${encodeURIComponent(this.userId)}/positions`,
-      { body: input },
+      {
+        body: {
+          product: "perp",
+          symbol: input.symbol,
+          side: input.side,
+          qty: input.qty,
+          entry,
+          leverage: input.leverage,
+          margin,
+          fee,
+        },
+      },
     );
+    return {
+      positionId: position.id,
+      entryPrice: position.entry,
+      liquidationPrice: liquidationPrice(input.side, entry, input.leverage),
+    };
   }
 
   async closePosition(input: { userId: string; positionId: string }): Promise<{ realizedPnl: number }> {

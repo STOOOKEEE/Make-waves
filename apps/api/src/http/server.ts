@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { PriceMap } from "@tide/core";
 import { agentBroadcaster } from "../sse/agent-broadcast";
 import type { BookDepth } from "../feed/binance-book-feed";
@@ -195,6 +195,30 @@ function buildAgentChatCtx(agentId: string, userId: string): McpContext {
       availablePairs: [],
     },
   };
+}
+
+/**
+ * Ouvre un flux SSE : pose le CORS puis hijack la socket. Le plugin
+ * `@fastify/cors` écrit l'en-tête `Access-Control-Allow-Origin` via un hook
+ * Fastify, mais `reply.hijack()` court-circuite l'écriture gérée par Fastify →
+ * sans miroir explicite de l'Origin ici, une réponse SSE cross-origin (front
+ * Vite → API :3000) est bloquée par le navigateur. On reflète donc l'Origin
+ * (comportement de `origin: true`) directement sur `reply.raw` avant hijack.
+ */
+function startEventStream(request: FastifyRequest, reply: FastifyReply): void {
+  const origin = request.headers.origin;
+  if (typeof origin === "string") {
+    reply.raw.setHeader("Access-Control-Allow-Origin", origin);
+    reply.raw.setHeader("Vary", "Origin");
+  }
+  reply.raw.setHeader("Content-Type", "text/event-stream");
+  reply.raw.setHeader("Cache-Control", "no-cache");
+  reply.raw.setHeader("Connection", "keep-alive");
+  reply.hijack();
+  // Flush immédiat : sans ça Node retient les en-têtes jusqu'au 1er `write`
+  // (un event ou le ping 30 s) → l'EventSource/le fetch du navigateur reste en
+  // attente d'ouverture, et l'en-tête CORS n'est envoyé que trop tard.
+  reply.raw.flushHeaders();
 }
 
 /**
@@ -485,11 +509,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // Header `text/event-stream`, hijack pour prendre la main sur la socket,
     // ping commentaire toutes les 30 s pour garder la connexion ouverte
     // (les proxies coupent au-delà de ~60 s d'inactivité).
-    app.get("/api/agents/events", (_req, reply) => {
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache");
-      reply.raw.setHeader("Connection", "keep-alive");
-      reply.hijack();
+    app.get("/api/agents/events", (request, reply) => {
+      startEventStream(request, reply);
 
       const send = (event: unknown) => {
         reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -503,7 +524,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
       // Le client a fermé la connexion : on libère le listener et le timer
       // sinon l'EventEmitter accumule des handlers et le process ne sort pas.
-      _req.raw.on("close", () => {
+      request.raw.on("close", () => {
         clearInterval(interval);
         agentBroadcaster.off("event", handler);
       });
@@ -710,10 +731,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.code(400);
         return { error: err instanceof Error ? err.message : "context build failed" };
       }
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache");
-      reply.raw.setHeader("Connection", "keep-alive");
-      reply.hijack();
+      startEventStream(request, reply);
       try {
         for await (const event of chat.stream({
           agentId,

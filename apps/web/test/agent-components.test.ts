@@ -66,7 +66,11 @@ describe("MandateForm", () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const client = clientWith((req) => {
       calls.push(req);
-      return { status: 201, body: baseMandate };
+      // create (201, pending) puis activation via callback (200).
+      if (req.path === "/api/mandates") {
+        return { status: 201, body: baseMandate };
+      }
+      return { status: 200, body: { ...baseMandate, status: "active" } };
     });
     const wrapper = mount(MandateForm, {
       props: { client, agentId: AGENT_ID },
@@ -96,9 +100,11 @@ describe("MandateForm", () => {
     await vm.submit();
     await nextTick();
 
-    expect(calls).toHaveLength(1);
+    // 2 appels : création du mandat puis activation (signature simulée).
+    expect(calls).toHaveLength(2);
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.path).toBe("/api/mandates");
+    expect(calls[1]?.path).toBe("/api/sign/mandate-callback");
     const body = calls[0]?.body as {
       agentId: string;
       capitalMax: number;
@@ -153,17 +159,12 @@ describe("KillSwitch", () => {
 
 describe("ActionLog", () => {
   it("rend l'état vide quand aucune action", () => {
-    useSession().setWallet(XRP_ACCOUNT, "xaman");
-    const wrapper = mount(ActionLog, {
-      props: { client: clientWith(() => ({ status: 200, body: [] })), agentId: AGENT_ID },
-      global: { provide: { [CLIENT_KEY]: clientWith(() => ({ status: 200, body: [] })) } },
-    });
+    const wrapper = mount(ActionLog, { props: { actions: [] } });
     expect(wrapper.text()).toContain("Aucune action");
     wrapper.unmount();
   });
 
-  it("rend les actions avec tool, time et badge résultat", async () => {
-    useSession().setWallet(XRP_ACCOUNT, "xaman");
+  it("rend les actions avec tool, time et badge résultat", () => {
     const actions: AgentActionDto[] = [
       {
         id: "act-1",
@@ -188,21 +189,7 @@ describe("ActionLog", () => {
         executedAt: 1_700_000_100_000,
       },
     ];
-    const client = clientWith((req) => {
-      if (req.method === "GET" && req.path === "/api/agent-actions?agentId=agent-1") {
-        return { status: 200, body: actions };
-      }
-      return { status: 404, body: { error: "introuvable" } };
-    });
-    const wrapper = mount(ActionLog, {
-      props: { client, agentId: AGENT_ID },
-      global: { provide: { [CLIENT_KEY]: client } },
-    });
-    // Attend que loadActions() (appelé en onMounted) ait populé la liste
-    await nextTick();
-    await new Promise((r) => setTimeout(r, 0));
-    await nextTick();
-
+    const wrapper = mount(ActionLog, { props: { actions } });
     const html = wrapper.html();
     expect(html).toContain("place_order");
     expect(html).toContain("kill_agent");

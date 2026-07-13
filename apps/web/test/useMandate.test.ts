@@ -61,6 +61,27 @@ const baseMandate: MandateDto = {
   status: "pending",
 };
 
+/** Mandat retourné par le callback de signature (activation simulée). */
+const activeMandate: MandateDto = {
+  ...baseMandate,
+  signedAt: 1_700_000_000_000,
+  signature: "ui-simulated-signature",
+  status: "active",
+};
+
+/** Route la réponse par path : création (201, pending) puis activation (200). */
+function mandateHandler(
+  onCreate?: (request: { method: string; path: string; body?: unknown }) => void,
+): (request: { method: string; path: string; body?: unknown }) => ApiResponse {
+  return (request) => {
+    if (request.path === "/api/mandates") {
+      onCreate?.(request);
+      return { status: 201, body: baseMandate };
+    }
+    return { status: 200, body: activeMandate };
+  };
+}
+
 const sampleForm: MandateForm = {
   capitalMax: 1000,
   perteMaxJour: 100,
@@ -85,12 +106,13 @@ describe("useMandate", () => {
       path: "",
     };
     const wrapper = mountMandate(
-      clientWith((request) => {
-        captured.method = request.method;
-        captured.path = request.path;
-        captured.body = request.body;
-        return { status: 201, body: baseMandate };
-      }),
+      clientWith(
+        mandateHandler((request) => {
+          captured.method = request.method;
+          captured.path = request.path;
+          captured.body = request.body;
+        }),
+      ),
     );
     const composed = ctxOf(wrapper);
 
@@ -122,7 +144,8 @@ describe("useMandate", () => {
     expect(body.maxLeverage).toBe(5);
     expect(body.pairesAutorisees).toEqual(["XRP/RLUSD", "BTC/USDT"]);
     expect(body.style).toBe("momentum");
-    expect(result).toEqual(baseMandate);
+    // create crée (pending) PUIS active via le callback → renvoie le mandat actif.
+    expect(result).toEqual(activeMandate);
     expect(composed.signing.value).toBe(false);
     expect(composed.signError.value).toBeNull();
     wrapper.unmount();
@@ -132,10 +155,11 @@ describe("useMandate", () => {
     useSession().setWallet(XRP_ACCOUNT, "xaman");
     let capturedBody: { style: string | null } | undefined;
     const wrapper = mountMandate(
-      clientWith((request) => {
-        capturedBody = request.body as { style: string | null };
-        return { status: 201, body: { ...baseMandate, style: null } };
-      }),
+      clientWith(
+        mandateHandler((request) => {
+          capturedBody = request.body as { style: string | null };
+        }),
+      ),
     );
     const composed = ctxOf(wrapper);
 

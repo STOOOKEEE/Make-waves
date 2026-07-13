@@ -269,6 +269,99 @@ describe("AgentChatService", () => {
     }
   });
 
+  it("parse l'input du tool_use même précédé d'un bloc thinking (index global ≠ 0)", async () => {
+    // Régression DeepSeek V4 : le modèle émet un bloc `thinking` en index 0,
+    // puis le `tool_use` en index 1 ; les `input_json_delta` portent index 1.
+    // L'ancien code indexait par ordre de push (`toolUses[0]`) → input perdu
+    // → `get_market` recevait `symbol: ""`. On vérifie que l'input est bien
+    // reconstruit et que `get_market` reçoit `symbol: "BTC"` (prix stub 60000).
+    const eventsPerCall: unknown[][] = [
+      [
+        { type: "message_start", message: {} },
+        // Index 0 : bloc thinking (raisonnement) — décale le tool_use.
+        {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "thinking_delta", thinking: "Let me check the price." },
+        },
+        { type: "content_block_stop", index: 0 },
+        // Index 1 : tool_use get_market, input streamé par fragments.
+        {
+          type: "content_block_start",
+          index: 1,
+          content_block: { type: "tool_use", id: "tu_1", name: "get_market", input: {} },
+        },
+        {
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "input_json_delta", partial_json: '{"symbol":' },
+        },
+        {
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "input_json_delta", partial_json: '"BTC"}' },
+        },
+        { type: "content_block_stop", index: 1 },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { output_tokens: 3 },
+        },
+        { type: "message_stop" },
+      ],
+      [
+        { type: "message_start", message: {} },
+        { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+        {
+          type: "content_block_delta",
+          index: 0,
+          delta: { type: "text_delta", text: "BTC is $60000." },
+        },
+        { type: "content_block_stop", index: 0 },
+        {
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", stop_sequence: null },
+          usage: { output_tokens: 5 },
+        },
+        { type: "message_stop" },
+      ],
+    ];
+    const out = await collect(makeService(eventsPerCall), "Price of BTC?");
+    const toolResult = out.find((e) => e.type === "tool_result");
+    expect(toolResult?.type).toBe("tool_result");
+    if (toolResult?.type === "tool_result") {
+      expect(toolResult.data.name).toBe("get_market");
+      // Input bien parsé → pas d'erreur « Invalid symbol '' » ; le résultat
+      // reflète le prix stub de BTC (60000), preuve que symbol="BTC" a transité.
+      const result = toolResult.data.result as { isError?: boolean; usd?: number; price?: number };
+      expect(result.isError).not.toBe(true);
+      expect(JSON.stringify(result)).toContain("60000");
+    }
+  });
+
+  it("passe le baseUrl (endpoint provider Anthropic-compat, ex. DeepSeek) au client", async () => {
+    // Le service doit transmettre `TIDE_LLM_BASE_URL` à la factory du client
+    // → tout endpoint Anthropic-compatible (DeepSeek `…/anthropic`) est ciblé.
+    let captured: string | undefined = "UNSET";
+    const fake = fakeAnthropic([[{ type: "message_stop" }]]);
+    const svc = new AgentChatService({
+      apiKey: "k",
+      model: "deepseek-v4-flash",
+      baseUrl: "https://api.deepseek.com/anthropic",
+      clientFactory: (baseUrl) => {
+        captured = baseUrl;
+        return fake as unknown as Anthropic;
+      },
+    });
+    await collect(svc, "hi");
+    expect(captured).toBe("https://api.deepseek.com/anthropic");
+  });
+
   it("propagate une erreur McpError comme tool_result is_error=true (RISK_LIMIT attendu)", async () => {
     // Scénario : LLM appelle `place_order` avec qty négatif → handler lève
     // une `McpError("INVALID_PARAMS")`. Le service attrape, fait un yield

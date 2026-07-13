@@ -568,7 +568,7 @@ onMounted(() => {
 .summary-list {
   display: grid;
   gap: 12px;
-  padding-top: 18px;
+  padding: 18px 22px 22px;
 }
 .summary-list div {
   display: flex;

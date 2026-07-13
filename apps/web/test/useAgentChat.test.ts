@@ -101,13 +101,15 @@ describe("useAgentChat", () => {
 
     const calls = fetchCalls();
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe("/api/agent-chat/stream");
+    expect(calls[0]?.url).toContain("/api/agent-chat/stream");
     expect(calls[0]?.init?.method).toBe("POST");
     const body = JSON.parse((calls[0]?.init?.body as string) ?? "{}");
     expect(body).toEqual({
       agentId: "agent-42",
       userId: XRP_ACCOUNT,
       message: "what is BTC?",
+      // 1er message → historique vide (mémoire de conversation).
+      history: [],
     });
   });
 

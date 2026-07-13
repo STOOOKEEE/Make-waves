@@ -228,9 +228,11 @@ function buildAgentChatService(): AgentChatService | undefined {
   if (apiKey === undefined) {
     return undefined;
   }
+  const baseUrl = env.readLlmBaseUrl();
   return new AgentChatService({
     apiKey,
     model: env.readLlmModel(),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
   });
 }
 

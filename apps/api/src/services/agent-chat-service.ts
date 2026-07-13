@@ -33,13 +33,18 @@ export type AgentChatEvent =
   | { type: "error"; data: { message: string } }
   | { type: "done" };
 
-/** Constructeur du client Anthropic — injectable pour les tests. */
-export type AnthropicClientFactory = () => Anthropic;
+/**
+ * Constructeur du client Anthropic — injectable pour les tests. Reçoit un
+ * `baseUrl` optionnel : tout endpoint **Anthropic-compatible** (ex. DeepSeek
+ * `https://api.deepseek.com/anthropic`) est piloté par le même SDK, tool-use
+ * inclus — d'où le support multi-provider sans réécrire le service.
+ */
+export type AnthropicClientFactory = (baseUrl?: string) => Anthropic;
 
-/** Implémentation par défaut : lit `ANTHROPIC_API_KEY` (résolu par la SDK
- * Anthropic via env ou profil `ant auth login`). */
-export const defaultAnthropicClientFactory: AnthropicClientFactory = () =>
-  new Anthropic();
+/** Implémentation par défaut : lit `ANTHROPIC_API_KEY` (poussée par le service)
+ * et cible `baseUrl` s'il est fourni, sinon l'API Anthropic. */
+export const defaultAnthropicClientFactory: AnthropicClientFactory = (baseUrl) =>
+  new Anthropic(baseUrl !== undefined ? { baseURL: baseUrl } : {});
 
 /** État accumulé d'un tool_use pendant le stream — l'input JSON arrive
  * par fragments (`InputJSONDelta`) et n'est déserialisé qu'à la fermeture
@@ -52,11 +57,16 @@ interface ToolUseState {
 }
 
 export interface AgentChatServiceDeps {
-  /** Clé API Anthropic (`TIDE_LLM_API_KEY`) — non journalisée, non renvoyée. */
+  /** Clé API du provider (`TIDE_LLM_API_KEY`) — non journalisée, non renvoyée. */
   readonly apiKey: string;
-  /** Modèle Claude (`TIDE_LLM_MODEL`, défaut `claude-sonnet-4-5`). */
+  /** Modèle (`TIDE_LLM_MODEL`) — `deepseek-v4-flash`, `claude-sonnet-4-5`, etc. */
   readonly model: string;
-  /** `max_tokens` envoyé à Claude. Défaut 4096. */
+  /**
+   * Endpoint Anthropic-compatible (`TIDE_LLM_BASE_URL`). Absent → API Anthropic.
+   * Ex. DeepSeek : `https://api.deepseek.com/anthropic`.
+   */
+  readonly baseUrl?: string;
+  /** `max_tokens` envoyé au modèle. Défaut 4096. */
   readonly maxTokens?: number;
   /** Factory du client — défaut = `new Anthropic()`. Injectable pour les
    * tests. */
@@ -102,6 +112,7 @@ export class AgentChatService {
   private readonly model: string;
   private readonly maxTokens: number;
   private readonly apiKey: string;
+  private readonly baseUrl?: string;
   /** Outils exposés à Claude — par défaut la liste partagée `@tide/mcp`. */
   private readonly tools: ReadonlyMap<string, ToolDef>;
 
@@ -109,6 +120,7 @@ export class AgentChatService {
     this.apiKey = deps.apiKey;
     this.model = deps.model;
     this.maxTokens = deps.maxTokens ?? 4096;
+    this.baseUrl = deps.baseUrl;
     this.clientFactory = deps.clientFactory ?? defaultAnthropicClientFactory;
     // Construit une map `name → ToolDef` pour le dispatch O(1). Si l'appelant
     // veut un sous-ensemble, on accepte `deps.mcpToolsOverride` plus tard.
@@ -130,7 +142,7 @@ export class AgentChatService {
     // factory. L'effet est local à ce process, restauré en `finally`.
     const previousKey = process.env["ANTHROPIC_API_KEY"];
     process.env["ANTHROPIC_API_KEY"] = this.apiKey;
-    const client = this.clientFactory();
+    const client = this.clientFactory(this.baseUrl);
     try {
       yield* this.drive(client, input);
     } finally {
@@ -163,10 +175,13 @@ export class AgentChatService {
         messages,
       });
 
-      // Accumule les tool_use en cours d'itération. Chaque bloc ouvert
-      // est fermé par un `content_block_stop` ; on ne le traite qu'à la
-      // fermeture.
-      const toolUses: ToolUseState[] = [];
+      // Accumule les tool_use en cours d'itération, CLÉS PAR L'INDEX GLOBAL
+      // du bloc (`event.index`), pas par ordre de push : un modèle qui émet
+      // des blocs `thinking`/texte AVANT le `tool_use` (ex. DeepSeek V4) place
+      // le tool_use à un index > 0, et les `input_json_delta` portent ce même
+      // index — une Map par index évite de perdre l'input (bug : `toolUses[i]`
+      // sur un tableau compact ne matchait que si le tool_use était en index 0).
+      const toolUsesByIndex = new Map<number, ToolUseState>();
 
       for await (const event of stream) {
         switch (event.type) {
@@ -174,7 +189,7 @@ export class AgentChatService {
             // Mémorise le tool_use pour accumuler ses deltas JSON.
             const block = event.content_block;
             if (block.type === "tool_use") {
-              toolUses.push({ id: block.id, name: block.name, input: "" });
+              toolUsesByIndex.set(event.index, { id: block.id, name: block.name, input: "" });
             }
             break;
           }
@@ -184,7 +199,7 @@ export class AgentChatService {
             if (event.delta.type === "text_delta") {
               yield { type: "text_delta", data: { text: event.delta.text } };
             } else if (event.delta.type === "input_json_delta") {
-              const tu = toolUses[event.index];
+              const tu = toolUsesByIndex.get(event.index);
               if (tu !== undefined && typeof tu.input === "string") {
                 tu.input = tu.input + event.delta.partial_json;
               }
@@ -194,7 +209,7 @@ export class AgentChatService {
           case "content_block_stop": {
             // Ferme le bloc. Si c'est un tool_use, déserialise l'input
             // JSON accumulé (vide → input par défaut `{}`).
-            const tu = toolUses[event.index];
+            const tu = toolUsesByIndex.get(event.index);
             if (tu !== undefined && typeof tu.input === "string") {
               if (tu.input === "") {
                 tu.input = {};
@@ -224,6 +239,10 @@ export class AgentChatService {
           }
         }
       }
+
+      // Snapshot ordonné des tool_use de l'itération (ordre d'index croissant
+      // garanti par l'insertion Map dans l'ordre des `content_block_start`).
+      const toolUses = [...toolUsesByIndex.values()];
 
       // Pas de tool_use en attente : fin de tour, on yield `done` et on
       // sort de la boucle agentique.
@@ -348,5 +367,10 @@ const DEFAULT_SYSTEM_PROMPT = [
   "You are a Tide trading agent. You help the user trade, query market data,",
   "join competitions, and manage positions. You have access to a set of tools",
   "(market data, portfolio, orders, positions, competitions, mandate info).",
-  "Use them when needed. Be concise and only explain when the user asks.",
+  "Use them when needed.",
+  // Rendu : le front affiche du texte simple (gras `**...**` et code `` `...` ``",
+  // supportés, rien d'autre). On interdit donc les tableaux/titres markdown.
+  "Formatting rules: reply in short, plain prose. Do NOT use markdown tables,",
+  "headings, or bullet lists. You may use **bold** and `code` sparingly.",
+  "Keep answers concise; only explain when asked. Prefer 1-3 sentences.",
 ].join(" ");

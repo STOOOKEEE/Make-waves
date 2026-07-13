@@ -272,3 +272,19 @@ export function readLlmApiKey(): string | undefined {
 export function readLlmModel(): string {
   return optional("TIDE_LLM_MODEL") ?? DEFAULT_LLM_MODEL;
 }
+
+/**
+ * Endpoint LLM Anthropic-compatible (`TIDE_LLM_BASE_URL`). Absent → API
+ * Anthropic. Pour DeepSeek : `https://api.deepseek.com/anthropic` (avec
+ * `TIDE_LLM_MODEL=deepseek-v4-flash`). Doit être une URL http(s).
+ */
+export function readLlmBaseUrl(): string | undefined {
+  const raw = optional("TIDE_LLM_BASE_URL");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^https?:\/\//.test(raw)) {
+    throw new Error(`TIDE_LLM_BASE_URL doit être une URL http(s): ${raw}`);
+  }
+  return raw;
+}

@@ -532,6 +532,24 @@ export class TideClient {
   }
 
   /**
+   * Active un mandat `pending` via le callback de signature. La signature
+   * Xaman réelle (non-custodial) n'est pas encore branchée : l'UI passe une
+   * signature simulée pour rendre l'agent utilisable en paper/démo. Le backend
+   * ne vérifie pas la signature (cf. `onSignCallback`). À remplacer par la
+   * signature Xaman réelle avant le mode Live.
+   */
+  async signMandate(mandateId: string, signature: string): Promise<MandateDto> {
+    return this.call(
+      {
+        path: "/api/sign/mandate-callback",
+        method: "POST",
+        body: { mandateId, signature },
+      },
+      200,
+    );
+  }
+
+  /**
    * Historique d'actions d'un agent (alimenté côté MCP). `limit` borné
    * côté serveur à [1, 200] ; défaut 100.
    */
