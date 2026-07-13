@@ -2091,3 +2091,23 @@ Constat d'Armand, juste : aujourd'hui l'agent est **réactif** (il faut le promp
 **Vérifié.** `tidetrade.xyz` → 200 (front TIDE), `api.tidetrade.xyz/config` → 200. 3 conteneurs healthy (`xaman:on live:on chat:on`).
 
 **Reste.** L'API tourne avec un **SourceTag de test (100)** (ancien `apps/api/.env`) — pour le Live réel : éditer `deploy/api.env` (`TIDE_SOURCE_TAG` + `XRPL_WSS_URL=wss://s1.ripple.com`) puis `docker compose restart api`.
+
+## 2026-07-13 — Badges off-chain + claim NFT on-chain (XLS-20 soulbound) [8 tâches, brainstorm → spec → plan → TDD]
+
+**Quoi.** Nouvelle feature d'acquisition : badges de trading **gagnés off-chain gratuitement** (anime la démo, 0 gas) que le user peut **réclamer en NFT XLS-20 soulbound taggé**, minté on-demand par un issuer serveur et **accepté (signé) par le user** (preuve humaine + funnel Live). Spec [`docs/superpowers/specs/2026-07-13-onchain-badge-rewards-design.md`], plan [`docs/superpowers/plans/2026-07-13-onchain-badge-rewards.md`]. Livré en 8 commits TDD :
+- **T1** `@tide/xrpl` `tx/nft.ts` : builders `buildBadgeMint` (soulbound = pas de `tfTransferable`/`TransferFee`, `URI` hex, `SourceTag`), `buildBadgeSellOffer` (Amount 0 + `Destination`), `buildBadgeAcceptOffer` + readers `meta.nftoken_id`/`meta.offer_id`. `InvalidNftError`, `MAX_NFT_TAXON`.
+- **T2** `@tide/xrpl` `nft/issuer.ts` : `XrplNftIssuer` (mint+offer via `xrpl` `Client` direct — pas de helper seed dans le wrapper read-only ; seam `IssuerLedgerClient` injectable = testé sans réseau).
+- **T3** `apps/api` `badges/catalog.ts`+`merit.ts` : catalogue statique 3 badges (`first_trade`/`ten_trades`/`first_competition`), `earnedCodes` dérivé de l'état paper.
+- **T4** `BadgeStore` (InMemory + SQLite) + migration `badge_claims` (PK `(user_id, badge_code)` = idempotence). On ne persiste **que les claims** (mérite = dérivé).
+- **T5** `BadgeService` : `statusFor` (mérite + join claims via interfaces étroites `BadgeOrdersSource`/`BadgeCompetitionSource`), `claim` (valide adresse, re-vérifie mérite serveur, idempotent, `issuer.issueBadge`), `confirmClaim`.
+- **T6** routes `GET /accounts/:id/badges`, `POST /badges/:code/claim`, `.../claim/confirm` (gated si `badgeService`), `GET /nft-metadata/:code` (statique, non gated). Env `readNftIssuerSeed`+`readPublicBaseUrl`. Wiring `app.ts`/`main.ts` : monte si **issuer seed + `XRPL_WSS_URL` + SourceTag** présents, sinon **OFF**.
+- **T7** `@tide/client` : `badges`/`claimBadge`/`confirmBadgeClaim` + `BadgeDto`.
+- **T8** `apps/web` : `useBadges` (interface client étroite, signature injectée = testable) + grille dans `PortfolioView` + `useWallet.signBadgeAccept` (chemin **GemWallet** : submit `NFTokenAcceptOffer`). **817 tests / 103 fichiers, typecheck 8/8, lint 0.**
+
+**Pourquoi.** Objectif produit d'Armand : « le plus d'users possible », et prouver que ce sont de vrais users via des NFT rewards. Brainstorming : générer un wallet + envoyer un NFT par visiteur = **pire des deux mondes** (coûte ~1,3 XRP de réserve/wallet, custodial, et signe une ferme de sybils → prouve l'inverse). Reframe retenu : **off-chain gratuit pour animer la démo** (agents paper inclus), **NFT on-chain seulement réclamé par un humain qui signe** (crédible + funnel Live + gas quasi nul). Cadre le garde-fou : pas de faux volume Live taggé pour gonfler le compteur orga (wash).
+
+**Cheminement (décisions).** (1) `competition_winner` **retiré** du catalogue initial : pas de vainqueur persisté aujourd'hui (`close()` renvoie les payouts mais rien n'est stocké) → 3 badges dérivables. (2) Pas de helper seed dans `@tide/xrpl` (signature = client Xaman) → `XrplNftIssuer` utilise le `Client` `xrpl` en direct (`autofill`/`sign`/`submitAndWait`, lit `meta.nftoken_id`/`offer_id` plutôt que parser `AffectedNodes`). (3) Mérite **dérivé** (pas de système d'events) ; seul le claim persiste. (4) Accept minimal `{TransactionType, Account, NFTokenSellOffer}` côté front (Gem) → pas de bundle `xrpl` au front, pas d'exposition du SourceTag (le mint+offer le portent déjà).
+
+**Bugs & fix.** Aucun (TDD, chaque tâche verte au commit). Le test de routes a dû asserter le nouveau shape de réponse — pas de régression.
+
+**Reste (dette tracée).** (1) **Xaman-claim** non câblé (chemin Gem uniquement) → route `/sign/badge-accept` (mirror `/sign/live-offer`) à ajouter. (2) L'accept côté user n'est **pas taggé SourceTag** (mint+offer le sont). (3) Confirmation du claim = confiance au retour de signature (MVP) ; durcissement via l'indexeur F4. (4) Assets d'images des badges (`/badges/*.svg`) à produire. (5) **Vérif navigateur runtime** par Armand (claim GemWallet réel → NFT dans le wallet) — non fait ici. (6) Feature reste **OFF** tant que `TIDE_NFT_ISSUER_SEED` n'est pas fourni.
