@@ -215,6 +215,20 @@ export interface BadgeDto {
   readonly nftTokenId: string | null;
 }
 
+/** Transaction `NFTokenAcceptOffer` taggée, prête à signer côté user. */
+export interface BadgeAcceptTx {
+  readonly TransactionType: "NFTokenAcceptOffer";
+  readonly Account: string;
+  readonly NFTokenSellOffer: string;
+  readonly SourceTag: number;
+}
+
+export interface ClaimBadgeResult {
+  readonly sellOfferId: string;
+  readonly nftTokenId: string;
+  readonly acceptTx: BadgeAcceptTx;
+}
+
 function path(...segments: string[]): string {
   return "/" + segments.map((s) => encodeURIComponent(s)).join("/");
 }
@@ -586,7 +600,7 @@ export class TideClient {
     userId: string,
     code: string,
     walletAddress: string,
-  ): Promise<{ sellOfferId: string; nftTokenId: string }> {
+  ): Promise<ClaimBadgeResult> {
     return this.call(
       {
         path: path("badges", code, "claim"),

@@ -26,8 +26,8 @@ const wallet = useWallet(props.client);
 
 /** Réclame un badge : mint serveur → le user signe l'accept (wallet = userId). */
 function claimBadge(code: string): void {
-  void runClaim(userId.value, code, userId.value, (offerId) =>
-    wallet.signBadgeAccept(offerId),
+  void runClaim(userId.value, code, userId.value, (acceptTx) =>
+    wallet.signBadgeAccept(acceptTx),
   );
 }
 

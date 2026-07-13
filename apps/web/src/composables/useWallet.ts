@@ -2,6 +2,7 @@ import { ref } from "vue";
 import { TideApiError } from "@tide/client";
 import type { ExecSide, SignRequest, TideClient } from "@tide/client";
 import { getAddress, isInstalled, submitTransaction } from "@gemwallet/api";
+import type { BadgeAcceptTx } from "@tide/client";
 import { useSession } from "./useSession";
 import { errorMessage } from "./messages";
 
@@ -208,7 +209,9 @@ export function useWallet(client: TideClient) {
   // Le serveur a minté le badge + créé une sell-offer à 0 vers le wallet du user.
   // Ici le user signe l'`NFTokenAcceptOffer` pour recevoir le NFT (preuve humaine).
 
-  async function signBadgeAccept(sellOfferId: string): Promise<string | null> {
+  async function signBadgeAccept(
+    acceptTx: BadgeAcceptTx,
+  ): Promise<string | null> {
     const account = session.liveAddress.value;
     if (account === "") {
       title.value = "Claim badge";
@@ -231,11 +234,8 @@ export function useWallet(client: TideClient) {
     phase.value = "pending";
     open.value = true;
     try {
-      const acceptTx = {
-        TransactionType: "NFTokenAcceptOffer",
-        Account: account,
-        NFTokenSellOffer: sellOfferId,
-      };
+      // Le serveur a construit l'accept déjà taggé (SourceTag Tide) : on le
+      // soumet tel quel via GemWallet.
       const result = await submitTransaction({
         transaction: acceptTx as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
       });

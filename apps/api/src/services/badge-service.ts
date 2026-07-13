@@ -1,4 +1,9 @@
-import { assertValidAddress, type NftIssuer } from "@tide/xrpl";
+import {
+  assertValidAddress,
+  buildBadgeAcceptOffer,
+  type NftIssuer,
+} from "@tide/xrpl";
+import type { NFTokenAcceptOffer } from "xrpl";
 import {
   BadgeAlreadyClaimedError,
   type BadgeStore,
@@ -100,7 +105,11 @@ export class BadgeService {
     userId: string,
     walletAddress: string,
     code: string,
-  ): Promise<{ sellOfferId: string; nftTokenId: string }> {
+  ): Promise<{
+    sellOfferId: string;
+    nftTokenId: string;
+    acceptTx: NFTokenAcceptOffer;
+  }> {
     assertValidAddress(walletAddress, "walletAddress");
     const badge = badgeByCode(code);
     if (!badge) {
@@ -132,7 +141,19 @@ export class BadgeService {
       claimTxHash: null,
     });
 
-    return { sellOfferId: issued.sellOfferId, nftTokenId: issued.nftTokenId };
+    // L'accept est taggé Tide : c'est le tx signé par un HUMAIN → il doit
+    // compter pour l'attribution (compte actif) du hackathon.
+    const acceptTx = buildBadgeAcceptOffer({
+      account: walletAddress,
+      sellOfferId: issued.sellOfferId,
+      sourceTag: this.deps.sourceTag,
+    });
+
+    return {
+      sellOfferId: issued.sellOfferId,
+      nftTokenId: issued.nftTokenId,
+      acceptTx,
+    };
   }
 
   /** Confirme le claim (le user a signé l'accept) → statut `claimed`. */

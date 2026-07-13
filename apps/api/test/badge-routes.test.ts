@@ -11,10 +11,13 @@ import {
 import { InMemoryBadgeStore } from "../src/store/badge-store";
 
 const WALLET = "ra6hLorXqVpwb7jWfekgjPcPFRHrQqANZg";
+// Ids XRPL réalistes (64 hex) : buildBadgeAcceptOffer valide ce format.
+const NFT_ID = "00082710" + "1234567890ABCDEF".repeat(3) + "1234ABCD";
+const OFFER_ID = "ABCDEF01" + "1234567890ABCDEF".repeat(3) + "0011AABB";
 
 const fakeIssuer: NftIssuer = {
   async issueBadge() {
-    return { nftTokenId: "NFT1", sellOfferId: "OFF1", mintHash: "M", offerHash: "O" };
+    return { nftTokenId: NFT_ID, sellOfferId: OFFER_ID, mintHash: "M", offerHash: "O" };
   },
 };
 
@@ -56,7 +59,16 @@ describe("badge routes", () => {
       payload: { userId: "u1", walletAddress: WALLET },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sellOfferId: "OFF1", nftTokenId: "NFT1" });
+    expect(res.json()).toEqual({
+      sellOfferId: OFFER_ID,
+      nftTokenId: NFT_ID,
+      acceptTx: {
+        TransactionType: "NFTokenAcceptOffer",
+        Account: WALLET,
+        NFTokenSellOffer: OFFER_ID,
+        SourceTag: 2606210009,
+      },
+    });
   });
 
   it("POST /badges/:code/claim/confirm passe à claimed (200)", async () => {

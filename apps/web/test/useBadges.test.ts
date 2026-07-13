@@ -24,7 +24,16 @@ function fakeClient(overrides: Partial<BadgeClient> = {}): {
     },
     async claimBadge() {
       calls.push("claimBadge");
-      return { sellOfferId: "OFF1", nftTokenId: "NFT1" };
+      return {
+        sellOfferId: "OFF1",
+        nftTokenId: "NFT1",
+        acceptTx: {
+          TransactionType: "NFTokenAcceptOffer" as const,
+          Account: "rWallet",
+          NFTokenSellOffer: "OFF1",
+          SourceTag: 2606210009,
+        },
+      };
     },
     async confirmBadgeClaim() {
       calls.push("confirmBadgeClaim");
@@ -54,8 +63,8 @@ describe("useBadges", () => {
     const { client, calls } = fakeClient();
     const b = useBadges(client);
     let signedOffer = "";
-    await b.claim("u1", "first_trade", "rWallet", async (offerId) => {
-      signedOffer = offerId;
+    await b.claim("u1", "first_trade", "rWallet", async (acceptTx) => {
+      signedOffer = acceptTx.NFTokenSellOffer;
       return "HASH";
     });
     expect(signedOffer).toBe("OFF1");

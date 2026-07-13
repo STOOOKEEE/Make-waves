@@ -14,6 +14,9 @@ import {
 
 const WALLET = "ra6hLorXqVpwb7jWfekgjPcPFRHrQqANZg";
 const SOURCE_TAG = 2606210009;
+// Ids XRPL réalistes (64 hex) : buildBadgeAcceptOffer valide ce format.
+const NFT_ID = "00082710" + "1234567890ABCDEF".repeat(3) + "1234ABCD";
+const OFFER_ID = "ABCDEF01" + "1234567890ABCDEF".repeat(3) + "0011AABB";
 
 class FakeOrders implements BadgeOrdersSource {
   constructor(private readonly count: number) {}
@@ -42,8 +45,8 @@ class FakeIssuer implements NftIssuer {
   }> {
     this.calls += 1;
     return {
-      nftTokenId: `NFT_${this.calls}`,
-      sellOfferId: `OFF_${this.calls}`,
+      nftTokenId: NFT_ID,
+      sellOfferId: OFFER_ID,
       mintHash: "M",
       offerHash: "O",
     };
@@ -76,11 +79,18 @@ describe("BadgeService.statusFor", () => {
     expect(before.find((b) => b.code === "ten_trades")?.earned).toBe(false);
 
     const res = await svc.claim("u1", WALLET, "first_trade");
-    expect(res.nftTokenId).toBe("NFT_1");
+    expect(res.nftTokenId).toBe(NFT_ID);
+    // L'accept renvoyé est prêt à signer ET taggé Tide (attribution compte actif).
+    expect(res.acceptTx).toEqual({
+      TransactionType: "NFTokenAcceptOffer",
+      Account: WALLET,
+      NFTokenSellOffer: OFFER_ID,
+      SourceTag: SOURCE_TAG,
+    });
     const afterClaim = await svc.statusFor("u1");
     const ft = afterClaim.find((b) => b.code === "first_trade");
     expect(ft?.status).toBe("offer_pending");
-    expect(ft?.nftTokenId).toBe("NFT_1");
+    expect(ft?.nftTokenId).toBe(NFT_ID);
 
     await svc.confirmClaim("u1", "first_trade", "HASH");
     const afterConfirm = await svc.statusFor("u1");

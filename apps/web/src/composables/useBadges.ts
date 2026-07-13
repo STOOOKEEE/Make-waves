@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import type { BadgeDto } from "@tide/client";
+import type { BadgeAcceptTx, BadgeDto, ClaimBadgeResult } from "@tide/client";
 import { errorMessage } from "./messages";
 
 /** Sous-ensemble du client utilisé ici (implémenté par `TideClient`). */
@@ -9,12 +9,12 @@ export interface BadgeClient {
     userId: string,
     code: string,
     walletAddress: string,
-  ): Promise<{ sellOfferId: string; nftTokenId: string }>;
+  ): Promise<ClaimBadgeResult>;
   confirmBadgeClaim(userId: string, code: string, txHash?: string): Promise<void>;
 }
 
-/** Signature de l'accept par le user : renvoie le hash de tx, ou null si annulé. */
-export type SignAccept = (sellOfferId: string) => Promise<string | null>;
+/** Signature de l'accept (tx taggée) par le user : hash de tx, ou null si annulé. */
+export type SignAccept = (acceptTx: BadgeAcceptTx) => Promise<string | null>;
 
 /**
  * Badges de l'utilisateur : chargement du statut + claim NFT (mint serveur +
@@ -52,8 +52,8 @@ export function useBadges(client: BadgeClient) {
     claiming.value = code;
     error.value = "";
     try {
-      const { sellOfferId } = await client.claimBadge(userId, code, walletAddress);
-      const txHash = await sign(sellOfferId);
+      const { acceptTx } = await client.claimBadge(userId, code, walletAddress);
+      const txHash = await sign(acceptTx);
       if (txHash === null) {
         // Signature annulée : le badge reste en offer_pending côté serveur.
         return;

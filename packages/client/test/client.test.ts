@@ -249,12 +249,18 @@ describe("TideClient badges", () => {
   });
 
   it("claimBadge -> POST /badges/:code/claim avec le wallet", async () => {
+    const acceptTx = {
+      TransactionType: "NFTokenAcceptOffer",
+      Account: "rWallet",
+      NFTokenSellOffer: "OFF1",
+      SourceTag: 2606210009,
+    };
     const { client, requests } = stub(() => ({
       status: 200,
-      body: { sellOfferId: "OFF1", nftTokenId: "NFT1" },
+      body: { sellOfferId: "OFF1", nftTokenId: "NFT1", acceptTx },
     }));
     const res = await client.claimBadge("u1", "first_trade", "rWallet");
-    expect(res).toEqual({ sellOfferId: "OFF1", nftTokenId: "NFT1" });
+    expect(res).toEqual({ sellOfferId: "OFF1", nftTokenId: "NFT1", acceptTx });
     expect(requests[0]).toEqual({
       path: "/badges/first_trade/claim",
       method: "POST",
