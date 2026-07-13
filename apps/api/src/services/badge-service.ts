@@ -83,12 +83,23 @@ export class BadgeService {
   constructor(private readonly deps: BadgeServiceDeps) {}
 
   private activityOf(userId: string): BadgeActivity {
-    const fillCount = this.deps.paper.ordersOf(userId).length;
     const competitionCount = this.deps.competition
       .list()
       .filter((c) => this.deps.competition.participants(c.id).includes(userId))
       .length;
-    return { fillCount, competitionCount };
+    return { fillCount: this.fillCountOf(userId), competitionCount };
+  }
+
+  /** Nombre d'ordres. Un compte paper pas encore créé (nouveau visiteur) → 0. */
+  private fillCountOf(userId: string): number {
+    try {
+      return this.deps.paper.ordersOf(userId).length;
+    } catch (err) {
+      if (err instanceof Error && err.name === "AccountNotFoundError") {
+        return 0;
+      }
+      throw err;
+    }
   }
 
   /** Statut de tous les badges du catalogue pour un utilisateur. */

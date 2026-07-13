@@ -118,6 +118,24 @@ describe("BadgeService sans issuer (affichage off-chain gratuit)", () => {
       BadgeClaimUnavailableError,
     );
   });
+
+  it("statusFor tolère un compte inexistant (nouveau visiteur → 0 badge)", async () => {
+    const throwingPaper: BadgeOrdersSource = {
+      ordersOf() {
+        const e = new Error("Compte introuvable");
+        e.name = "AccountNotFoundError";
+        throw e;
+      },
+    };
+    const svc = new BadgeService({
+      paper: throwingPaper,
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+    });
+    const status = await svc.statusFor("newbie");
+    expect(status).toHaveLength(3);
+    expect(status.every((b) => !b.earned)).toBe(true);
+  });
 });
 
 describe("BadgeService.claim (erreurs)", () => {
