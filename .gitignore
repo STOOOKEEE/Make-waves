@@ -16,6 +16,9 @@ coverage/
 .env
 .env.*
 !.env.example
+api.env
+deploy/api.env
+!deploy/api.env.example
 
 # Base SQLite locale (runtime)
 *.db
