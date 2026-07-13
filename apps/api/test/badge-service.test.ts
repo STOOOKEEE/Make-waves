@@ -1,0 +1,119 @@
+import { describe, it, expect } from "vitest";
+import type { NftIssuer } from "@tide/xrpl";
+import {
+  BadgeService,
+  BadgeNotEarnedError,
+  BadgeUnknownError,
+  type BadgeCompetitionSource,
+  type BadgeOrdersSource,
+} from "../src/services/badge-service";
+import {
+  BadgeAlreadyClaimedError,
+  InMemoryBadgeStore,
+} from "../src/store/badge-store";
+
+const WALLET = "ra6hLorXqVpwb7jWfekgjPcPFRHrQqANZg";
+const SOURCE_TAG = 2606210009;
+
+class FakeOrders implements BadgeOrdersSource {
+  constructor(private readonly count: number) {}
+  ordersOf(): readonly unknown[] {
+    return new Array(this.count).fill(0);
+  }
+}
+
+class FakeCompetition implements BadgeCompetitionSource {
+  constructor(private readonly members: string[] = []) {}
+  list(): readonly { readonly id: string }[] {
+    return [{ id: "comp-1" }];
+  }
+  participants(): readonly string[] {
+    return this.members;
+  }
+}
+
+class FakeIssuer implements NftIssuer {
+  public calls = 0;
+  async issueBadge(): Promise<{
+    nftTokenId: string;
+    sellOfferId: string;
+    mintHash: string;
+    offerHash: string;
+  }> {
+    this.calls += 1;
+    return {
+      nftTokenId: `NFT_${this.calls}`,
+      sellOfferId: `OFF_${this.calls}`,
+      mintHash: "M",
+      offerHash: "O",
+    };
+  }
+}
+
+function makeService(fills: number, members: string[] = []): {
+  svc: BadgeService;
+  issuer: FakeIssuer;
+} {
+  const issuer = new FakeIssuer();
+  const svc = new BadgeService({
+    paper: new FakeOrders(fills),
+    competition: new FakeCompetition(members),
+    store: new InMemoryBadgeStore(),
+    issuer,
+    sourceTag: SOURCE_TAG,
+    metadataBaseUrl: "http://localhost:3000",
+  });
+  return { svc, issuer };
+}
+
+describe("BadgeService.statusFor", () => {
+  it("dérive le mérite et reflète les claims", async () => {
+    const { svc } = makeService(1);
+    const before = await svc.statusFor("u1");
+    const firstTrade = before.find((b) => b.code === "first_trade");
+    expect(firstTrade?.earned).toBe(true);
+    expect(firstTrade?.status).toBe("unclaimed");
+    expect(before.find((b) => b.code === "ten_trades")?.earned).toBe(false);
+
+    const res = await svc.claim("u1", WALLET, "first_trade");
+    expect(res.nftTokenId).toBe("NFT_1");
+    const afterClaim = await svc.statusFor("u1");
+    const ft = afterClaim.find((b) => b.code === "first_trade");
+    expect(ft?.status).toBe("offer_pending");
+    expect(ft?.nftTokenId).toBe("NFT_1");
+
+    await svc.confirmClaim("u1", "first_trade", "HASH");
+    const afterConfirm = await svc.statusFor("u1");
+    expect(afterConfirm.find((b) => b.code === "first_trade")?.status).toBe("claimed");
+  });
+});
+
+describe("BadgeService.claim (erreurs)", () => {
+  it("refuse un badge non mérité", async () => {
+    const { svc } = makeService(0);
+    await expect(svc.claim("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeNotEarnedError,
+    );
+  });
+
+  it("refuse un code inconnu", async () => {
+    const { svc } = makeService(1);
+    await expect(svc.claim("u1", WALLET, "nope")).rejects.toThrow(BadgeUnknownError);
+  });
+
+  it("refuse une adresse invalide", async () => {
+    const { svc } = makeService(1);
+    await expect(svc.claim("u1", "not-an-address", "first_trade")).rejects.toThrow(
+      /Adresse/,
+    );
+  });
+
+  it("refuse un double claim", async () => {
+    const { svc, issuer } = makeService(1);
+    await svc.claim("u1", WALLET, "first_trade");
+    await expect(svc.claim("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeAlreadyClaimedError,
+    );
+    expect(issuer.calls).toBe(1);
+  });
+});
