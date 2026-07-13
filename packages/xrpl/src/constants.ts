@@ -3,6 +3,9 @@
 /** Valeur maximale d'un SourceTag (champ uint32 du protocole XRPL). */
 export const MAX_SOURCE_TAG = 0xffffffff;
 
+/** Valeur maximale d'un NFTokenTaxon (champ uint32 du protocole XRPL, XLS-20). */
+export const MAX_NFT_TAXON = 0xffffffff;
+
 /** Drops par XRP (le XRP a 6 décimales ; 1 XRP = 1 000 000 drops). */
 export const DROPS_PER_XRP = 1_000_000;
 

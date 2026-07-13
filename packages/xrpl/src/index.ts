@@ -9,6 +9,7 @@ export * from "./tx/amount";
 export * from "./tx/memo";
 export * from "./tx/payment";
 export * from "./tx/offer";
+export * from "./tx/nft";
 export * from "./tx/drops";
 export * from "./tx/multisig";
 export * from "./tx/payout";
