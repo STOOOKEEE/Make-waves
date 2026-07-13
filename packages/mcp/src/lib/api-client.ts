@@ -7,6 +7,7 @@
 // de l'appelant (cross-user isolation — l'application de cette isolation côté
 // apps/api est tracée dans final-review.md comme dette post-merge).
 
+import { randomUUID } from "node:crypto";
 import type {
   AgentAction,
   AgentActionsStore,
@@ -17,11 +18,27 @@ import type {
   TradingBackend,
 } from "../types";
 import type { AgentDto } from "@tide/client";
+import { QUOTE_CURRENCY } from "@tide/core";
+import type { Fill } from "@tide/core";
 
 export interface TideApiHttpConfig {
   readonly baseUrl: string;
   readonly userId: string;
   readonly agentId: string;
+}
+
+/** Frais taker prélevé à l'ouverture d'une position (0,06 % du notionnel) —
+ * règle produit Tide (maker 0,02 % / taker 0,06 %). */
+const PERP_TAKER_FEE_RATE = 0.0006;
+
+/**
+ * Prix de liquidation indicatif d'une position à levier (marge isolée, frais
+ * ignorés). Purement informatif : Tide n'a PAS de liquidation auto côté serveur
+ * (le PnL réalisé est planchonné à −marge à la fermeture).
+ */
+function liquidationPrice(side: "long" | "short", entry: number, leverage: number): number {
+  const move = entry / leverage;
+  return side === "long" ? entry - move : entry + move;
 }
 
 export class TideApiHttpError extends Error {
@@ -171,12 +188,37 @@ export class TideApiHttp {
     price?: number;
     clientOrderId?: string;
   }): Promise<{ orderId: string; status: string; filledQty: number; avgPrice: number }> {
-    // L'endpoint apps/api est scopé par userId (`/accounts/:userId/orders`).
-    return await this.request<{ orderId: string; status: string; filledQty: number; avgPrice: number }>(
+    // La route paper (`/accounts/:userId/orders`) attend un `MarketOrderInput` du
+    // domaine (`{ pair, side, amount, price }`) et l'exécute au `price` fourni (elle
+    // ne consulte pas le feed). On traduit donc le contrat MCP (`symbol`/`qty`) vers
+    // ce format et on exige un prix — le tool `place_order` résout le px (feed pour un
+    // market, prix explicite pour un limit) et nous le passe. Le `Fill` renvoyé est
+    // re-mappé vers le shape attendu côté MCP (pas d'orderId côté paper → on en dérive un).
+    if (input.price === undefined) {
+      throw new TideApiHttpError(
+        0,
+        undefined,
+        "placeOrder: prix requis (la route paper valorise au prix fourni)",
+      );
+    }
+    const fill = await this.request<Fill>(
       "POST",
       `/accounts/${encodeURIComponent(this.userId)}/orders`,
-      { body: input },
+      {
+        body: {
+          pair: { base: input.symbol.toUpperCase(), quote: QUOTE_CURRENCY },
+          side: input.side,
+          amount: input.qty,
+          price: input.price,
+        },
+      },
     );
+    return {
+      orderId: input.clientOrderId ?? randomUUID(),
+      status: "filled",
+      filledQty: fill.amount,
+      avgPrice: fill.price,
+    };
   }
 
   async placeLiveOrder(input: {
@@ -220,11 +262,44 @@ export class TideApiHttp {
     sl?: number;
     clientOrderId?: string;
   }): Promise<{ positionId: string; entryPrice: number; liquidationPrice: number }> {
-    return await this.request<{ positionId: string; entryPrice: number; liquidationPrice: number }>(
+    // La route paper attend un `OpenPositionInput` du domaine
+    // `{ product, symbol, side, qty, entry, leverage, margin, fee }`. Le contrat
+    // MCP ne porte que symbol/qty/leverage → on résout le prix d'entrée (feed),
+    // la marge (notionnel/levier) et le frais taker (0,06 %), et on pose
+    // product="perp". `liquidationPrice` est calculé pour l'affichage (pas de
+    // liquidation serveur). Même couche anti-corruption que `placeOrder`.
+    const price = await this.request<{ price: number }>(
+      "GET",
+      `/prices/${encodeURIComponent(input.symbol)}`,
+    );
+    const entry = price.price;
+    if (!Number.isFinite(entry) || entry <= 0) {
+      throw new TideApiHttpError(0, undefined, `openPosition: prix indisponible pour ${input.symbol}`);
+    }
+    const notional = input.qty * entry;
+    const margin = input.margin ?? notional / input.leverage;
+    const fee = notional * PERP_TAKER_FEE_RATE;
+    const position = await this.request<{ id: string; entry: number }>(
       "POST",
       `/accounts/${encodeURIComponent(this.userId)}/positions`,
-      { body: input },
+      {
+        body: {
+          product: "perp",
+          symbol: input.symbol,
+          side: input.side,
+          qty: input.qty,
+          entry,
+          leverage: input.leverage,
+          margin,
+          fee,
+        },
+      },
     );
+    return {
+      positionId: position.id,
+      entryPrice: position.entry,
+      liquidationPrice: liquidationPrice(input.side, entry, input.leverage),
+    };
   }
 
   async closePosition(input: { userId: string; positionId: string }): Promise<{ realizedPnl: number }> {

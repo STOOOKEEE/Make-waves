@@ -2,12 +2,16 @@
 import { nextTick, ref } from "vue";
 import { useAgentChat } from "../../composables/useAgentChat";
 import { useI18n } from "../../i18n/useI18n";
+import { parseInline } from "../../lib/inline-markdown";
 
 /* Panneau de chat agent. Affiche la conversation (user + assistant), les
  * appels d'outils résolus par le serveur, et un indicateur « réflexion »
  * pendant le streaming. Délègue toute la logique à `useAgentChat` (T28). */
 
 const props = defineProps<{ agentId: string }>();
+// Émis à la fin d'un tour (réponse + outils exécutés) → le parent recharge
+// le journal d'actions pour y faire apparaître les trades qui viennent de passer.
+const emit = defineEmits<{ (e: "turn-complete"): void }>();
 
 const { t } = useI18n({
   en: {
@@ -15,14 +19,12 @@ const { t } = useI18n({
     send: "Send",
     thinking: "Thinking…",
     error: "Error",
-    toolSeparator: "→",
   },
   fr: {
     placeholder: "Demander à l'agent…",
     send: "Envoyer",
     thinking: "Réflexion…",
     error: "Erreur",
-    toolSeparator: "→",
   },
 });
 
@@ -36,10 +38,26 @@ async function onSubmit(): Promise<void> {
   if (content === "") return;
   input.value = "";
   await send(props.agentId, content);
+  emit("turn-complete");
   await nextTick();
   if (messagesEl.value) {
     messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
   }
+}
+
+/** Un tool_result en erreur porte `{ isError: true, message }`. */
+function isToolError(result: unknown): boolean {
+  return (result as { isError?: boolean } | null)?.isError === true;
+}
+
+/** Rend un résultat d'outil SANS dump JSON : un ✓ discret en succès, le message
+ * en erreur. Les données utiles (prix, soldes) sont déjà résumées dans la
+ * réponse texte de l'agent ; les cartes indiquent juste QUELS outils ont tourné. */
+function formatToolResult(result: unknown): string {
+  if (isToolError(result)) {
+    return (result as { message?: string }).message ?? "error";
+  }
+  return "✓";
 }
 </script>
 
@@ -51,21 +69,29 @@ async function onSubmit(): Promise<void> {
         :key="m.timestamp"
         :class="['msg', m.role]"
       >
-        <div class="content">{{ m.content }}</div>
+        <div class="content">
+          <template v-for="(seg, i) in parseInline(m.content)" :key="i">
+            <strong v-if="seg.t === 'bold'">{{ seg.v }}</strong>
+            <code v-else-if="seg.t === 'code'" class="inline-code">{{ seg.v }}</code>
+            <template v-else>{{ seg.v }}</template>
+          </template>
+        </div>
         <div v-if="m.toolCalls && m.toolCalls.length > 0" class="tools">
           <div
             v-for="(tc, i) in m.toolCalls"
             :key="i"
             class="tool-call"
+            :class="{ err: isToolError(tc.result) }"
           >
-            <span class="tool-name">🔧 {{ tc.name }}</span>
-            <span v-if="tc.result !== undefined" class="tool-result">
-              {{ t('toolSeparator') }} {{ JSON.stringify(tc.result) }}
-            </span>
+            <span class="tool-name">{{ tc.name }}</span>
+            <span class="tool-result">{{ formatToolResult(tc.result) }}</span>
           </div>
         </div>
       </div>
-      <div v-if="streaming" class="msg assistant thinking">…</div>
+      <div v-if="streaming" class="msg assistant thinking" :aria-label="t('thinking')">
+        <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>
+        <span class="thinking-label">{{ t('thinking') }}</span>
+      </div>
     </div>
     <form @submit.prevent="onSubmit" class="input-row">
       <input
@@ -126,38 +152,110 @@ async function onSubmit(): Promise<void> {
 }
 
 .msg.assistant.thinking {
-  color: var(--soft, rgba(255, 255, 255, 0.6));
+  color: var(--soft, rgba(255, 255, 255, 0.62));
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.thinking-label {
+  font-size: 12.5px;
   font-style: italic;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: dot-bounce 1.1s infinite ease-in-out both;
+}
+.dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dot-bounce {
+  0%,
+  70%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  35% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* Respecte la préférence système « moins d'animations ». */
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+    opacity: 0.6;
+  }
 }
 
 .content {
   white-space: pre-wrap;
 }
 
+.inline-code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.92em;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
 .tools {
   margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   padding-top: 8px;
   border-top: 1px solid var(--line2, #2a2a32);
 }
 
+/* Une carte compacte par appel d'outil : nom (chip) + résultat tronqué. */
 .tool-call {
-  font-size: 12px;
-  color: var(--soft, rgba(255, 255, 255, 0.78));
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  word-break: break-all;
+  background: rgba(79, 106, 255, 0.08);
+  border: 1px solid rgba(79, 106, 255, 0.22);
+  border-radius: 8px;
+  padding: 5px 9px;
+  word-break: break-word;
+}
+
+.tool-call.err {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .tool-name {
   font-weight: 700;
   color: var(--blue, #4f6aff);
-  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.tool-call.err .tool-name {
+  color: #f87171;
 }
 
 .tool-result {
-  color: var(--soft, rgba(255, 255, 255, 0.7));
+  color: var(--soft, rgba(255, 255, 255, 0.62));
 }
 
 .input-row {

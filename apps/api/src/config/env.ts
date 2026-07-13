@@ -1,6 +1,7 @@
 import { assertAttributionTag, assertValidAddress } from "@tide/xrpl";
 import { RLUSD_CURRENCY, RLUSD_SYMBOL } from "../exec/plan-live";
 import type { LiveQuote } from "../exec/plan-live";
+import type { SymbolPoolMap } from "../feed/onchain-price";
 
 /**
  * Lecture et validation des variables d'environnement. Un lecteur renvoie
@@ -17,6 +18,7 @@ const MAX_PORT = 65535;
 const DEFAULT_DB_PATH = "tide.db";
 const DEFAULT_CEX_BASE_URL = "https://api.coingecko.com/api/v3";
 const DEFAULT_ATTRIBUTION_DB_PATH = ":memory:";
+const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 
 /** Valeur d'env non vide, ou `undefined` si absente/vide. */
 function optional(name: string): string | undefined {
@@ -69,6 +71,90 @@ export function readSourceTag(): number | undefined {
   return tag;
 }
 
+/** Réseau XRPL ciblé. Détermine notamment l'émetteur RLUSD par défaut. */
+export type XrplNetwork = "mainnet" | "testnet";
+
+const XRPL_NETWORKS: readonly XrplNetwork[] = ["mainnet", "testnet"];
+
+/**
+ * Réseau XRPL (`TIDE_XRPL_NETWORK`). Défaut `mainnet` (le hackathon tourne en
+ * mainnet). Toute autre valeur que celles connues = config cassée → on lève.
+ */
+export function readXrplNetwork(): XrplNetwork {
+  const raw = optional("TIDE_XRPL_NETWORK");
+  if (raw === undefined) {
+    return "mainnet";
+  }
+  const network = raw.toLowerCase();
+  if (!XRPL_NETWORKS.includes(network as XrplNetwork)) {
+    throw new Error(
+      `TIDE_XRPL_NETWORK invalide: ${raw} (attendu: ${XRPL_NETWORKS.join(" | ")})`,
+    );
+  }
+  return network as XrplNetwork;
+}
+
+/**
+ * Pools AMM on-chain à lire pour composer le prix (feed), au format JSON :
+ * `{"RLUSD":{"asset":{"currency":"<hex|XRP>","issuer":"r..."},"asset2":{"currency":"XRP"}}}`.
+ * Chaque devise porte un `currency` non vide ; un `issuer` (si présent, requis
+ * pour tout token non-XRP) est validé comme adresse XRPL. JSON ou structure
+ * invalide = config cassée → on lève. `undefined` si non déclaré (feed mono-source CEX).
+ */
+export function readOnchainPools(): SymbolPoolMap | undefined {
+  const raw = optional("TIDE_ONCHAIN_POOLS");
+  if (raw === undefined) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `TIDE_ONCHAIN_POOLS n'est pas un JSON valide: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("TIDE_ONCHAIN_POOLS doit être un objet { symbole: { asset, asset2 } }");
+  }
+  const pools: Record<string, { asset: XrplCurrency; asset2: XrplCurrency }> = {};
+  for (const [symbol, pool] of Object.entries(parsed)) {
+    pools[symbol] = {
+      asset: parseXrplCurrency(pool, "asset", symbol),
+      asset2: parseXrplCurrency(pool, "asset2", symbol),
+    };
+  }
+  return pools;
+}
+
+interface XrplCurrency {
+  readonly currency: string;
+  readonly issuer?: string;
+}
+
+/** Valide une devise XRPL (`asset`/`asset2`) d'un pool. Lève si mal formée. */
+function parseXrplCurrency(pool: unknown, key: "asset" | "asset2", symbol: string): XrplCurrency {
+  if (typeof pool !== "object" || pool === null) {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"] doit être un objet`);
+  }
+  const side: unknown = (pool as Record<string, unknown>)[key];
+  if (typeof side !== "object" || side === null) {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key} manquant`);
+  }
+  const { currency, issuer } = side as Record<string, unknown>;
+  if (typeof currency !== "string" || currency.trim() === "") {
+    throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key}.currency manquant`);
+  }
+  if (issuer !== undefined) {
+    if (typeof issuer !== "string") {
+      throw new Error(`TIDE_ONCHAIN_POOLS["${symbol}"].${key}.issuer doit être une adresse`);
+    }
+    assertValidAddress(issuer, `TIDE_ONCHAIN_POOLS["${symbol}"].${key}.issuer`);
+    return { currency, issuer };
+  }
+  return { currency };
+}
+
 /** URL WebSocket d'un nœud rippled (active le client on-chain). Lève si non ws/wss. */
 export function readOnchainWsUrl(): string | undefined {
   const raw = optional("XRPL_WSS_URL");
@@ -79,6 +165,37 @@ export function readOnchainWsUrl(): string | undefined {
     throw new Error(`XRPL_WSS_URL doit être une URL ws:// ou wss:// : ${raw}`);
   }
   return raw;
+}
+
+/**
+ * Seed du compte issuer des badges NFT (signature serveur des mints). `undefined`
+ * si non déclaré → la feature badges on-chain reste désactivée. Lève si présent
+ * mais mal formé (seed XRPL base58 commençant par `s`).
+ */
+export function readNftIssuerSeed(): string | undefined {
+  const raw = optional("TIDE_NFT_ISSUER_SEED");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(raw)) {
+    throw new Error("TIDE_NFT_ISSUER_SEED mal formé (seed XRPL base58 attendu)");
+  }
+  return raw;
+}
+
+/**
+ * Base publique du serveur (URL des métadonnées NFT). Défaut localhost pour le
+ * dev. Lève si présente mais non http(s).
+ */
+export function readPublicBaseUrl(): string {
+  const raw = optional("TIDE_PUBLIC_BASE_URL");
+  if (raw === undefined) {
+    return DEFAULT_PUBLIC_BASE_URL;
+  }
+  if (!/^https?:\/\//.test(raw)) {
+    throw new Error(`TIDE_PUBLIC_BASE_URL doit être http(s):// : ${raw}`);
+  }
+  return raw.replace(/\/+$/, "");
 }
 
 /**
@@ -186,4 +303,20 @@ export function readLlmApiKey(): string | undefined {
 /** Modèle Claude pour le chat agent. Défaut = `DEFAULT_LLM_MODEL`. */
 export function readLlmModel(): string {
   return optional("TIDE_LLM_MODEL") ?? DEFAULT_LLM_MODEL;
+}
+
+/**
+ * Endpoint LLM Anthropic-compatible (`TIDE_LLM_BASE_URL`). Absent → API
+ * Anthropic. Pour DeepSeek : `https://api.deepseek.com/anthropic` (avec
+ * `TIDE_LLM_MODEL=deepseek-v4-flash`). Doit être une URL http(s).
+ */
+export function readLlmBaseUrl(): string | undefined {
+  const raw = optional("TIDE_LLM_BASE_URL");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^https?:\/\//.test(raw)) {
+    throw new Error(`TIDE_LLM_BASE_URL doit être une URL http(s): ${raw}`);
+  }
+  return raw;
 }

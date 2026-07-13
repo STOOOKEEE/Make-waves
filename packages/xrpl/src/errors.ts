@@ -59,3 +59,11 @@ export class InvalidSignerListError extends Error {
     this.name = "InvalidSignerListError";
   }
 }
+
+/** Paramètre NFT (XLS-20) invalide : URI vide, taxon hors uint32, id malformé. */
+export class InvalidNftError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidNftError";
+  }
+}

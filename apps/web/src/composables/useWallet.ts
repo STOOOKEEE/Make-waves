@@ -2,6 +2,7 @@ import { ref } from "vue";
 import { TideApiError } from "@tide/client";
 import type { ExecSide, SignRequest, TideClient } from "@tide/client";
 import { getAddress, isInstalled, submitTransaction } from "@gemwallet/api";
+import type { BadgeAcceptTx } from "@tide/client";
 import { useSession } from "./useSession";
 import { errorMessage } from "./messages";
 
@@ -204,5 +205,61 @@ export function useWallet(client: TideClient) {
     );
   }
 
-  return { open, phase, title, signRequest, error, connect, chooseXaman, chooseGem, signLiveOffer, close };
+  // ---- Claim de badge NFT ----
+  // Le serveur a minté le badge + créé une sell-offer à 0 vers le wallet du user.
+  // Ici le user signe l'`NFTokenAcceptOffer` pour recevoir le NFT (preuve humaine).
+
+  async function signBadgeAccept(
+    acceptTx: BadgeAcceptTx,
+  ): Promise<string | null> {
+    const account = session.liveAddress.value;
+    if (account === "") {
+      title.value = "Claim badge";
+      phase.value = "error";
+      error.value = "Connecte d'abord ton wallet.";
+      open.value = true;
+      return null;
+    }
+    if (session.walletType.value !== "gem") {
+      // Xaman : l'accept de badge n'est pas encore câblé (route /sign/badge-accept).
+      title.value = "Claim badge";
+      phase.value = "error";
+      error.value = "Claim on-chain via GemWallet pour l'instant.";
+      open.value = true;
+      return null;
+    }
+    title.value = "Claim badge";
+    error.value = "";
+    signRequest.value = null;
+    phase.value = "pending";
+    open.value = true;
+    try {
+      // Le serveur a construit l'accept déjà taggé (SourceTag Tide) : on le
+      // soumet tel quel via GemWallet.
+      const result = await submitTransaction({
+        transaction: acceptTx as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
+      });
+      const hash = result.result?.hash ?? null;
+      phase.value = hash !== null ? "signed" : "rejected";
+      return hash;
+    } catch (e) {
+      phase.value = "error";
+      error.value = errorMessage(e);
+      return null;
+    }
+  }
+
+  return {
+    open,
+    phase,
+    title,
+    signRequest,
+    error,
+    connect,
+    chooseXaman,
+    chooseGem,
+    signLiveOffer,
+    signBadgeAccept,
+    close,
+  };
 }

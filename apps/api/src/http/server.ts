@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { PriceMap } from "@tide/core";
 import { agentBroadcaster } from "../sse/agent-broadcast";
 import type { BookDepth } from "../feed/binance-book-feed";
@@ -23,11 +23,14 @@ import {
   getPayloadStatus,
 } from "../xaman/sign-request";
 import { planLiveOffer } from "../exec/plan-live";
+import type { OnchainExecReader } from "../exec/plan-live";
 import type { LiveQuote } from "../exec/plan-live";
 import { statusForError } from "./errors";
 import {
   parseBuyInRequest,
+  parseClaimBadge,
   parseCompetition,
+  parseConfirmBadge,
   parseCreateAgent,
   parseCreateMandate,
   parseLiveOfferRequest,
@@ -38,6 +41,8 @@ import {
   parseUpdateAgent,
   parseUserId,
 } from "./parse";
+import type { BadgeService } from "../services/badge-service";
+import { badgeByCode } from "../badges/catalog";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -61,6 +66,8 @@ export interface SignDeps {
 export interface ExecDeps {
   readonly sourceTag: number;
   readonly quote: LiveQuote;
+  /** Lecteur de prix on-chain (AMM + carnet). Absent → prix CEX de repli. */
+  readonly onchain?: OnchainExecReader;
 }
 
 /** Lecture des métriques d'attribution (le `SqliteAttributionStore` la satisfait). */
@@ -106,6 +113,15 @@ export interface ServerDeps {
   readonly agentActionsStore?: AgentActionsStore;
   /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
   readonly agentChatService?: AgentChatService;
+  /**
+   * Fabrique du `McpContext` runtime pour le chat agent (câblée par `main.ts`
+   * sur les vrais backends). Absente → repli sur le stub throw-loud
+   * `buildAgentChatCtx`. Peut lever (agent stoppé / mandat absent) : la route
+   * capture et renvoie 400 avant d'ouvrir le flux SSE.
+   */
+  readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
+  /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
+  readonly badgeService?: BadgeService;
 }
 
 /**
@@ -185,6 +201,30 @@ function buildAgentChatCtx(agentId: string, userId: string): McpContext {
       availablePairs: [],
     },
   };
+}
+
+/**
+ * Ouvre un flux SSE : pose le CORS puis hijack la socket. Le plugin
+ * `@fastify/cors` écrit l'en-tête `Access-Control-Allow-Origin` via un hook
+ * Fastify, mais `reply.hijack()` court-circuite l'écriture gérée par Fastify →
+ * sans miroir explicite de l'Origin ici, une réponse SSE cross-origin (front
+ * Vite → API :3000) est bloquée par le navigateur. On reflète donc l'Origin
+ * (comportement de `origin: true`) directement sur `reply.raw` avant hijack.
+ */
+function startEventStream(request: FastifyRequest, reply: FastifyReply): void {
+  const origin = request.headers.origin;
+  if (typeof origin === "string") {
+    reply.raw.setHeader("Access-Control-Allow-Origin", origin);
+    reply.raw.setHeader("Vary", "Origin");
+  }
+  reply.raw.setHeader("Content-Type", "text/event-stream");
+  reply.raw.setHeader("Cache-Control", "no-cache");
+  reply.raw.setHeader("Connection", "keep-alive");
+  reply.hijack();
+  // Flush immédiat : sans ça Node retient les en-têtes jusqu'au 1er `write`
+  // (un event ou le ping 30 s) → l'EventSource/le fetch du navigateur reste en
+  // attente d'ouverture, et l'en-tête CORS n'est envoyé que trop tard.
+  reply.raw.flushHeaders();
 }
 
 /**
@@ -320,9 +360,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   });
 
   // Liste des marchés (top N coins : symbole, nom, prix, %24h) pour la watchlist.
+  // `limit` optionnel borné à la taille de la liste ; absent → liste complète.
   if (deps.getMarkets !== undefined) {
     const getMarkets = deps.getMarkets;
-    app.get("/markets", () => getMarkets());
+    app.get<{ Querystring: { limit?: string } }>("/markets", (request) => {
+      const rows = getMarkets();
+      const parsed = Number(request.query.limit);
+      const limit =
+        Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, rows.length) : rows.length;
+      return rows.slice(0, limit);
+    });
   }
 
   // Config publique pour le client : le SourceTag d'attribution (entier public,
@@ -468,11 +515,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // Header `text/event-stream`, hijack pour prendre la main sur la socket,
     // ping commentaire toutes les 30 s pour garder la connexion ouverte
     // (les proxies coupent au-delà de ~60 s d'inactivité).
-    app.get("/api/agents/events", (_req, reply) => {
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache");
-      reply.raw.setHeader("Connection", "keep-alive");
-      reply.hijack();
+    app.get("/api/agents/events", (request, reply) => {
+      startEventStream(request, reply);
 
       const send = (event: unknown) => {
         reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
@@ -486,7 +530,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
       // Le client a fermé la connexion : on libère le listener et le timer
       // sinon l'EventEmitter accumule des handlers et le process ne sort pas.
-      _req.raw.on("close", () => {
+      request.raw.on("close", () => {
         clearInterval(interval);
         agentBroadcaster.off("event", handler);
       });
@@ -678,19 +722,22 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.code(400);
         return { error: "agentId, userId, message are required" };
       }
-      // Le câblage runtime complet (paper/trading/perp/competitions réel) n'est
-      // pas encore branché — chaque méthode du `ctx` throw loud si un outil
-      // est appelé. C'est volontaire : un LLM qui appelle `place_order` ne
-      // doit JAMAIS voir un `{ orderId: "stub" }` (silently swallowed success).
-      // Lève `agent chat not wired — runtime ctx missing` côté tool, que
-      // `AgentChatService.executeTool` capture en `{ isError: true, message }`
-      // et remonte à Claude comme `tool_result is_error=true` → l'agent peut
-      // s'auto-corriger (« run-time pas câblé »), l'utilisateur voit une
-      // erreur honnête au lieu d'un faux succès.
-      reply.raw.setHeader("Content-Type", "text/event-stream");
-      reply.raw.setHeader("Cache-Control", "no-cache");
-      reply.raw.setHeader("Connection", "keep-alive");
-      reply.hijack();
+      // Contexte d'exécution des outils : la fabrique runtime (`main.ts`)
+      // branche les vrais backends (self-HTTP + stores locaux) et valide
+      // l'agent + le mandat actif — elle lève si l'agent est stoppé ou sans
+      // mandat, on renvoie alors 400 AVANT d'ouvrir le flux SSE. Sans fabrique
+      // (pas de câblage), on retombe sur le stub throw-loud : un LLM qui
+      // appelle `place_order` ne voit JAMAIS un faux succès.
+      let ctx: McpContext;
+      try {
+        ctx = deps.agentChatCtx
+          ? await deps.agentChatCtx(agentId, userId)
+          : buildAgentChatCtx(agentId, userId);
+      } catch (err) {
+        reply.code(400);
+        return { error: err instanceof Error ? err.message : "context build failed" };
+      }
+      startEventStream(request, reply);
       try {
         for await (const event of chat.stream({
           agentId,
@@ -701,7 +748,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           ...(body.systemPrompt !== undefined
             ? { systemPrompt: body.systemPrompt }
             : {}),
-          ctx: buildAgentChatCtx(agentId, userId),
+          ctx,
         })) {
           reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
         }
@@ -709,6 +756,45 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.raw.end();
       }
     });
+  }
+
+  // Métadonnées NFT des badges (statique, non gated) : résolues par les wallets.
+  app.get<{ Params: { code: string } }>("/nft-metadata/:code", (request, reply) => {
+    const badge = badgeByCode(request.params.code);
+    if (badge === undefined) {
+      reply.code(404);
+      return { error: "unknown badge" };
+    }
+    const host = request.headers.host ?? "localhost";
+    const base = `${request.protocol}://${host}`;
+    return {
+      name: badge.title,
+      description: badge.description,
+      image: `${base}${badge.imageUrl}`,
+      attributes: [{ trait_type: "badge", value: badge.code }],
+    };
+  });
+
+  // Badges + claim NFT — montés seulement si un issuer NFT est configuré.
+  if (deps.badgeService !== undefined) {
+    const badgeSvc = deps.badgeService;
+    app.get<{ Params: { userId: string } }>(
+      "/accounts/:userId/badges",
+      (request) => badgeSvc.statusFor(request.params.userId),
+    );
+    app.post<{ Params: { code: string } }>("/badges/:code/claim", (request) => {
+      const body = parseClaimBadge(request.body);
+      return badgeSvc.claim(body.userId, body.walletAddress, request.params.code);
+    });
+    app.post<{ Params: { code: string } }>(
+      "/badges/:code/claim/confirm",
+      async (request, reply) => {
+        const body = parseConfirmBadge(request.body);
+        await badgeSvc.confirmClaim(body.userId, request.params.code, body.txHash);
+        reply.code(200);
+        return { ok: true };
+      },
+    );
   }
 
   return app;
@@ -765,19 +851,24 @@ function registerExecRoutes(
 ): void {
   const planFor = (body: unknown) =>
     planLiveOffer(
-      { getPrices, sourceTag: exec.sourceTag, quote: exec.quote },
+      {
+        getPrices,
+        sourceTag: exec.sourceTag,
+        quote: exec.quote,
+        ...(exec.onchain !== undefined ? { onchain: exec.onchain } : {}),
+      },
       parseLiveOfferRequest(body),
     );
 
-  app.post("/exec/plan", (request, reply) => {
-    const plan = planFor(request.body);
+  app.post("/exec/plan", async (request, reply) => {
+    const plan = await planFor(request.body);
     reply.code(201);
     return plan;
   });
 
   if (xamanApi !== undefined) {
     app.post("/sign/live-offer", async (request, reply) => {
-      const plan = planFor(request.body);
+      const plan = await planFor(request.body);
       const signRequest = await createSignRequest(xamanApi, plan.offer);
       reply.code(201);
       return signRequest;

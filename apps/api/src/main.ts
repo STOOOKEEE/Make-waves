@@ -1,6 +1,7 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
-import { connectXrplClient } from "@tide/xrpl";
+import { connectXrplClient, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
+import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { createApp } from "./app";
 import * as env from "./config/env";
 import type { FetchJson } from "./feed/cex-price-feed";
@@ -18,7 +19,14 @@ import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
 import { AgentChatService } from "./services/agent-chat-service";
+import { AgentService } from "./services/agent-service";
+import { MandateService } from "./services/mandate-service";
+import type { MandateXamanApi } from "./services/mandate-service";
 import { PaperService } from "./services/paper-service";
+import { SqliteAgentStore } from "./store/sqlite-agent-store";
+import { SqliteMandateStore } from "./store/sqlite-mandate-store";
+import { SqliteBadgeStore } from "./store/sqlite-badge-store";
+import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
 import { SqliteAccountStore } from "./store/sqlite-account-store";
@@ -26,6 +34,7 @@ import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
 import { openDatabase } from "./store/sqlite";
 import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
+import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
 import { createXamanApi } from "./xaman/sdk";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
@@ -54,14 +63,6 @@ const DEX_HISTORY_TOKENS: Readonly<Record<string, GeckoTerminalToken>> = {
     address: "0x25118290e6a5f4139381d072181157035864099d",
   },
 };
-
-/**
- * Pools AMM on-chain par symbole de cotation (`asset` exprimé en `asset2`). VIDE
- * par défaut : à remplir avec les issuers RÉELS des tokens (ex. RLUSD) une fois
- * connus, pour activer le prix on-chain. Sans pool, le feed reste mono-source
- * (CEX) ; avec, le prix on-chain est composé au CEX sous garde de divergence.
- */
-const ONCHAIN_POOLS: SymbolPoolMap = {};
 
 /** Journal runtime (replis de prix, trous d'indexation) — jamais avalés. */
 const logger: FeedLogger = {
@@ -111,11 +112,12 @@ function fetchDexHistory(symbol: string, interval: string, limit: number) {
 /** Source de prix on-chain : seulement si un client ET des pools sont configurés. */
 function buildOnchainProvider(
   xrpl: XrplClient | undefined,
+  pools: SymbolPoolMap,
 ): OnchainPriceProvider | undefined {
-  if (xrpl === undefined || Object.keys(ONCHAIN_POOLS).length === 0) {
+  if (xrpl === undefined || Object.keys(pools).length === 0) {
     return undefined;
   }
-  return new AmmOnchainPriceProvider(xrpl, ONCHAIN_POOLS);
+  return new AmmOnchainPriceProvider(xrpl, pools);
 }
 
 /** Configuration de l'indexeur d'attribution (client + SourceTag + comptes + store). */
@@ -187,37 +189,52 @@ function buildSignDeps(sourceTag: number | undefined): SignDeps | undefined {
  * présent (sinon on signerait des swaps non attribués) :
  * - issuer SURCHARGÉ sans SourceTag = config explicitement cassée → on lève ;
  * - défaut sans SourceTag = mode off-chain pur assumé → Live simplement désactivé.
+ * Le quote par défaut est l'issuer RLUSD **mainnet** : hors mainnet sans issuer
+ * explicite, on lèverait des swaps contre un émetteur inexistant → on lève.
  * Le moteur tourne sans Xaman : `/exec/plan` (GemWallet) reste exposé ;
  * `/sign/live-offer` n'apparaît qu'avec Xaman.
  */
-function buildExecDeps(sourceTag: number | undefined): ExecDeps | undefined {
+function buildExecDeps(
+  sourceTag: number | undefined,
+  network: env.XrplNetwork,
+  xrpl: XrplClient | undefined,
+): ExecDeps | undefined {
+  // Lecteur de prix on-chain (AMM + carnet) si un nœud est câblé — le
+  // `XrplClient` satisfait `OnchainExecReader`. Absent → plan sur prix CEX.
+  const onchain = xrpl !== undefined ? { onchain: xrpl } : {};
   const override = env.readLiveQuote();
   if (override !== undefined) {
     if (sourceTag === undefined) {
       throw new Error("TIDE_RLUSD_ISSUER configuré mais TIDE_SOURCE_TAG manquant (attribution requise)");
     }
-    return { sourceTag, quote: override };
+    return { sourceTag, quote: override, ...onchain };
   }
   if (sourceTag === undefined) {
     return undefined;
   }
-  return { sourceTag, quote: DEFAULT_LIVE_QUOTE };
+  if (network !== "mainnet") {
+    throw new Error(
+      `Live activé sur ${network} sans TIDE_RLUSD_ISSUER : le quote par défaut est l'émetteur RLUSD mainnet (inexistant hors mainnet). Fournir TIDE_RLUSD_ISSUER.`,
+    );
+  }
+  return { sourceTag, quote: DEFAULT_LIVE_QUOTE, ...onchain };
 }
 
 /**
  * Service de chat agent (Tâche 27). Activé dès que `TIDE_LLM_API_KEY` est
- * présent — la clé n'est jamais journalisée. Le `ctx` (McpContext complet)
- * sera câblé par la tâche dédiée ; pour l'instant le service tourne avec
- * un ctx stub injecté côté route.
+ * présent — la clé n'est jamais journalisée. Le `McpContext` runtime est câblé
+ * par `buildAgentChatCtxFactory` (backends réels), plus de ctx stub.
  */
 function buildAgentChatService(): AgentChatService | undefined {
   const apiKey = env.readLlmApiKey();
   if (apiKey === undefined) {
     return undefined;
   }
+  const baseUrl = env.readLlmBaseUrl();
   return new AgentChatService({
     apiKey,
     model: env.readLlmModel(),
+    ...(baseUrl !== undefined ? { baseUrl } : {}),
   });
 }
 
@@ -246,20 +263,32 @@ async function main(): Promise<void> {
   // Connexion SQLite partagée par les deux stores (persistance sur disque).
   const db = openDatabase(env.readDbPath());
   migrateAgentTables(db);
+  migrateBadgeTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
   const xrpl = wsUrl !== undefined ? connectXrplClient(wsUrl) : undefined;
 
+  const network = env.readXrplNetwork();
   const sourceTag = env.readSourceTag();
-  const onchainPrices = buildOnchainProvider(xrpl);
+  const onchainPrices = buildOnchainProvider(xrpl, env.readOnchainPools() ?? {});
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
   const sign = buildSignDeps(sourceTag);
-  const exec = buildExecDeps(sourceTag);
+  const exec = buildExecDeps(sourceTag, network, xrpl);
   const agentChatService = buildAgentChatService();
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined
       ? { store: indexerSetup.store, sourceTag: indexerSetup.sourceTag }
+      : undefined;
+
+  // Badges NFT : store SQLite (toujours) + issuer (mint serveur) seulement si un
+  // seed issuer + un nœud XRPL + un SourceTag sont configurés (sinon OFF ; les
+  // métadonnées statiques /nft-metadata restent servies dans tous les cas).
+  const badgeStore = new SqliteBadgeStore(db);
+  const issuerSeed = env.readNftIssuerSeed();
+  const nftIssuer =
+    issuerSeed !== undefined && wsUrl !== undefined && sourceTag !== undefined
+      ? new XrplNftIssuer({ serverUrl: wsUrl, issuerSeed, sourceTag })
       : undefined;
 
   // Compétitions de démo (idempotent) : le front fusionne leur état live avec
@@ -271,6 +300,43 @@ async function main(): Promise<void> {
   // variées dès le premier lancement (équités calculées au prix réel du feed).
   const accountStore = new SqliteAccountStore(db);
   seedDemoAccounts(new PaperService(undefined, accountStore), accountStore);
+
+  // Agents & mandats (AI Agent) : montés systématiquement — le serveur MCP et la
+  // vue AgentView consomment ces routes (`/api/agents`, `/api/mandates`,
+  // `/api/agent-actions`). La signature de mandat passe par le callback Xaman
+  // (`/api/sign/mandate-callback`) ; MandateService n'appelle jamais l'API Xaman
+  // directement → on injecte un stub throw-loud plutôt qu'un faux client silencieux.
+  const agentStore = new SqliteAgentStore(db);
+  const mandateStore = new SqliteMandateStore(db);
+  const agentActionsStore = new SqliteAgentActionsStore(db);
+  const mandateXaman: MandateXamanApi = {
+    createSignRequest() {
+      throw new Error(
+        "mandate Xaman signing not wired — le mandat est signé via /api/sign/mandate-callback",
+      );
+    },
+    getPayloadStatus() {
+      throw new Error(
+        "mandate Xaman status not wired — le mandat est signé via /api/sign/mandate-callback",
+      );
+    },
+  };
+  const agentService = new AgentService(agentStore, mandateStore);
+  const mandateService = new MandateService(mandateStore, mandateXaman);
+
+  // Fabrique du contexte de chat agent : backends = adapters HTTP pointés sur
+  // ce serveur (self), agent/mandat/actions = stores locaux. Le port est lu ici
+  // (avant l'écoute) pour construire l'URL de boucle locale. Câblée seulement
+  // si le chat est activé (clé LLM présente).
+  const port = env.readPort();
+  const agentChatCtx =
+    agentChatService === undefined
+      ? undefined
+      : buildAgentChatCtxFactory(
+          `http://127.0.0.1:${String(port)}`,
+          { agents: agentStore, mandates: mandateStore, actions: agentActionsStore },
+          sourceTag,
+        );
 
   const { app, cache, refreshPrices } = createApp({
     markets: {
@@ -288,6 +354,14 @@ async function main(): Promise<void> {
     exec,
     metrics,
     agentChatService,
+    agentService,
+    mandateService,
+    agentActionsStore,
+    agentChatCtx,
+    nftIssuer,
+    badgeStore,
+    sourceTag,
+    metadataBaseUrl: env.readPublicBaseUrl(),
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).
@@ -319,7 +393,6 @@ async function main(): Promise<void> {
     startIndexerSync(indexer);
   }
 
-  const port = env.readPort();
   await app.listen({ port, host: "0.0.0.0" });
   console.log(
     `Tide API à l'écoute sur :${String(port)} ` +

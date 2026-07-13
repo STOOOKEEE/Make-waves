@@ -186,7 +186,7 @@ describe("useAgent", () => {
 
     composed.connectSse();
     const es = instances[0];
-    expect(es?.url).toBe("/api/agents/events");
+    expect(es?.url).toContain("/api/agents/events");
 
     // Déclenche le handler interne en simulant un message SSE
     es?.dispatch(JSON.stringify({ type: "agent_killed", agentId: "agent-1" }));

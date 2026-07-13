@@ -2,6 +2,9 @@ import type { FastifyInstance } from "fastify";
 import type { PriceMap } from "@tide/core";
 import { PaperService } from "./services/paper-service";
 import { CompetitionService } from "./services/competition-service";
+import { BadgeService } from "./services/badge-service";
+import type { NftIssuer } from "@tide/xrpl";
+import type { BadgeStore } from "./store/badge-store";
 import { PriceCache } from "./feed/price-cache";
 import { fetchCexPrices } from "./feed/cex-price-feed";
 import type { CexFeedConfig, FetchJson } from "./feed/cex-price-feed";
@@ -66,6 +69,11 @@ export interface AppConfig {
   readonly agentActionsStore?: AgentActionsStore;
   /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
   readonly agentChatService?: import("./services/agent-chat-service").AgentChatService;
+  /** Fabrique du `McpContext` runtime du chat agent (backends réels) — absente → stub. */
+  readonly agentChatCtx?: (
+    agentId: string,
+    userId: string,
+  ) => Promise<import("@tide/mcp").McpContext>;
   /** Carnet CEX réel (route /book) — absent si feed depth non câblé. */
   readonly getBookDepth?: (symbol: string, limit: number) => Promise<BookDepth>;
   /** Historique DEX réel prioritaire pour les tokens dont la pool est connue. */
@@ -74,10 +82,21 @@ export interface AppConfig {
     interval: string,
     limit: number,
   ) => Promise<Candle[]> | undefined;
+  /** Issuer NFT des badges (signature serveur) — absent → badges on-chain OFF. */
+  readonly nftIssuer?: NftIssuer;
+  /** Store des claims de badges (SQLite en prod). Requis avec `nftIssuer`. */
+  readonly badgeStore?: BadgeStore;
+  /** SourceTag d'attribution des mints. Requis avec `nftIssuer`. */
+  readonly sourceTag?: number;
+  /** Base publique des URI de métadonnées NFT. */
+  readonly metadataBaseUrl?: string;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
 const DEFAULT_COMPOSE: ComposeOptions = { maxDivergence: 0.05, prefer: "cex" };
+
+/** Base publique par défaut des métadonnées NFT (dev). */
+const DEFAULT_METADATA_BASE_URL = "http://localhost:3000";
 
 /** TTL court du cache OHLC : laisse apparaître vite une nouvelle bougie clôturée. */
 const HISTORY_TTL_MS = 20_000;
@@ -103,6 +122,21 @@ export interface App {
 export function createApp(config: AppConfig): App {
   const paper = new PaperService(config.startingEquity, config.accountStore);
   const competition = new CompetitionService(config.competitionStore);
+  // Badges on-chain : montés seulement si un issuer NFT + store + SourceTag sont
+  // fournis (sinon la feature reste OFF, cf. gating dans buildServer).
+  const badgeService =
+    config.nftIssuer !== undefined &&
+    config.badgeStore !== undefined &&
+    config.sourceTag !== undefined
+      ? new BadgeService({
+          paper,
+          competition,
+          store: config.badgeStore,
+          issuer: config.nftIssuer,
+          sourceTag: config.sourceTag,
+          metadataBaseUrl: config.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL,
+        })
+      : undefined;
   const cache = new PriceCache();
   // Lignes de marché (watchlist) du dernier rafraîchissement en mode `markets`.
   let marketRows: readonly MarketRow[] = [];
@@ -177,6 +211,8 @@ export function createApp(config: AppConfig): App {
     mandateService: config.mandateService,
     agentActionsStore: config.agentActionsStore,
     agentChatService: config.agentChatService,
+    agentChatCtx: config.agentChatCtx,
+    badgeService,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

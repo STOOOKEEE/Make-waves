@@ -1886,3 +1886,248 @@ npx tide-mcp
 1. **Live mode `/api/exec/live-offer`** : sign + submit `OfferCreate` côté serveur, nécessite `TIDE_AGENT_KEY_MASTER` + `AgentXrplAccountService.decryptSeed()` exposé.
 2. **Cross-user isolation apps/api** : vérifier `X-Tide-User-Id` ↔ `agent.userId` sur les routes `/api/agents/:id/*` (kill, live-account, getAgent).
 3. **`apps/api/leaderboard` calculé** : `getCompetitionLeaderboard` côté MCP renvoie la liste des participants ; le calcul de classement (par equity) pourrait être un endpoint dédié `/api/competitions/:id/leaderboard`.
+
+## 2026-07-08 — Paper trading MCP : vérif runtime + fix contrat `place_order` + câblage `main.ts`
+
+**Quoi.** Première vérif runtime **réelle** du « paper trading MCP » : vrai serveur MCP (process stdio, JSON-RPC) piloté contre un vrai backend `apps/api`. Elle a révélé que le paper trade via MCP **ne fonctionnait pas** end-to-end (contrairement à ce qu'affirmait l'entrée du 07/07). Deux blocages corrigés et vérifiés.
+
+**Pourquoi (l'écart non détecté).** Les tests unitaires MCP mockaient l'adaptateur HTTP avec le **mauvais contrat** (`api-client.test.ts` codifiait un body `{symbol,qty}` et un retour `{orderId,…}` jamais confrontés à la vraie route paper) → faux vert. Rien n'exerçait le vrai transport MCP contre le vrai backend, d'où l'écart invisible en CI.
+
+**Blocage 1 — contrat `place_order` (400 systématique).** L'adaptateur `packages/mcp/src/lib/api-client.ts::placeOrder` POSTait `{symbol, side, qty, type}` sur `/accounts/:userId/orders`, mais la route paper attend un `MarketOrderInput` du domaine `{pair:{base,quote}, side, amount, price}` avec **`price` obligatoire** → `400 order.pair: objet JSON attendu`. De plus le handler `tools/trading-spot.ts` passait `price` (l'arg brut, `undefined` en market) au lieu du **px résolu** — or la route paper valorise au prix fourni par le client, donc aucun prix = pas d'exécution.
+
+**Blocage 2 — routes agent non montées dans `main.ts`.** `apps/api/src/main.ts` n'instanciait ni ne passait `agentService` / `mandateService` / `agentActionsStore` à `createApp` → `/api/agents`, `/api/mandates`, `/api/agent-actions` absentes du runtime → le serveur MCP échouait au démarrage (`loadContext` → agent introuvable). Ces routes servent aussi la vue **AgentView**.
+
+**Cheminement.** Fix côté MCP (couche anti-corruption = le bon endroit, interface `TradingBackend` et tools inchangés) : `placeOrder` traduit `symbol→pair` (quote = `QUOTE_CURRENCY` = RLUSD), `qty→amount`, exige un prix, et re-mappe le `Fill` du domaine vers le shape MCP `{orderId,status,filledQty,avgPrice}` (orderId dérivé du `clientOrderId` ou uuid — le paper n'a pas d'ordre persistant). `trading-spot.ts` passe désormais `px`. Câblage `main.ts` : stores SQLite (`SqliteAgentStore/MandateStore/AgentActionsStore`, tables déjà migrées par `migrateAgentTables`) + `AgentService`/`MandateService`. Le champ `xaman` de `MandateService` est **vestigial** (`this.xaman` jamais appelé ; la signature passe par `/api/sign/mandate-callback` → `onSignCallback`) → stub **throw-loud** plutôt qu'un faux client silencieux (convention « pas de succès silencieux »).
+
+**Vérifié (runtime).** Vrai MCP stdio contre le vrai `main.ts` sur `:3000` (feed CoinGecko réel) : `place_order BTC buy 0.001 market` → `{status:"filled", avgPrice:63530}` ; portfolio `10000 RLUSD` → `0.001 BTC + 9936.47 RLUSD` ; action tracée dans le store SQLite d'audit. Tests : 3 tests unitaires réalignés sur le contrat correct (`api-client.test.ts` ×2, `tools-trading-spot.test.ts` ×1), **non-régression 399/399** (mcp + api), typecheck mcp + api vert.
+
+**Bugs & fix.** L'entrée du 07/07 affirmait « pour un agent en mode Paper sans Live, ça marche end-to-end » — **faux** (jamais vérifié au runtime : format `place_order` incompatible + routes agent non montées). Corrigé ici.
+
+**Reste.** Cross-user isolation apps/api (`X-Tide-User-Id` ↔ `agent.userId`) toujours en dette ; signature de mandat via Xaman réel non branchée (callback simulé) ; Live mode inchangé.
+
+## 2026-07-08 — Plan de travail : features à coder + blocage tooling (swarm MiniMax)
+
+**Quoi.** Cadrage de ce qu'il **restait à coder** sur Tide après le fix du paper trading MCP, en mode « senior manage des juniors » (les juniors codent, le senior relit/audite). Découpage en **4 lots à fichiers quasi-disjoints** (les juniors écrivent des modules autonomes + tests ; l'assemblage dans `main.ts` — l'assembleur, sensible — reste au senior pour éviter les conflits) :
+
+1. **Chat agent runtime** — remplacer les stubs `throwAgentChatNotWired` (`apps/api/src/http/server.ts`, `buildAgentChatCtx`) par de vrais adapters **in-process** branchés sur les services locaux (paper / competition / prix / actions) → débloque `AgentView` (aujourd'hui chaque outil du chat throw). Nouveau module `apps/api/src/agent/in-process-context.ts` + intégration `server.ts` + instanciation `AgentChatService` dans `main.ts` (`TIDE_LLM_API_KEY`). C'est le blocker #4 de l'audit 07/07.
+2. **Config Live par env** — rendre `ONCHAIN_POOLS` configurable (fini le `{}` **hardcodé** `main.ts:64`), ajouter une notion réseau **testnet/mainnet**, valider l'issuer RLUSD par réseau (`config/env.ts` + `main.ts`). Lève le « trou testnet » (issuer RLUSD mainnet en dur `plan-live.ts:35`).
+3. **Prix on-chain réels** — dans `plan-live.ts`, brancher la vraie lecture **AMM / `book_offers`** (readers `@tide/xrpl` déjà écrits) à la place du feed CEX (aujourd'hui prix AMM *et* carnet = CoinGecko). Dépend du lot 2.
+4. **`get_markets` respecte `limit`** — la route `/markets` (`http/server.ts`) ignore le param (renvoie 250 quand on demande 5). Petit fix (bug trouvé à la vérif du jour).
+
+**Exclus volontairement du swarm.** (a) **Live agent** (`decryptAgentSeed` / clés AES / `TIDE_AGENT_KEY_MASTER`) — path **sécurité** (clés privées), jamais un junior, + décision d'archi à trancher (où vit la master key, comment le MCP externe obtient un seed sans l'exposer). (b) **Swap Live prouvé mainnet / soumission serveur** — bloqué sur l'environnement d'Armand (clés XUMM, SourceTag réservé, mainnet) ; la non-soumission serveur est *by design* (non-custodial).
+
+**Reste global avant mainnet (rappel audit 07/07).** Dépendances **Armand** (hors code) : réserver le **SourceTag**, clés **XUMM**, `XRPL_WSS_URL` mainnet + comptes indexés, adresse **multisig prize pool**, spikes mainnet (1 swap taggé → compteur d'attribution, multisig). **Infra** (rien n'existe) : Dockerfile + host à **volume persistant** pour `tide.db`, backend packagé, `vite build` front, secrets, CI. **Chemin critique hackathon = Phase 2** : passer d'un `OfferCreate` correct à un **swap Live taggé rempli on-chain + compté**.
+
+**Bugs & fix — blocage tooling `minimax-swarm` (post-mortem, pour ne pas re-perdre 2 h).** Le skill lance les juniors via `claude -p` reconfiguré vers l'endpoint Anthropic-compat de MiniMax (`ANTHROPIC_BASE_URL=api.minimax.io/anthropic`, `ANTHROPIC_AUTH_TOKEN=<clé>`). **Échec systématique en 401** depuis toute session Claude Code. Diagnostic exhaustif :
+- **La clé MiniMax est valide** — `curl` direct → HTTP 200, `MiniMax-M3` répond (Bearer *et* x-api-key ; clé `sk-cp-` du Token Plan). Ce n'est PAS la clé (inutile de la régénérer).
+- **Pas la version** — testé 2.1.200 / 201 / 196 / 191 / 204, échec identique. Downgrade inutile.
+- **Cause racine** : le **login OAuth claude.ai prime sur `ANTHROPIC_AUTH_TOKEN`** → `claude -p` envoie le token Anthropic (pas la clé MiniMax) → `Invalid bearer token`. Via `ANTHROPIC_API_KEY` (qui primerait sur l'OAuth), le CLI **refuse une clé non-`sk-ant-`** (`Invalid API key · Fix external API key`), même avec approbation `customApiKeyResponses` / `CLAUDE_CODE_SIMPLE=1`. Proxy d'injection d'auth local → comportement erratique du CLI.
+- **Seul fix** : `claude auth logout` (terminal pur, hors session) pour retirer l'OAuth → `AUTH_TOKEN` reprend la main (curl Bearer le prouve). Sinon : coder via **sous-agents Claude natifs** (tool Agent).
+- Note (utile, non liée à MiniMax) — **downgrade local sans toucher au global** : les versions sont des binaires autonomes dans `~/.local/share/claude/versions/<v>` ; appeler le binaire direct = usage local ; le « global » = symlink `~/.local/bin/claude` ; `DISABLE_AUTOUPDATER=1` pour figer.
+
+**Où on en est.** Fix MCP paper prêt (branche `fix/mcp-paper-order-contract`, **non commit**). **Les 4 lots pas encore codés** — en attente du choix moteur (logout OAuth pour MiniMax, ou juniors Claude natifs).
+
+## 2026-07-08 — Les 4 lots codés (senior direct, pas de swarm) : chat runtime, config Live env, prix on-chain, markets limit
+
+**Quoi.** Les 4 lots cadrés plus haut, codés en direct (le swarm MiniMax restant bloqué en 401). Fix MCP paper d'abord commit (`560dd57`, branche `fix/mcp-paper-order-contract`), puis branche `feat/roadmap-lots`. **766 tests verts** (front+back), typecheck 8/8, **lint 0 erreur**.
+
+**Lot #4 — route `/markets` respecte `limit`.** `server.ts` `app.get("/markets")` ignorait le param (250 renvoyés quoi qu'il arrive). Ajout d'un querystring `limit` borné à la taille de la liste (même patron que `/history` et `/book`), slice au niveau route. Test via `inject` (`server.test.ts`).
+
+**Lot #1 — chat agent runtime (débloque `AgentView`).** La route `/api/agent-chat/stream` construisait un `McpContext` **stub throw-loud** (`buildAgentChatCtx`) → chaque outil du chat explosait. **Décision d'archi (ponytail) : self-HTTP plutôt qu'in-process.** Les adapters HTTP `@tide/mcp` (`httpPaperBackend`, `httpTradingBackend`…) encodent déjà toute la couche de traduction de contrat (symbol→pair, price, `Fill`→result) qu'on venait de corriger ; refaire des adapters in-process aurait **dupliqué** cette couche = 2e endroit pour re-casser le contrat. Donc : nouveau module `apps/api/src/agent/chat-context.ts` (`buildAgentChatCtxFactory`) qui bâtit le `McpContext` via `loadContext` de `@tide/mcp` — backends prix/paper/trading/perp/competitions = adapters HTTP pointés sur **ce serveur** (`http://127.0.0.1:${port}`), agent/mandat/actions = **stores locaux** (CRUD direct, pas de traduction). `loadContext` valide l'agent (non stoppé) + **exige un mandat actif** → sinon lève, et la route renvoie **400 avant** d'ouvrir le SSE (plus de faux succès). Nouveaux exports `@tide/mcp` (`index.ts`) : `TideApiHttp`, les 6 factory `http*Backend`, `loadContext`. Câblage `app.ts` (`agentChatCtx` forward) + `main.ts` (fabrique gated sur `TIDE_LLM_API_KEY`, port lu avant `listen`).
+
+**Lot #2 — config Live par env.** `ONCHAIN_POOLS` (`{}` **en dur** `main.ts:70`) → `env.readOnchainPools()` (format **JSON**, validation shape + adresses issuer, lève si cassé). Notion réseau : `env.readXrplNetwork()` (`mainnet`|`testnet`, défaut mainnet, lève sur valeur inconnue). **Trou testnet fermé** : `buildExecDeps` — Live activé hors mainnet **sans** `TIDE_RLUSD_ISSUER` = quote par défaut = émetteur RLUSD **mainnet** (inexistant ailleurs) → **on lève** au boot (vérifié runtime : `TIDE_XRPL_NETWORK=testnet TIDE_SOURCE_TAG=7777` → refuse de démarrer avec le message exact). Tests `env.test.ts` (9).
+
+**Lot #3 — prix on-chain réels dans `plan-live`.** `planLiveOffer` alimentait `planExecution` avec le **prix CEX dupliqué** en `ammPrice` ET `bookPrice`. Ajout d'un `OnchainExecReader` (sous-ensemble de `XrplClient`, satisfait structurellement) : quand un nœud est câblé, prix réels du DEX = **AMM spot** (`ammSpotPrice`) + **meilleur prix du carnet côté sens** (`bookQuote`, **ask à l'achat / bid à la vente** — insight : un `OfferCreate` matche le carnet, donc le carnet est la référence d'exécution). `planLiveOffer` devient **async** → `planFor`/`/exec/plan` awaités. Repli CEX conservé (mode démo sans nœud). `main.ts` : `buildExecDeps(sourceTag, network, xrpl)` expose `xrpl` comme `onchain`. Tests mock reader (best-exec `venue=book`, side-aware, throw sur carnet incohérent).
+
+**Cheminement (alternatives écartées).**
+- Lot #1 **in-process** (le plan initial nommait `in-process-context.ts`) **écarté** au profit du self-HTTP : DRY (une seule couche de traduction, celle du serveur MCP externe, déjà prouvée le matin). Coût assumé : un aller-retour HTTP local par appel d'outil (négligeable pour un chat) — `ponytail:` ceiling noté.
+- Lot #3 **dégradation mono-source** (si l'AMM tombe, retomber sur le carnet seul) **écartée** : les deux lectures on-chain sont requises, on propage l'erreur — un swap réel doit être prix sur un référentiel cohérent, pas un patchwork. Ceiling noté : prix haut-de-carnet (non pondéré par la quantité), pas de cross-check CEX.
+
+**Bugs & fix.** Aucun bug bloquant. `loadContext` (`@tide/mcp`) existait déjà et attend `agents.get`/`mandates.getActive` (interfaces stores locaux) → les stores SQLite/InMemory d'apps/api sont **structurellement compatibles** avec les types miroir `@tide/mcp` (typecheck le confirme, zéro cast).
+
+**Vérifié (runtime).**
+- Lot #1 : **vrai serveur qui écoute** (`agent-chat-ctx.test.ts`) → fabrique → `ctx.trading.placeOrder(XRP 100 @0.5)` exécuté **self-HTTP → route → PaperService** → XRP crédité / RLUSD débité ; + chemin 400 sans mandat. (Le pilotage LLM lui-même reste couvert par `agent-chat-service.test.ts` avec client mocké.)
+- Lot #2 : boot mainnet → `live:on` ; boot testnet sans issuer → **refus au démarrage** (message exact).
+- Lots #3/#4 : logique par tests (mock on-chain + `inject`), boot mainnet OK après les 4 lots.
+
+**Reste.** Path complet lot #3 contre un **vrai nœud mainnet** (AMM/carnet XRP/RLUSD réels) = env Armand (`XRPL_WSS_URL`). Chat piloté par un **vrai LLM** = `TIDE_LLM_API_KEY`. Dette pré-existante inchangée : cross-user isolation apps/api, signature mandat Xaman réelle, Live agent (clés AES).
+
+## 2026-07-08 — Chat agent multi-provider : DeepSeek V4 via endpoint Anthropic-compatible [non commit]
+
+**Quoi.** `AgentChatService` accepte un `baseUrl` optionnel (`TIDE_LLM_BASE_URL`) → n'importe quel endpoint **Anthropic-compatible** est piloté par le même SDK, tool-use inclus. Objectif : faire tourner le chat de l'UI (`AgentView`) sur un modèle **pas cher** (DeepSeek `deepseek-v4-flash`) au lieu de Claude. ~15 lignes, gated par env (sans la var → API Anthropic, comportement inchangé). Touche `agent-chat-service.ts` (type factory `(baseUrl?) => Anthropic`, champ `baseUrl`, `clientFactory(this.baseUrl)`), `config/env.ts` (`readLlmBaseUrl`, validée http(s)), `main.ts` (passe le baseUrl). Test-guard ajouté (le `baseUrl` atteint bien la factory). Non commit.
+
+**Pourquoi.** Décision produit : offrir des **crédits AI gratuits par compte** sur un modèle bon marché, top-up en envoyant du XRP à une adresse Tide (~2 $ → +crédits) — la détection du virement réutilisera l'indexeur d'attribution. Prérequis : un provider LLM pas cher. DeepSeek V4 flash coche la case.
+
+**Cheminement.** Le service était câblé en dur sur `@anthropic-ai/sdk` (`messages.stream`, blocs `tool_use`). DeepSeek parle nativement OpenAI-compat → a priori incompatible. **Vérif doc** : DeepSeek expose un endpoint **Anthropic-compatible** (`https://api.deepseek.com/anthropic`), même clé, et le **tool-use y marche sans modification** (mapping auto : `claude-sonnet*`/`claude-haiku*` → `deepseek-v4-flash`, `claude-opus*` → `deepseek-v4-pro`). Donc **écarté** l'ajout d'un chemin OpenAI-compat (plus de code) au profit d'un simple `baseURL` injecté dans `new Anthropic({ baseURL })`. Le `defaultAnthropicClientFactory` prend désormais un `baseUrl` ; les tests injectent une factory qui l'ignore (arité optionnelle).
+
+**Bugs & fix.** Aucun. Le modèle « v4 flash » existe bien (l'ancien `deepseek-chat` a été déprécié → migré V4) ; le nom exact sera confirmé avec la clé.
+
+**Reste.** Test **live** (clé DeepSeek → `.env` : `TIDE_LLM_API_KEY` + `TIDE_LLM_BASE_URL=https://api.deepseek.com/anthropic` + `TIDE_LLM_MODEL=deepseek-v4-flash`, lancer back+front, exercer `AgentView` avec vrais appels d'outils). **Système de crédits** à concevoir (brainstorming) : solde par compte, métrage (message vs token), mapping $→crédits, détection top-up XRP via indexeur, garde « 0 crédit → bloque ».
+
+## 2026-07-08 — Chat agent live avec DeepSeek V4 : 3 bugs bloquants trouvés au runtime [non commit]
+
+**Quoi.** Premier test **live** du chat `AgentView` avec DeepSeek V4 flash (clé réelle d'Armand). L'UI affichait « Error: Network error ». Débogage runtime (vrai backend + curl bout en bout) → **3 bugs bloquants** corrigés, puis chat prouvé end-to-end : `get_market XRP` → DeepSeek répond « The current price of XRP is $1.086 ».
+
+**Bugs & fix.**
+1. **Fetch/EventSource relatifs côté front.** `useAgentChat.ts` (`fetch("/api/agent-chat/stream")`) et `useAgent.ts` (`EventSource("/api/agents/events")`) utilisaient des URLs **relatives** → la requête partait vers l'origine Vite (:5173), jamais le backend (:3000) → « Network error ». Le reste du front passe par `API_BASE` (`lib/client.ts`). Fix : `API_BASE` exporté + utilisé dans les deux (racine du bug, les 2 consommateurs SSE partageaient le défaut).
+2. **CORS perdu sur les réponses SSE hijackées.** Les deux routes SSE (`/api/agent-chat/stream`, `/api/agents/events`) font `reply.hijack()`. `@fastify/cors` pose `Access-Control-Allow-Origin` via un hook Fastify, mais **hijack court-circuite l'écriture gérée par Fastify** → en-tête perdu → le navigateur bloque la réponse cross-origin. Fix racine : helper `startEventStream(request, reply)` qui **reflète l'Origin** sur `reply.raw` + pose les en-têtes SSE + `flushHeaders()` (sans quoi Node retient les en-têtes jusqu'au 1er `write` → flux jamais « ouvert » côté navigateur). Un seul helper pour les 2 routes.
+3. **Input du `tool_use` perdu (indexation par ordre de push).** `AgentChatService.drive` accumulait les `tool_use` dans un tableau `toolUses` indexé par ordre de push, mais lisait les `input_json_delta` via `toolUses[event.index]` (index **global** du bloc). DeepSeek V4 (modèle raisonneur) émet un bloc **`thinking` en index 0**, décalant le `tool_use` en index 1 → `toolUses[1]` undefined → input jamais accumulé → `get_market` recevait `symbol: ""` → boucle jusqu'à `MAX_TOOL_ITERATIONS`. Claude mettait le tool_use en index 0 (marchait par chance, d'où les tests verts). Fix : **Map clé par `event.index`**. Test de régression ajouté (thinking en 0, tool_use en 1 → input `{"symbol":"BTC"}` bien reçu).
+
+**Cheminement.** Diagnostic strictement runtime : `curl` sur `/config` (CORS OK) vs `/api/agents/events` (CORS absent) a isolé le bug #2 ; un log temporaire des events bruts DeepSeek a **confirmé** le bug #3 (bloc `thinking` index 0) au lieu de le deviner. Le rate-limit CoinGecko (HTTP 429, dû à mes restarts rapprochés) a fait passer `get_market` par « Price unavailable » un instant — transitoire, pas un bug (feed chaud → prix OK).
+
+**Vérifié.** Chat end-to-end DeepSeek (tool-use + streaming + réponse). Suite **460 tests** verte (3 tests front réalignés sur l'URL absolue), typecheck api+web, lint 0.
+
+**Reste.** Vérif navigateur par Armand (créer un mandat via `AgentView` puis chatter). Puis **système de crédits** (brainstorming).
+
+## 2026-07-08 — Création de mandat : format des paires + activation (le chat exigeait un mandat actif) [non commit]
+
+**Quoi.** Après les 3 bugs SSE/chat, deux blocages restaient sur « Create mandate » (le chat exige un mandat **actif** via `loadContext`). Corrigés → chaîne complète prouvée : agent → mandat → activation → chat DeepSeek (« XRP is currently trading at $1.085 »).
+
+**Bugs & fix.**
+1. **Format des paires.** Le front envoyait `pairesAutorisees: ["XRP/RLUSD"]` (notation de paire) mais le backend valide chaque entrée contre `/^[A-Z0-9]{2,10}$/` (SYMBOLE de base — le guard fait `pairesAutorisees.includes(base)`, quote toujours RLUSD) → `createMandate: pairesAutorisees[0] doit matcher …`. Fix : `MandateForm.syncPairs` extrait la base (avant `/`) + majuscules (`XRP/RLUSD, BTC/USDT` → `["XRP","BTC"]`).
+2. **Mandat jamais activé.** `useMandate.create` créait le mandat en `pending` et s'arrêtait là (signature Xaman non branchée = dette). Sans mandat actif, le chat/les outils refusent (garde serveur). Fix : après création, activation via le callback de signature avec une **signature simulée** (le backend ne la vérifie pas — cf. `onSignCallback`). Nouveau `client.signMandate(mandateId, signature)` (POST `/api/sign/mandate-callback`, 200). Marqué comme raccourci démo : à remplacer par la vraie signature Xaman non-custodiale avant le mode Live.
+
+**Vérifié.** Chaîne end-to-end (curl contre le backend live, `pairesAutorisees:["XRP"]`) : mandat `active`, chat DeepSeek répond avec le prix réel. Suite **483 tests** verte (tests `useMandate`/`MandateForm` réalignés : 2 appels create+sign, statuts 201/200), typecheck 8/8, lint 0.
+
+**Reste.** Vérif navigateur Armand (hard refresh → Create mandate → chat). Signature Xaman réelle du mandat (remplace la simulée). Puis **système de crédits**.
+
+## 2026-07-08 — AgentView UX : feedback mandat + rendu du chat [non commit]
+
+**Quoi.** Après que le chat DeepSeek marche, deux problèmes d'UX signalés par Armand : (1) « Create mandate » ne donnait aucun retour visible, (2) le chat affichait du markdown brut (`**gras**`, tables `| … |`). Corrigés.
+
+**Feedback mandat.** Root cause : `useAgent.refresh()` ne chargeait QUE les agents — `activeMandate` restait `null` → `showMandateForm` (= `currentAgent && activeMandate === null`) toujours vrai → le formulaire s'affichait en permanence même après création. Fix : nouveau `useAgent.loadActiveMandate(agentId)` (via `client.mandates(agentId)`, filtre `status==="active" && validUntil>now`), appelé par `AgentView` au mount ; `onMandateCreated(mandate)` pose `activeMandate` directement (feedback instantané, le mandat renvoyé est déjà actif). `AgentView` affiche désormais une **carte résumé** (« ✓ Mandat actif — l'agent peut trader » + capital/paires/levier/perte-jour/validité) à la place du formulaire une fois le mandat actif. `loadActiveMandate` gardé HORS de `refresh` (séparation : `refresh` = agents only, tests inchangés).
+
+**Rendu du chat.** (a) System prompt durci : réponses en **texte simple**, interdiction des tableaux/titres/listes markdown (le front ne rend que gras + code), 1-3 phrases. (b) Rendu inline SÛR côté front : nouveau util `lib/inline-markdown.ts::parseInline` qui découpe `**gras**`/`` `code` `` en segments typés, rendus via bindings `{{ }}` (échappés par Vue) — **aucun `v-html`**, aucun risque XSS sur la sortie du LLM (cohérent avec la ligne « pas de markdown/v-html » du projet). (c) Cartes d'appels d'outils : chips lisibles (nom + résultat tronqué à 160 car., état erreur rouge) au lieu d'un `JSON.stringify` brut inline.
+
+**Cheminement.** Markdown complet (marked + DOMPurify) **écarté** : dépendance + `v-html` sur sortie LLM = surface XSS, contraire à la ligne projet. Un parser inline maison (gras/code) + un prompt qui bannit les tables couvre 95 % du besoin sans dépendance. `parseInline` extrait en util (12 lignes) → testable (5 tests : gras/code, sauts de ligne préservés, `**` orphelin = texte brut, vide).
+
+**Vérifié.** **488 tests** verts (tests `useMandate`/`MandateForm`/`useAgent` réalignés au fil des changements), typecheck 8/8, lint 0. Rendu visuel = vérif navigateur Armand (front HMR ; backend à relancer pour le system prompt).
+
+**Reste.** Signature Xaman réelle du mandat. **Système de crédits** (brainstorming). Beaucoup de fixes non commit accumulés (chat DeepSeek + 5 bugs + UX) → proposer un commit avant les crédits.
+
+## 2026-07-08 — Agent : mémoire, contrat open_position, guard capital, affichage tools [non commit]
+
+**Quoi.** Test réel de l'agent (stratégie mean-reversion perp) → 4 problèmes trouvés et corrigés. Après fix, l'agent **trade vraiment** : chat 2-tours avec mémoire → `open_position` → position perp créée (vérifié runtime).
+
+**Bugs & fix.**
+1. **Pas de mémoire.** `useAgentChat.send` n'envoyait pas l'historique → chaque message repartait de zéro (« exécute » → l'agent redemandait quoi). Fix : envoi de `history` (les N=20 derniers messages `{role,content}` AVANT le message courant) — le backend `buildMessages` le préfixe déjà. Vérifié : « execute it now » avec historique → l'agent enchaîne sans redemander.
+2. **`open_position` cassé (HTTP 400).** Même classe que le fix `place_order` : la route paper attend un `OpenPositionInput` domaine `{product, symbol, side, qty, entry, leverage, margin, fee}`, l'adaptateur MCP POSTait `{symbol, side, qty, leverage}` bruts → 400 (`product`/`entry`/`margin`/`fee` manquants). Fix dans `api.openPosition` (couche anti-corruption) : résout le prix d'entrée (GET `/prices/:symbol`), calcule `margin = notionnel/levier`, `fee = notionnel × 0,06 %` (taker), pose `product="perp"`, et re-mappe le `Position` domaine → `{positionId, entryPrice, liquidationPrice}` (liquidation **indicative** : pas de liquidation serveur). Vérifié : position `XRP long qty 832.6 @1.081, margin 300, fee 0.54` créée.
+3. **Guard capital faux (double comptage + formule perp).** `enforceRiskLimits` faisait `tradeValue = qty × px × levier` (= 2698 pour une marge réelle de 300) PUIS ajoutait `capitalEngaged` (que les tools remplissent déjà avec le capital du trade) → double compte + `×levier` au lieu de la marge → tout trade perp raisonnable rejeté (« Capital engaged X + new trade Y would exceed max »). Fix : le guard **borne directement** `capitalEngaged` (le capital/marge du trade, déjà correct côté tools : perp `qty×px/levier`, spot `qty×px`) par `capitalMax`. Cap **par trade** (l'engagement cumulé entre positions n'est pas suivi — dette assumée en paper). Vérifié : marge 300 ≤ 1000 → passe.
+4. **Affichage tools : dump JSON.** Les cartes montraient `{"symbol":"XRP",...}` brut. Fix : `formatToolResult` → **✓** en succès, message en erreur ; plus de JSON (les données utiles sont déjà dans la réponse texte de l'agent).
+
+**Cheminement.** Guard : deux sémantiques possibles (cumul « existant + nouveau » vs « par trade »). Les tools passant le capital du NOUVEAU trade dans `capitalEngaged` (pas l'existant), le cumul n'était pas réellement câblé → on assume le **cap par trade** (minimal, correct, préserve les tests guard qui passaient un `capitalEngaged` explicite). Fetch existing-engaged (cumul réel) = amélioration future.
+
+**Vérifié.** Runtime : mémoire (2-tours), `open_position` (position réelle + audit + soldes), guard (marge 300 passe). Suite **488 tests** verte (tests guard/perp/api-client/useAgentChat réalignés), typecheck 8/8, lint 0.
+
+**Reste.** Vérif navigateur Armand (mémoire + display + trade). Signature Xaman réelle. Cumul d'engagement multi-positions (dette). **Système de crédits**.
+
+## 2026-07-08 — ACTION LOG : les trades exécutés y remontent (rechargement post-tour) [non commit]
+
+**Quoi.** Le trade exécuté par l'agent n'apparaissait pas dans l'ACTION LOG (l'UI montrait un historique figé au mount). Câblé → après chaque tour de chat, le journal se recharge et fait apparaître les actions (trades) exécutées.
+
+**Cheminement.** Deux causes : (1) `ActionLog.vue` chargeait au mount mais **n'appelait jamais `connectSse`** → aucune mise à jour live ; le bus SSE front était mort de toute façon (personne n'appelait `connectSse`). (2) Le contexte chat n'a **pas de broadcaster** → les outils n'émettent pas d'`agent_action`, et l'event SSE `{type,agentId,tool,result}` ne matche pas l'`AgentActionDto` attendu par le journal. La voie SSE temps-réel = broadcaster à câbler + event à mapper + `connectSse` — trop de plomberie. **Voie retenue (plus simple, fiable) : rechargement post-tour.** L'action est déjà auditée côté serveur (au bon format `AgentActionDto`) ; il suffit de refetch après le tour.
+
+**Refactor.** `ActionLog.vue` devient un **composant d'affichage pur** (prop `actions`, plus de `useAgent`/`loadActions`/SSE). `AgentView` possède l'état (`useAgent.actions`), le passe au journal, et **recharge sur `@turn-complete`** émis par `ChatPanel` à la fin d'un tour. Bénéfice annexe : plus de double instance `useAgent` (le journal réutilise celle d'`AgentView`).
+
+**Vérifié.** **488 tests** verts (tests `ActionLog` réécrits en mode prop, plus de mock HTTP/async), typecheck 8/8, lint 0. Rendu = vérif navigateur.
+
+**Note.** Les 2 vieux `open_position ... Error: Capital…` visibles = échecs d'AVANT le fix guard (audit historique légitime) ; un agent frais démarre avec un journal propre. Rechargement au **tour** (pas mid-stream) — suffisant pour un chat.
+
+**Reste.** Signature Xaman réelle. **Système de crédits**.
+
+## 2026-07-08 — Fermeture de position + création d'un nouveau mandat [non commit]
+
+**Quoi.** Questions d'Armand en testant : l'agent ferme-t-il seul ? comment créer un nouveau mandat ? → clarifications + 2 fix.
+
+**Fermeture.** `close_position` **marche** (pas de bug de contrat, contrairement à `open_position`) : la route `/accounts/:userId/positions/:positionId/close` récupère le prix serveur (`deps.getPrices()`), `paper.closePosition` calcule le PnL réalisé (planché à −marge), crédite le solde ; le MCP POST sans body suffit. **Vérifié runtime** : ouvrir puis « close my XRP position » → position fermée, PnL crédité, `positions: []`. **Pas de fermeture autonome** : l'agent est piloté par le chat (réactif), il n'agit qu'au message ; pas de boucle serveur qui surveille le prix et ferme sur TP/SL (dette : autonomie = feature à part — scheduler + monitoring).
+
+**Nouveau mandat.** Trou UX : une fois un mandat actif, le formulaire était caché → aucun moyen d'en créer un autre. Fix : bouton « Nouveau mandat » sur la carte résumé (`renewing` ré-ouvre le formulaire) ; le nouveau, une fois signé, **supersede** l'ancien. Comme deux mandats « active » peuvent coexister (pas de révocation auto), `getActive` (SQLite + InMemory) et le front `loadActiveMandate` ordonnent désormais par **`signed_at` DESC** → le plus récemment signé gagne. Dette : l'ancien reste `active` en base (ignoré) — révocation propre = amélioration future.
+
+**Vérifié.** **488 tests** verts, typecheck 8/8, lint 0. Fermeture + nouveau mandat = vérif navigateur.
+
+**Reste.** Fermeture/monitoring **autonome** (scheduler). Révocation propre du mandat superseded. Signature Xaman réelle. **Système de crédits**.
+
+## 2026-07-08 — HANDOFF de session : agent DeepSeek live, et le cap « chatbot → vrai agent »
+
+**⚠️ TOUT LE TRAVAIL DE CETTE SESSION EST NON COMMIT** (sur disque, arbre git). Branche `feat/roadmap-lots`. Fix MCP paper déjà commit avant (`560dd57`) + 4 commits roadmap (`02cc055`/`89dcee0`/`3d402c4`/`6ef603f`). **Tout ce qui suit est par-dessus, non commit** → premier réflexe de la reprise : **committer** (découpage suggéré : chat runtime / provider DeepSeek / contrats MCP open+close / guard capital / UX front / mémoire / action log / mandat).
+
+**Ce qu'on a fait cette session (résumé des entrées ci-dessus).**
+1. **Roadmap 4 lots** (committés) : markets `limit`, chat runtime (`agent/chat-context.ts`, self-HTTP), config Live env (réseau/pools + guard testnet), prix on-chain `plan-live`.
+2. **Provider DeepSeek** : `AgentChatService` accepte `TIDE_LLM_BASE_URL` → endpoint Anthropic-compatible DeepSeek (`https://api.deepseek.com/anthropic`, `deepseek-v4-flash`), tool-use natif. Config dans `apps/api/.env` (clé d'Armand posée).
+3. **Chat live prouvé end-to-end** + 3 bugs bloquants (URLs relatives front→`API_BASE` ; CORS perdu sur SSE hijacké→helper `startEventStream` mirror Origin+flushHeaders ; input tool_use perdu car bloc `thinking` DeepSeek en index 0→Map par `event.index`).
+4. **Mandat** : format paires (base-symbol), activation via signature simulée (`client.signMandate`), feedback UI (carte « Mandat actif »), bouton « Nouveau mandat » + supersede (`getActive` ORDER BY signed_at DESC).
+5. **Trade end-to-end** : contrat `open_position` (traduction domaine entry/margin/fee, comme `place_order`), guard capital corrigé (borne la marge, plus de `×levier`/double-compte), `close_position` vérifié.
+6. **UX** : mémoire de conversation (`useAgentChat` envoie l'historique), rendu markdown sûr (gras/code, pas de v-html), cartes d'outils (✓/erreur, plus de JSON), indicateur « Réflexion… » animé, ACTION LOG rechargé après chaque tour.
+État : **488 tests verts, typecheck 8/8, lint 0**.
+
+**LE CAP PRODUIT (décision à prendre la reprise) : « chatbot avec outils » → « vrai agent autonome ».**
+Constat d'Armand, juste : aujourd'hui l'agent est **réactif** (il faut le prompt à chaque tour). C'est déjà plus qu'un chatbot (actions réelles + gardes + mandat + audit), mais pas un agent autonome. **Manque = la boucle d'autonomie.** Toute la fondation existe (20 outils, mandat, gardes durs, kill switch, audit, LLM). À concevoir (brainstorming) :
+- **Scheduler serveur** qui, à intervalle (ou sur événement de prix), réveille l'agent avec le contexte (marché + positions ouvertes + mandat + historique) et un prompt « décide et agis » ; borné par le mandat + le kill switch ; chaque action auditée + broadcastée (l'ACTION LOG/SSE devient enfin utile en temps réel).
+- Questions : cadence vs event-driven ; qui paie le LLM en continu (→ lien direct avec le **système de crédits**) ; TP/SL exécutés côté serveur (aujourd'hui déclencheurs client, dette) ; garde-fou anti-boucle-infinie (coût LLM).
+
+**Prochaines étapes (ordre suggéré).** (1) Commit tout. (2) Concevoir l'autonomie (brainstorming) — c'est LE différenciateur. (3) Système de crédits (couplé : l'autonomie consomme du LLM en continu). (4) Signature Xaman réelle du mandat. (5) Révocation propre du mandat superseded.
+
+---
+
+## 2026-07-13 — Déploiement de l'app sur tidetrade.xyz (front + backend + Cloudflare Tunnel)
+
+**Quoi.** Tide (front Vue + backend Fastify) déployé en prod sur le serveur (debian-docker), servi via **Cloudflare Tunnel** — même pattern qu'artbytes/embr (rien publié sur l'hôte). Remplace la landing countdown sur la racine.
+- **`tidetrade.xyz`** → service `web` (nginx:alpine sert le build front `dist/`).
+- **`api.tidetrade.xyz`** → service `api` (node:22, `tsx src/main.ts`, DB SQLite sur volume Docker).
+- Nouveaux fichiers `deploy/` : `Dockerfile.api`, `docker-compose.prod.yml` (api + web + cloudflared), `nginx.conf` (SPA fallback), `api.env.example`, + `.dockerignore` racine.
+- Front buildé avec `VITE_API_BASE=https://api.tidetrade.xyz` ; CORS `origin:true` côté API → cross-origin OK sans config.
+
+**Pourquoi.** Vitrine live pour le jury + base pour activer le Live mainnet ensuite. **Sous-domaine API** (plutôt qu'un proxy de chemin nginx) car les routes API sont mixtes (`/markets`, `/prices`, `/api/agents`…) — un sous-domaine évite un reverse-proxy multi-préfixes fragile.
+
+**Cheminement.** Packages `@tide/*` en source TS (`main: src/index.ts`) → tsx compile à la volée, **pas de build JS**. Transfert par **tar over ssh** (rsync absent du serveur). Réutilise le tunnel `tide` (token de la landing) : landing arrêtée (`compose down`), app lancée avec le même token, hostnames re-routés dans le dashboard (Published application routes : `tidetrade.xyz→web:80`, `api.tidetrade.xyz→api:3000`).
+
+**Bugs & fix.**
+- **Build échoue en `node:20`** : pnpm 11.8 ET le backend utilisent le builtin `node:sqlite` (absent < Node 22). Fix : `FROM node:22-slim`.
+- **`--frozen-lockfile` casse** : `packages/evm` exclu du transfert → lockfile non satisfait. Retiré (build one-shot, pnpm résout).
+- **502 Bad Gateway** au 1er test : le tunnel routait encore `tidetrade.xyz → landing:80` (dashboard pas encore changé). Résolu en re-routant vers `web:80`.
+- **`api.tidetrade.xyz` HTTP 000** : faux négatif = cache DNS de la box locale (vieux NXDOMAIN). Via résolveur `1.1.1.1` → 200. Se résout au flush/TTL.
+- **Trou sécu colmaté** : `deploy/api.env` (secrets) non couvert par `.gitignore` (`**/.env` ne matche pas `api.env`) → ajout `api.env` / `deploy/api.env`.
+
+**Vérifié.** `tidetrade.xyz` → 200 (front TIDE), `api.tidetrade.xyz/config` → 200. 3 conteneurs healthy (`xaman:on live:on chat:on`).
+
+**Reste.** L'API tourne avec un **SourceTag de test (100)** (ancien `apps/api/.env`) — pour le Live réel : éditer `deploy/api.env` (`TIDE_SOURCE_TAG` + `XRPL_WSS_URL=wss://s1.ripple.com`) puis `docker compose restart api`.
+
+## 2026-07-13 — Session : commit du lot DeepSeek/deploy + décisions (LLM providers, crédits, wallet paper)
+
+**Quoi.** Session de reprise (brief `/reprise`). Trois volets : (a) **commit + push** du gros lot non-commit de la session précédente + du scaffolding de déploiement ; (b) **décisions produit/archi** (providers LLM, crédits, identité paper) ; (c) feature **badges NFT** (entrée dédiée ci-dessous). Branche `feat/roadmap-lots` (upstream posé, poussée).
+
+**Commits de reprise.**
+- `6cfb0a8` **feat(agent)** : le lot DeepSeek non-commit (chat multi-provider via `TIDE_LLM_BASE_URL`, 3 fixes SSE/CORS, UX mandat, open/close position, mémoire, ACTION LOG, `inline-markdown`). *488 tests verts au moment de l'écriture par la session d'avant, non re-exécutés à ce commit.*
+- `0a4fd80` **chore(deploy)** : scaffolding déploiement isolé (Docker `Dockerfile.api` + `docker-compose.prod.yml` + `nginx.conf` + `api.env.example`), `landing/` (page statique + compose), `.dockerignore`, `.gitignore` (ignore `api.env` réel, garde le `.example`). *Non documenté auparavant ; aucun secret détecté au scan.*
+
+**Décision — providers LLM (NVIDIA vs DeepSeek).**
+- Le chat agent est câblé sur le **SDK Anthropic + override `baseURL`** → marche pour tout endpoint **Anthropic-compatible** : DeepSeek (`https://api.deepseek.com/anthropic`, `deepseek-v4-flash`) est déjà prouvé end-to-end.
+- **build.nvidia.com (NIM)** est **OpenAI-compatible** (`https://integrate.api.nvidia.com/v1`, clé `nvapi-`), **PAS** Anthropic-compat → **ne se branche pas** via le `baseURL` actuel (le SDK Anthropic envoie `/v1/messages` + blocs `tool_use` ; NVIDIA attend `/v1/chat/completions` + `tool_calls`). Pour l'utiliser : soit un **driver OpenAI** dans `AgentChatService` (~100 lignes, sélection par `TIDE_LLM_PROTOCOL=openai|anthropic`), soit un proxy de traduction (Anthropic↔OpenAI). **Reco** = driver OpenAI in-process (pas d'infra en plus). **Caveat** : le tool-calling NVIDIA dépend du modèle → prendre Llama 3.3 70B / Nemotron. Free tier ~1000 crédits, 40 req/min. À implémenter quand Armand fournit la clé.
+
+**Décision — système de crédits (produit, à venir).** 10 prompts gratuits/compte → **$2 = 50 prompts**, métrage **par prompt** (lisible ; marge positive avec un modèle pas cher), top-up en **envoyant du XRP** à une adresse Tide (détection réutilise l'**indexeur d'attribution** F4). Chantier couplé à l'autonomie (le scheduler consomme du LLM en continu).
+
+**Décision — identité paper (pourquoi aucun wallet généré/fundé).** Confirmé sur le code : le paper trading n'utilise **aucun wallet XRPL**. Identité = **id local anonyme** `tide.paperUserId` (`apps/web/src/composables/usePaper.ts`) ; le « funding » = **solde virtuel** auto-semé par `PaperService.open(userId, { [QUOTE] : PAPER_STARTING_EQUITY })` au premier accès (`apps/api/src/services/paper-service.ts:94`). Wallet connecté (Xaman/Gem) → l'id bascule sur l'**adresse XRPL réelle** (`useSession`). Générer + funder un vrai wallet par visiteur = **écarté** : coûte la réserve de base (~1 XRP/wallet post-baisse déc. 2024) en argent réel, rend Tide **custodial**, et signe une ferme de sybils. Le code de génération de wallet chiffré existe (`agent-xrpl-account-service` + `@tide/mcp/crypto`) mais il est réservé au **compte Live de l'agent**, pas aux users paper. Live = connexion d'un wallet existant (non-custodial). Cette réflexion a directement conduit au design badges (claim signé par un humain plutôt que wallet auto-généré).
+
+**Reste.** Brancher la clé LLM (driver NVIDIA OpenAI **ou** clé DeepSeek sur le câblage actuel) ; spécifier le système de crédits ; statut de `deploy/`+`landing/` à confirmer (garder ?). Feature badges : cf. entrée suivante.
+
+## 2026-07-13 — Badges off-chain + claim NFT on-chain (XLS-20 soulbound) [8 tâches, brainstorm → spec → plan → TDD]
+
+**Quoi.** Nouvelle feature d'acquisition : badges de trading **gagnés off-chain gratuitement** (anime la démo, 0 gas) que le user peut **réclamer en NFT XLS-20 soulbound taggé**, minté on-demand par un issuer serveur et **accepté (signé) par le user** (preuve humaine + funnel Live). Spec [`docs/superpowers/specs/2026-07-13-onchain-badge-rewards-design.md`], plan [`docs/superpowers/plans/2026-07-13-onchain-badge-rewards.md`]. Livré en 8 commits TDD :
+- **T1** `@tide/xrpl` `tx/nft.ts` : builders `buildBadgeMint` (soulbound = pas de `tfTransferable`/`TransferFee`, `URI` hex, `SourceTag`), `buildBadgeSellOffer` (Amount 0 + `Destination`), `buildBadgeAcceptOffer` + readers `meta.nftoken_id`/`meta.offer_id`. `InvalidNftError`, `MAX_NFT_TAXON`.
+- **T2** `@tide/xrpl` `nft/issuer.ts` : `XrplNftIssuer` (mint+offer via `xrpl` `Client` direct — pas de helper seed dans le wrapper read-only ; seam `IssuerLedgerClient` injectable = testé sans réseau).
+- **T3** `apps/api` `badges/catalog.ts`+`merit.ts` : catalogue statique 3 badges (`first_trade`/`ten_trades`/`first_competition`), `earnedCodes` dérivé de l'état paper.
+- **T4** `BadgeStore` (InMemory + SQLite) + migration `badge_claims` (PK `(user_id, badge_code)` = idempotence). On ne persiste **que les claims** (mérite = dérivé).
+- **T5** `BadgeService` : `statusFor` (mérite + join claims via interfaces étroites `BadgeOrdersSource`/`BadgeCompetitionSource`), `claim` (valide adresse, re-vérifie mérite serveur, idempotent, `issuer.issueBadge`), `confirmClaim`.
+- **T6** routes `GET /accounts/:id/badges`, `POST /badges/:code/claim`, `.../claim/confirm` (gated si `badgeService`), `GET /nft-metadata/:code` (statique, non gated). Env `readNftIssuerSeed`+`readPublicBaseUrl`. Wiring `app.ts`/`main.ts` : monte si **issuer seed + `XRPL_WSS_URL` + SourceTag** présents, sinon **OFF**.
+- **T7** `@tide/client` : `badges`/`claimBadge`/`confirmBadgeClaim` + `BadgeDto`.
+- **T8** `apps/web` : `useBadges` (interface client étroite, signature injectée = testable) + grille dans `PortfolioView` + `useWallet.signBadgeAccept` (chemin **GemWallet** : submit `NFTokenAcceptOffer`). **817 tests / 103 fichiers, typecheck 8/8, lint 0.**
+
+**Pourquoi.** Objectif produit d'Armand : « le plus d'users possible », et prouver que ce sont de vrais users via des NFT rewards. Brainstorming : générer un wallet + envoyer un NFT par visiteur = **pire des deux mondes** (coûte ~1,3 XRP de réserve/wallet, custodial, et signe une ferme de sybils → prouve l'inverse). Reframe retenu : **off-chain gratuit pour animer la démo** (agents paper inclus), **NFT on-chain seulement réclamé par un humain qui signe** (crédible + funnel Live + gas quasi nul). Cadre le garde-fou : pas de faux volume Live taggé pour gonfler le compteur orga (wash).
+
+**Cheminement (décisions).** (1) `competition_winner` **retiré** du catalogue initial : pas de vainqueur persisté aujourd'hui (`close()` renvoie les payouts mais rien n'est stocké) → 3 badges dérivables. (2) Pas de helper seed dans `@tide/xrpl` (signature = client Xaman) → `XrplNftIssuer` utilise le `Client` `xrpl` en direct (`autofill`/`sign`/`submitAndWait`, lit `meta.nftoken_id`/`offer_id` plutôt que parser `AffectedNodes`). (3) Mérite **dérivé** (pas de système d'events) ; seul le claim persiste. (4) Accept minimal `{TransactionType, Account, NFTokenSellOffer}` côté front (Gem) → pas de bundle `xrpl` au front, pas d'exposition du SourceTag (le mint+offer le portent déjà).
+
+**Bugs & fix.** Aucun (TDD, chaque tâche verte au commit). Le test de routes a dû asserter le nouveau shape de réponse — pas de régression.
+
+**MàJ (13/07, post-livraison) — accept taggé.** L'`NFTokenAcceptOffer` (tx signé par le user) porte désormais le **SourceTag Tide** : c'est le tx d'un humain → il compte pour l'attribution (compte actif). Construit **côté serveur** (`buildBadgeAcceptOffer` dans `BadgeService.claim`) et renvoyé prêt-à-signer dans la réponse de claim (`acceptTx`) ; le front le soumet tel quel via GemWallet (plus de tx fabriqué au front, pas de bundle `xrpl`). Ripple : `claimBadge` renvoie `{sellOfferId, nftTokenId, acceptTx}` (client `ClaimBadgeResult`), `useBadges`/`useWallet.signBadgeAccept` prennent l'`acceptTx`. Tests des ids passés en 64-hex réalistes (le builder valide le format).
+
+**Reste (dette tracée).** (1) **Xaman-claim** non câblé (chemin Gem uniquement) → route `/sign/badge-accept` (mirror `/sign/live-offer`) à ajouter. (2) Confirmation du claim = confiance au retour de signature (MVP) ; durcissement via l'indexeur F4. (3) Assets d'images des badges (`/badges/*.svg`) à produire. (4) **Vérif navigateur runtime** par Armand (claim GemWallet réel → NFT dans le wallet) — non fait ici. (5) Feature reste **OFF** tant que `TIDE_NFT_ISSUER_SEED` n'est pas fourni.

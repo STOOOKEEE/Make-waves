@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TIDE — Launching on XRPL Mainnet</title>
+<meta name="description" content="Paper trading + on-chain competitions on XRPL. Then trade for real. Launching soon." />
+
+<!-- Open Graph (partage social) -->
+<meta property="og:title" content="TIDE — Launching on XRPL Mainnet" />
+<meta property="og:description" content="Paper trading + on-chain competitions on XRPL. Then trade for real." />
+<meta property="og:type" content="website" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+<style>
+  /* ── Tokens repris de apps/web/src/styles/tokens.css ─────────────── */
+  :root {
+    --blue: #4f6aff;
+    --panel: #16161b;
+    --text: #ffffff;
+    --soft: rgba(255, 255, 255, 0.6);
+    --mut2: rgba(255, 255, 255, 0.38);
+    --line2: rgba(255, 255, 255, 0.16);
+    --live: #ff9d3c;
+    --disp: "Archivo", Helvetica, Arial, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    min-height: 100vh;
+    background: var(--blue);
+    color: var(--text);
+    font-family: var(--disp);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6vh 20px;
+    position: relative;
+    overflow-x: hidden;
+  }
+  /* Grain SVG en overlay (même recette que base.css) — évite le look « gradient flou ». */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.06;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  main { width: 100%; max-width: 720px; text-align: center; position: relative; z-index: 1; }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid var(--line2);
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 28px;
+  }
+  .kicker b { color: var(--live); font-weight: 600; }
+
+  h1 {
+    font-size: clamp(64px, 16vw, 168px);
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 0.9;
+    margin-bottom: 20px;
+  }
+
+  .tagline {
+    font-size: clamp(16px, 2.6vw, 22px);
+    font-weight: 600;
+    color: var(--text);
+    max-width: 30ch;
+    margin: 0 auto 44px;
+    line-height: 1.35;
+  }
+  .tagline .dim { color: var(--soft); }
+
+  /* Countdown en bento sombre */
+  .countdown {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    max-width: 460px;
+    margin: 0 auto;
+  }
+  .cell {
+    background: var(--panel);
+    border: 1px solid var(--line2);
+    border-radius: 14px;
+    padding: 18px 8px 12px;
+  }
+  .cell .num {
+    font-family: var(--mono);
+    font-size: clamp(30px, 8vw, 46px);
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .cell .lab {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--mut2);
+    margin-top: 10px;
+  }
+
+  .note {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--soft);
+    margin-top: 28px;
+    min-height: 18px;
+  }
+
+  .lang {
+    position: fixed;
+    top: 18px;
+    right: 20px;
+    z-index: 2;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+  .lang button {
+    background: transparent;
+    color: var(--soft);
+    border: none;
+    font-family: var(--mono);
+    font-weight: 400;
+    font-size: 12px;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .lang button.on { color: var(--text); font-weight: 600; }
+
+  @media (max-width: 420px) {
+    .countdown { gap: 6px; }
+    .cell { padding: 14px 4px 10px; border-radius: 10px; }
+  }
+</style>
+</head>
+<body>
+  <div class="lang">
+    <button data-lang="en" class="on">EN</button><span style="color:var(--mut2)">/</span><button data-lang="fr">FR</button>
+  </div>
+
+  <main>
+    <span class="kicker" data-i="kicker">XRPL Mainnet · <b>Paper + Live</b></span>
+    <h1>TIDE</h1>
+    <p class="tagline" data-i="tagline"></p>
+
+    <div class="countdown" role="timer" aria-live="off">
+      <div class="cell"><div class="num" id="d">--</div><div class="lab" data-i="days"></div></div>
+      <div class="cell"><div class="num" id="h">--</div><div class="lab" data-i="hours"></div></div>
+      <div class="cell"><div class="num" id="m">--</div><div class="lab" data-i="mins"></div></div>
+      <div class="cell"><div class="num" id="s">--</div><div class="lab" data-i="secs"></div></div>
+    </div>
+    <p class="note" id="note"></p>
+  </main>
+
+<script>
+  // Date/heure du launch mainnet (ISO 8601, UTC de préférence).
+  const LAUNCH = "2026-07-15T18:00:00Z";
+
+  const I18N = {
+    en: {
+      tagline: 'Paper trade, compete on-chain, then <span class="dim">trade for real</span> — on XRPL.',
+      days: "Days", hours: "Hours", mins: "Min", secs: "Sec", now: "Live now.",
+    },
+    fr: {
+      tagline: 'Paper trading, compétitions on-chain, puis <span class="dim">trading réel</span> — sur XRPL.',
+      days: "Jours", hours: "Heures", mins: "Min", secs: "Sec", now: "En ligne.",
+    },
+  };
+
+  let lang = "en";
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, "0");
+  const target = new Date(LAUNCH).getTime();
+
+  function applyLang() {
+    const t = I18N[lang];
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i]").forEach((el) => {
+      el.innerHTML = t[el.getAttribute("data-i")];
+    });
+  }
+
+  function tick() {
+    const diff = target - Date.now();
+    if (diff <= 0) {
+      ["d", "h", "m", "s"].forEach((k) => ($(k).textContent = "00"));
+      $("note").textContent = I18N[lang].now;
+      return;
+    }
+    const sec = Math.floor(diff / 1000);
+    $("d").textContent = pad(Math.floor(sec / 86400));
+    $("h").textContent = pad(Math.floor((sec % 86400) / 3600));
+    $("m").textContent = pad(Math.floor((sec % 3600) / 60));
+    $("s").textContent = pad(sec % 60);
+  }
+
+  document.querySelectorAll(".lang button").forEach((b) => {
+    b.addEventListener("click", () => {
+      lang = b.dataset.lang;
+      document.querySelectorAll(".lang button").forEach((x) => x.classList.toggle("on", x === b));
+      applyLang();
+    });
+  });
+
+  applyLang();
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>

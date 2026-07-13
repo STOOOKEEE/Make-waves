@@ -87,6 +87,7 @@ export class SqliteMandateStore implements MandateStore {
       .prepare(
         `SELECT * FROM mandates
          WHERE agent_id = ? AND status = 'active' AND valid_until > ?
+         ORDER BY signed_at DESC
          LIMIT 1`,
       )
       .get(agentId, now);

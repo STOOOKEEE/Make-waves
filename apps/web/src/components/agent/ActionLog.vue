@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
-import type { AgentActionDto, TideClient } from "@tide/client";
-import { useAgent } from "../../composables/useAgent";
+import { computed } from "vue";
+import type { AgentActionDto } from "@tide/client";
 import { useI18n } from "../../i18n/useI18n";
 
-/* Journal temps réel des actions d'un agent. Charge l'historique au mount ;
- * le bus SSE (composable) pousse les nouvelles actions en tête de liste. */
+/* Journal des actions d'un agent — composant d'affichage PUR : la liste est
+ * fournie par le parent (`AgentView`), qui la recharge après chaque tour de
+ * chat (les actions sont auditées côté serveur). */
 
-const props = defineProps<{ client: TideClient; agentId: string }>();
+const props = defineProps<{ actions: readonly AgentActionDto[] }>();
 
 const { t } = useI18n({
   en: {
@@ -26,13 +26,7 @@ const { t } = useI18n({
   },
 });
 
-const { actions, loadActions } = useAgent(props.client);
-
-onMounted(() => {
-  void loadActions(props.agentId);
-});
-
-const items = computed<AgentActionDto[]>(() => actions.value);
+const items = computed<readonly AgentActionDto[]>(() => props.actions);
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);

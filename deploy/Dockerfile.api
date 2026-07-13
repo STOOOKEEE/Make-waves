@@ -1,0 +1,21 @@
+# Backend Tide (monorepo pnpm). Contexte de build = RACINE du repo.
+# Les packages @tide/* sont en source TS (main = src/index.ts) → tsx compile à la
+# volée, pas de build JS. On installe uniquement @tide/api + ses deps workspace
+# (core, xrpl, client, mcp) ; contracts/evm/web sont exclus via --filter.
+# Node 22 requis : pnpm 11.8 et le backend Tide utilisent le builtin `node:sqlite`
+# (absent de Node 20).
+FROM node:22-slim
+RUN corepack enable && corepack prepare pnpm@11.8.0 --activate
+WORKDIR /app
+
+COPY . .
+# Pas de --frozen-lockfile : packages/evm est exclu du contexte, le lockfile
+# global n'est donc pas strictement satisfait. On laisse pnpm résoudre.
+RUN pnpm install --filter @tide/api...
+
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV TIDE_DB_PATH=/data/tide.db
+WORKDIR /app/apps/api
+# Bind sur toutes les interfaces (main.ts écoute déjà host 0.0.0.0).
+CMD ["pnpm", "start"]

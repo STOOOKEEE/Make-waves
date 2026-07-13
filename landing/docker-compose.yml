@@ -1,0 +1,26 @@
+# Landing tidetrade.xyz : page statique servie par nginx, exposée via Cloudflare
+# Tunnel — même pattern que artbytes/embr (rien de publié sur l'hôte, Cloudflare
+# atteint le service par le réseau compose privé, DNS+TLS gérés par Cloudflare).
+#
+#   docker compose up -d
+#
+# Requiert (dans .env, cf. .env.example) :
+#   TUNNEL_TOKEN=...
+# Puis, dans le dashboard Cloudflare Zero Trust, router le hostname
+#   tidetrade.xyz  ->  http://landing:80
+services:
+  landing:
+    image: nginx:alpine
+    container_name: tide-landing
+    restart: unless-stopped
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+    # Pas de ports publiés : Cloudflare l'atteint via le réseau privé (landing:80).
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: tide-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - landing

@@ -61,7 +61,7 @@ describe("ChatPanel", () => {
     // 1 appel POST /api/agent-chat/stream avec le bon corps
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/agent-chat/stream");
+    expect(url).toContain("/api/agent-chat/stream");
     expect(init.method).toBe("POST");
     const body = JSON.parse((init.body as string) ?? "{}");
     expect(body).toMatchObject({

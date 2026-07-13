@@ -24,10 +24,11 @@ describe("enforceRiskLimits", () => {
       capitalEngaged: 0, perteJour: 0, tradesJour: 0, priceUsd: 0.1,
     })).rejects.toMatchObject({ code: "RISK_LIMIT" });
   });
-  it("rejects when capitalEngaged + trade > capitalMax", async () => {
+  it("rejects when the trade's engaged capital exceeds capitalMax", async () => {
     await expect(enforceRiskLimits({
       mandate: mandate(), symbol: "BTC", side: "buy", qty: 0.05, leverage: 1,
-      capitalEngaged: 900, perteJour: 0, tradesJour: 0, priceUsd: 30000,
+      // capitalEngaged = capital du trade (calculé par le tool) ; 1100 > 1000.
+      capitalEngaged: 1100, perteJour: 0, tradesJour: 0, priceUsd: 30000,
     })).rejects.toMatchObject({ code: "RISK_LIMIT" });
   });
   it("rejects when tradesJour + 1 > maxTradesPerDay", async () => {

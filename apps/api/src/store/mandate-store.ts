@@ -41,10 +41,11 @@ export class InMemoryMandateStore implements MandateStore {
 
   async getActive(agentId: string): Promise<Mandate | null> {
     const now = Date.now();
-    const found = [...this.mandates.values()].find(
-      (m) => m.agentId === agentId && m.status === "active" && m.validUntil > now,
-    );
-    return found ?? null;
+    // Le plus récemment SIGNÉ gagne : un nouveau mandat supersede l'ancien.
+    const actives = [...this.mandates.values()]
+      .filter((m) => m.agentId === agentId && m.status === "active" && m.validUntil > now)
+      .sort((a, b) => (b.signedAt ?? 0) - (a.signedAt ?? 0));
+    return actives[0] ?? null;
   }
 
   async get(id: string): Promise<Mandate | null> {

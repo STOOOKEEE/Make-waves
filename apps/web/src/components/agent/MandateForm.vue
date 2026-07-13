@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import type { MandateDto, TideClient } from "@tide/client";
+import { MAX_PAPER_LEVERAGE } from "@tide/core";
 import { useMandate, type MandateForm } from "../../composables/useMandate";
 import { useI18n } from "../../i18n/useI18n";
 
@@ -65,9 +66,13 @@ const form = reactive<MandateForm>({
 const pairsText = ref("XRP/RLUSD");
 
 function syncPairs(): void {
+  // Le backend attend des SYMBOLES DE BASE (`XRP`, `BTC` — le guard vérifie
+  // `pairesAutorisees.includes(base)`, quote toujours RLUSD). L'utilisateur
+  // saisit une notation de paire (`XRP/RLUSD`) → on extrait la base (avant `/`)
+  // et on normalise en majuscules.
   form.pairesAutorisees = pairsText.value
     .split(",")
-    .map((s) => s.trim())
+    .map((s) => (s.split("/")[0] ?? "").trim().toUpperCase())
     .filter((s) => s.length > 0);
 }
 
@@ -106,7 +111,7 @@ async function submit(): Promise<void> {
     </label>
     <label>
       <span>{{ t('maxLeverage') }}</span>
-      <input v-model.number="form.maxLeverage" type="number" min="1" max="10" required />
+      <input v-model.number="form.maxLeverage" type="number" min="1" :max="MAX_PAPER_LEVERAGE" required />
     </label>
     <label>
       <span>{{ t('paires') }}</span>

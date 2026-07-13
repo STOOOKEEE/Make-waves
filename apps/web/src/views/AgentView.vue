@@ -7,7 +7,7 @@
  * Sources de vérité : useAgent (agents/refresh) + useMandate (create). */
 
 import { computed, onMounted, ref } from "vue";
-import type { TideClient } from "@tide/client";
+import type { MandateDto, TideClient } from "@tide/client";
 import { errorMessage } from "../composables/messages";
 import { useAgent } from "../composables/useAgent";
 import { useMandate } from "../composables/useMandate";
@@ -21,7 +21,7 @@ import MandateForm from "../components/agent/MandateForm.vue";
 const props = defineProps<{ client: TideClient }>();
 
 const { userId, connected } = useSession();
-const { agents, activeMandate, refresh, loadActions } = useAgent(props.client);
+const { agents, actions, activeMandate, refresh, loadActiveMandate, loadActions } = useAgent(props.client);
 const { create: createMandate } = useMandate(props.client);
 
 const { t } = useI18n({
@@ -39,6 +39,13 @@ const { t } = useI18n({
     yes: "yes",
     no: "no",
     needsWallet: "Connect an XRP wallet to pilot an agent.",
+    mandateActive: "Mandate active — agent can trade",
+    newMandate: "New mandate",
+    mCapital: "Max capital",
+    mPairs: "Pairs",
+    mLeverage: "Max leverage",
+    mDaily: "Max daily loss",
+    mValid: "Valid until",
   },
   fr: {
     title: "Agent IA",
@@ -54,11 +61,28 @@ const { t } = useI18n({
     yes: "oui",
     no: "non",
     needsWallet: "Connecte un wallet XRP pour piloter un agent.",
+    mandateActive: "Mandat actif — l'agent peut trader",
+    newMandate: "Nouveau mandat",
+    mCapital: "Capital max",
+    mPairs: "Paires",
+    mLeverage: "Levier max",
+    mDaily: "Perte max / jour",
+    mValid: "Valide jusqu'au",
   },
 });
 
+/** Date lisible d'un timestamp ms (validité du mandat). */
+function fmtDate(ms: number): string {
+  return new Date(ms).toLocaleDateString();
+}
+
 const currentAgent = computed(() => agents.value[0] ?? null);
-const showMandateForm = computed(() => currentAgent.value !== null && activeMandate.value === null);
+// Ré-ouverture manuelle du formulaire pour créer un NOUVEAU mandat alors qu'un
+// mandat actif existe déjà (le nouveau, une fois signé, supersede l'ancien).
+const renewing = ref(false);
+const showMandateForm = computed(
+  () => currentAgent.value !== null && (activeMandate.value === null || renewing.value),
+);
 
 const newName = ref("");
 const newType = ref<"integrated" | "external">("integrated");
@@ -88,14 +112,25 @@ async function onCreateAgent(): Promise<void> {
   }
 }
 
-async function onMandateCreated(): Promise<void> {
-  await refresh();
+async function onMandateCreated(mandate: MandateDto): Promise<void> {
+  // Feedback instantané : le mandat renvoyé est déjà actif (create + sign).
+  activeMandate.value = mandate;
+  renewing.value = false;
+}
+
+/** Fin d'un tour de chat : recharge le journal pour y faire apparaître les
+ * actions (trades) que l'agent vient d'exécuter. */
+async function onTurnComplete(): Promise<void> {
+  if (currentAgent.value) {
+    await loadActions(currentAgent.value.id);
+  }
 }
 
 onMounted(async () => {
   if (!connected.value) return;
   await refresh();
   if (currentAgent.value) {
+    await loadActiveMandate(currentAgent.value.id);
     await loadActions(currentAgent.value.id);
   }
 });
@@ -156,17 +191,33 @@ onMounted(async () => {
             :agent-id="currentAgent.id"
             @created="onMandateCreated"
           />
+          <!-- Mandat actif : résumé (feedback « créé » + gardes en vigueur). -->
+          <div v-else-if="activeMandate" class="mandate-active">
+            <p class="ok">✓ {{ t('mandateActive') }}</p>
+            <dl class="meta">
+              <div><dt>{{ t('mCapital') }}</dt><dd>{{ activeMandate.capitalMax }}</dd></div>
+              <div><dt>{{ t('mDaily') }}</dt><dd>{{ activeMandate.perteMaxJour }}</dd></div>
+              <div><dt>{{ t('mLeverage') }}</dt><dd>{{ activeMandate.maxLeverage }}×</dd></div>
+              <div><dt>{{ t('mPairs') }}</dt><dd>{{ activeMandate.pairesAutorisees.join(', ') }}</dd></div>
+              <div><dt>{{ t('mValid') }}</dt><dd>{{ fmtDate(activeMandate.validUntil) }}</dd></div>
+            </dl>
+            <button class="ghost" @click="renewing = true">{{ t('newMandate') }}</button>
+          </div>
         </div>
       </aside>
 
       <!-- Centre : chat agent -->
       <main class="col center">
-        <ChatPanel v-if="currentAgent" :agent-id="currentAgent.id" />
+        <ChatPanel
+          v-if="currentAgent"
+          :agent-id="currentAgent.id"
+          @turn-complete="onTurnComplete"
+        />
       </main>
 
-      <!-- Aside droite : journal d'actions -->
+      <!-- Aside droite : journal d'actions (rechargé après chaque tour) -->
       <aside class="col right">
-        <ActionLog v-if="currentAgent" :client="client" :agent-id="currentAgent.id" />
+        <ActionLog v-if="currentAgent" :actions="actions" />
       </aside>
     </div>
   </div>
@@ -278,5 +329,52 @@ onMounted(async () => {
 .id-card .meta dd {
   margin: 0;
   font-weight: 700;
+}
+
+.mandate-active {
+  border-top: 1px solid var(--line2, #2a2a32);
+  padding-top: 14px;
+}
+.mandate-active .ok {
+  margin: 0 0 12px;
+  font-weight: 700;
+  font-size: 13px;
+  color: #34d399;
+}
+.mandate-active .meta {
+  display: grid;
+  gap: 6px;
+}
+.mandate-active .meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--mono, ui-monospace);
+  font-size: 12px;
+}
+.mandate-active .meta dt {
+  color: var(--soft, rgba(255, 255, 255, 0.7));
+  margin: 0;
+}
+.mandate-active .meta dd {
+  margin: 0;
+  font-weight: 700;
+  text-align: right;
+}
+.mandate-active .ghost {
+  margin-top: 14px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line2, #2a2a32);
+  background: transparent;
+  color: var(--soft, rgba(255, 255, 255, 0.75));
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mandate-active .ghost:hover {
+  border-color: var(--blue, #4f6aff);
+  color: #fff;
 }
 </style>

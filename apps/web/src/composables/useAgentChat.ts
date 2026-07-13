@@ -1,10 +1,15 @@
 import { ref } from "vue";
 import { errorMessage } from "./messages";
 import { useSession } from "./useSession";
+import { API_BASE } from "../lib/client";
 
 /** Borne haute du buffer de messages en mémoire (évite la croissance non
  * bornée d'une longue conversation). */
 const MESSAGES_BUFFER_LIMIT = 200;
+
+/** Nombre de messages passés à l'agent comme contexte (mémoire de conversation).
+ * Borné pour maîtriser la fenêtre de contexte du LLM et le coût (crédits). */
+const HISTORY_LIMIT = 20;
 
 /** Un message affiché dans le chat. `toolCalls` n'est présent que sur les
  * messages assistant qui ont déclenché des outils. */
@@ -45,6 +50,12 @@ export function useAgentChat() {
       return;
     }
     error.value = null;
+    // Historique = conversation AVANT ce message (mémoire de l'agent). Envoyé
+    // au backend qui le préfixe aux messages du LLM → l'agent se souvient des
+    // tours précédents (« exécute » se réfère au plan discuté juste avant).
+    const history = messages.value
+      .slice(-HISTORY_LIMIT)
+      .map((m) => ({ role: m.role, content: m.content }));
     const userMsg: ChatMessage = {
       role: "user",
       content,
@@ -58,10 +69,10 @@ export function useAgentChat() {
     let assistantContent = "";
     const toolCalls: NonNullable<ChatMessage["toolCalls"]> = [];
     try {
-      const response = await fetch("/api/agent-chat/stream", {
+      const response = await fetch(`${API_BASE}/api/agent-chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, userId: userId.value, message: content }),
+        body: JSON.stringify({ agentId, userId: userId.value, message: content, history }),
       });
       if (!response.body) throw new Error("No response body");
       if (!response.ok) {

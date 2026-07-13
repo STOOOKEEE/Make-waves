@@ -48,18 +48,37 @@ describe("TideApiHttp", () => {
     await expect(api.getMarket("BTC")).rejects.toBeInstanceOf(TideApiHttpError);
   });
 
-  it("sends POST body as JSON", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ orderId: "o1" }));
+  it("traduit l'ordre MCP en MarketOrderInput du domaine (pair/amount/price)", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        pair: { base: "BTC", quote: "RLUSD" },
+        side: "buy",
+        amount: 0.1,
+        price: 60000,
+        quoteAmount: 6000,
+      }),
+    );
     const api = new TideApiHttp({ baseUrl: "https://x", userId: "u", agentId: "a" });
     await api.placeOrder({
-      symbol: "BTC", side: "buy", qty: 0.1, type: "market",
+      symbol: "BTC", side: "buy", qty: 0.1, type: "market", price: 60000,
     });
     const call = fetchMock.mock.calls[0] as [string, RequestInit];
-    const [, init] = call;
+    const [url, init] = call;
+    expect(url).toBe("https://x/accounts/u/orders");
     expect(init.method).toBe("POST");
     expect(JSON.parse(init.body as string)).toEqual({
-      symbol: "BTC", side: "buy", qty: 0.1, type: "market",
+      pair: { base: "BTC", quote: "RLUSD" },
+      side: "buy",
+      amount: 0.1,
+      price: 60000,
     });
+  });
+
+  it("exige un prix (la route paper valorise au prix fourni)", async () => {
+    const api = new TideApiHttp({ baseUrl: "https://x", userId: "u", agentId: "a" });
+    await expect(
+      api.placeOrder({ symbol: "BTC", side: "buy", qty: 0.1, type: "market" }),
+    ).rejects.toBeInstanceOf(TideApiHttpError);
   });
 });
 
@@ -123,14 +142,25 @@ describe("httpTradingBackend adapter", () => {
     globalThis.fetch = ORIGINAL_FETCH;
   });
 
-  it("placeOrder POSTs to /api/orders (adapter)", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ orderId: "o1", status: "filled", filledQty: 0.1, avgPrice: 60000 }));
+  it("placeOrder re-mappe le Fill du domaine vers le shape MCP", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        pair: { base: "BTC", quote: "RLUSD" },
+        side: "buy",
+        amount: 0.1,
+        price: 60000,
+        quoteAmount: 6000,
+      }),
+    );
     const api = new TideApiHttp({ baseUrl: "https://x", userId: "u", agentId: "a" });
     const trading = httpTradingBackend(api);
     const result = await trading.placeOrder({
       userId: "u42", symbol: "BTC", side: "buy", qty: 0.1, type: "market",
+      price: 60000, clientOrderId: "idem-1",
     });
-    expect(result.orderId).toBe("o1");
+    expect(result).toEqual({
+      orderId: "idem-1", status: "filled", filledQty: 0.1, avgPrice: 60000,
+    });
     const call = fetchMock.mock.calls[0] as [string, RequestInit];
     const [, init] = call;
     expect(init.method).toBe("POST");
@@ -147,14 +177,32 @@ describe("httpPerpBackend adapter", () => {
     globalThis.fetch = ORIGINAL_FETCH;
   });
 
-  it("openPosition POSTs to /api/positions (adapter)", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ positionId: "p1", entryPrice: 60000, liquidationPrice: 55000 }));
+  it("openPosition traduit le contrat MCP en OpenPositionInput domaine (entry/margin/fee)", async () => {
+    // 1er appel = GET prix (résolution de l'entry), 2e = POST position domaine.
+    fetchMock.mockResolvedValueOnce(jsonResponse({ symbol: "BTC", price: 60000 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: "p1", entry: 60000 }));
     const api = new TideApiHttp({ baseUrl: "https://x", userId: "u", agentId: "a" });
     const perp = httpPerpBackend(api);
     const result = await perp.openPosition({
       userId: "u42", symbol: "BTC", side: "long", qty: 0.1, leverage: 3,
     });
+    // Body POST : shape domaine complet (product/entry/margin/fee dérivés).
+    const postBody = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string) as Record<string, unknown>;
+    expect(postBody).toMatchObject({
+      product: "perp",
+      symbol: "BTC",
+      side: "long",
+      qty: 0.1,
+      entry: 60000,
+      leverage: 3,
+    });
+    // marge = notionnel/levier = 0.1*60000/3 = 2000 ; fee = notionnel*0.0006 = 3.6.
+    expect(postBody["margin"]).toBeCloseTo(2000);
+    expect(postBody["fee"]).toBeCloseTo(3.6);
+    // Retour re-mappé + liquidation indicative (long : 60000*(1-1/3) = 40000).
     expect(result.positionId).toBe("p1");
+    expect(result.entryPrice).toBe(60000);
+    expect(result.liquidationPrice).toBeCloseTo(40000);
   });
 });
 
