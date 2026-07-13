@@ -240,6 +240,39 @@ describe("TideClient", () => {
   });
 });
 
+describe("TideClient badges", () => {
+  it("badges -> GET /accounts/:id/badges", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: [] }));
+    expect(await client.badges("u1")).toEqual([]);
+    expect(requests[0]?.path).toBe("/accounts/u1/badges");
+    expect(requests[0]?.method).toBe("GET");
+  });
+
+  it("claimBadge -> POST /badges/:code/claim avec le wallet", async () => {
+    const { client, requests } = stub(() => ({
+      status: 200,
+      body: { sellOfferId: "OFF1", nftTokenId: "NFT1" },
+    }));
+    const res = await client.claimBadge("u1", "first_trade", "rWallet");
+    expect(res).toEqual({ sellOfferId: "OFF1", nftTokenId: "NFT1" });
+    expect(requests[0]).toEqual({
+      path: "/badges/first_trade/claim",
+      method: "POST",
+      body: { userId: "u1", walletAddress: "rWallet" },
+    });
+  });
+
+  it("confirmBadgeClaim -> POST .../confirm avec txHash optionnel", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: { ok: true } }));
+    await client.confirmBadgeClaim("u1", "first_trade", "HASH");
+    expect(requests[0]).toEqual({
+      path: "/badges/first_trade/claim/confirm",
+      method: "POST",
+      body: { userId: "u1", txHash: "HASH" },
+    });
+  });
+});
+
 describe("extractErrorMessage", () => {
   it("extrait le champ error", () => {
     expect(extractErrorMessage({ error: "boom" })).toBe("boom");

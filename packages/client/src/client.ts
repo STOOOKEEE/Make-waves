@@ -203,6 +203,18 @@ export interface AgentActionDto {
   readonly executedAt: number;
 }
 
+export type BadgeClaimStatus = "unclaimed" | "offer_pending" | "claimed";
+
+export interface BadgeDto {
+  readonly code: string;
+  readonly title: string;
+  readonly description: string;
+  readonly imageUrl: string;
+  readonly earned: boolean;
+  readonly status: BadgeClaimStatus;
+  readonly nftTokenId: string | null;
+}
+
 function path(...segments: string[]): string {
   return "/" + segments.map((s) => encodeURIComponent(s)).join("/");
 }
@@ -559,6 +571,46 @@ export class TideClient {
         ? `?agentId=${encodeURIComponent(agentId)}`
         : `?agentId=${encodeURIComponent(agentId)}&limit=${String(limit)}`;
     return this.call({ path: `/api/agent-actions${qs}`, method: "GET" }, 200);
+  }
+
+  /** Statut des badges d'un utilisateur (mérite dérivé + claims). */
+  async badges(userId: string): Promise<BadgeDto[]> {
+    return this.call(
+      { path: path("accounts", userId, "badges"), method: "GET" },
+      200,
+    );
+  }
+
+  /** Réclame un badge : mint on-demand, renvoie l'offer à faire signer. */
+  async claimBadge(
+    userId: string,
+    code: string,
+    walletAddress: string,
+  ): Promise<{ sellOfferId: string; nftTokenId: string }> {
+    return this.call(
+      {
+        path: path("badges", code, "claim"),
+        method: "POST",
+        body: { userId, walletAddress },
+      },
+      200,
+    );
+  }
+
+  /** Confirme le claim (le user a signé l'accept) → statut claimed. */
+  async confirmBadgeClaim(
+    userId: string,
+    code: string,
+    txHash?: string,
+  ): Promise<void> {
+    await this.call(
+      {
+        path: path("badges", code, "claim", "confirm"),
+        method: "POST",
+        body: txHash === undefined ? { userId } : { userId, txHash },
+      },
+      200,
+    );
   }
 
   private async call<T>(request: ApiRequest, okStatus: number): Promise<T> {
