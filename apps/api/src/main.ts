@@ -1,5 +1,5 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
-import { connectXrplClient } from "@tide/xrpl";
+import { connectXrplClient, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
 import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { createApp } from "./app";
@@ -25,6 +25,7 @@ import type { MandateXamanApi } from "./services/mandate-service";
 import { PaperService } from "./services/paper-service";
 import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
+import { SqliteBadgeStore } from "./store/sqlite-badge-store";
 import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
@@ -33,6 +34,7 @@ import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
 import { openDatabase } from "./store/sqlite";
 import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
+import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
 import { createXamanApi } from "./xaman/sdk";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
@@ -261,6 +263,7 @@ async function main(): Promise<void> {
   // Connexion SQLite partagée par les deux stores (persistance sur disque).
   const db = openDatabase(env.readDbPath());
   migrateAgentTables(db);
+  migrateBadgeTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
@@ -276,6 +279,16 @@ async function main(): Promise<void> {
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined
       ? { store: indexerSetup.store, sourceTag: indexerSetup.sourceTag }
+      : undefined;
+
+  // Badges NFT : store SQLite (toujours) + issuer (mint serveur) seulement si un
+  // seed issuer + un nœud XRPL + un SourceTag sont configurés (sinon OFF ; les
+  // métadonnées statiques /nft-metadata restent servies dans tous les cas).
+  const badgeStore = new SqliteBadgeStore(db);
+  const issuerSeed = env.readNftIssuerSeed();
+  const nftIssuer =
+    issuerSeed !== undefined && wsUrl !== undefined && sourceTag !== undefined
+      ? new XrplNftIssuer({ serverUrl: wsUrl, issuerSeed, sourceTag })
       : undefined;
 
   // Compétitions de démo (idempotent) : le front fusionne leur état live avec
@@ -345,6 +358,10 @@ async function main(): Promise<void> {
     mandateService,
     agentActionsStore,
     agentChatCtx,
+    nftIssuer,
+    badgeStore,
+    sourceTag,
+    metadataBaseUrl: env.readPublicBaseUrl(),
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

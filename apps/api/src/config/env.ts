@@ -18,6 +18,7 @@ const MAX_PORT = 65535;
 const DEFAULT_DB_PATH = "tide.db";
 const DEFAULT_CEX_BASE_URL = "https://api.coingecko.com/api/v3";
 const DEFAULT_ATTRIBUTION_DB_PATH = ":memory:";
+const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 
 /** Valeur d'env non vide, ou `undefined` si absente/vide. */
 function optional(name: string): string | undefined {
@@ -164,6 +165,37 @@ export function readOnchainWsUrl(): string | undefined {
     throw new Error(`XRPL_WSS_URL doit être une URL ws:// ou wss:// : ${raw}`);
   }
   return raw;
+}
+
+/**
+ * Seed du compte issuer des badges NFT (signature serveur des mints). `undefined`
+ * si non déclaré → la feature badges on-chain reste désactivée. Lève si présent
+ * mais mal formé (seed XRPL base58 commençant par `s`).
+ */
+export function readNftIssuerSeed(): string | undefined {
+  const raw = optional("TIDE_NFT_ISSUER_SEED");
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (!/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(raw)) {
+    throw new Error("TIDE_NFT_ISSUER_SEED mal formé (seed XRPL base58 attendu)");
+  }
+  return raw;
+}
+
+/**
+ * Base publique du serveur (URL des métadonnées NFT). Défaut localhost pour le
+ * dev. Lève si présente mais non http(s).
+ */
+export function readPublicBaseUrl(): string {
+  const raw = optional("TIDE_PUBLIC_BASE_URL");
+  if (raw === undefined) {
+    return DEFAULT_PUBLIC_BASE_URL;
+  }
+  if (!/^https?:\/\//.test(raw)) {
+    throw new Error(`TIDE_PUBLIC_BASE_URL doit être http(s):// : ${raw}`);
+  }
+  return raw.replace(/\/+$/, "");
 }
 
 /**

@@ -43,6 +43,27 @@ export function parseUserId(body: unknown, ctx: string): { userId: string } {
   return { userId: str(obj, "userId", ctx) };
 }
 
+export function parseClaimBadge(
+  body: unknown,
+): { userId: string; walletAddress: string } {
+  const obj = asRecord(body, "claimBadge");
+  return {
+    userId: str(obj, "userId", "claimBadge"),
+    walletAddress: str(obj, "walletAddress", "claimBadge"),
+  };
+}
+
+export function parseConfirmBadge(
+  body: unknown,
+): { userId: string; txHash: string | null } {
+  const obj = asRecord(body, "confirmBadge");
+  const userId = str(obj, "userId", "confirmBadge");
+  const rawHash = obj["txHash"];
+  const txHash =
+    typeof rawHash === "string" && rawHash.trim() !== "" ? rawHash.trim() : null;
+  return { userId, txHash };
+}
+
 export function parseOrder(body: unknown): MarketOrderInput {
   const obj = asRecord(body, "order");
   const pair = asRecord(obj["pair"], "order.pair");

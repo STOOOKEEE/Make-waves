@@ -28,7 +28,9 @@ import type { LiveQuote } from "../exec/plan-live";
 import { statusForError } from "./errors";
 import {
   parseBuyInRequest,
+  parseClaimBadge,
   parseCompetition,
+  parseConfirmBadge,
   parseCreateAgent,
   parseCreateMandate,
   parseLiveOfferRequest,
@@ -39,6 +41,8 @@ import {
   parseUpdateAgent,
   parseUserId,
 } from "./parse";
+import type { BadgeService } from "../services/badge-service";
+import { badgeByCode } from "../badges/catalog";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -116,6 +120,8 @@ export interface ServerDeps {
    * capture et renvoie 400 avant d'ouvrir le flux SSE.
    */
   readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
+  /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
+  readonly badgeService?: BadgeService;
 }
 
 /**
@@ -750,6 +756,45 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         reply.raw.end();
       }
     });
+  }
+
+  // Métadonnées NFT des badges (statique, non gated) : résolues par les wallets.
+  app.get<{ Params: { code: string } }>("/nft-metadata/:code", (request, reply) => {
+    const badge = badgeByCode(request.params.code);
+    if (badge === undefined) {
+      reply.code(404);
+      return { error: "unknown badge" };
+    }
+    const host = request.headers.host ?? "localhost";
+    const base = `${request.protocol}://${host}`;
+    return {
+      name: badge.title,
+      description: badge.description,
+      image: `${base}${badge.imageUrl}`,
+      attributes: [{ trait_type: "badge", value: badge.code }],
+    };
+  });
+
+  // Badges + claim NFT — montés seulement si un issuer NFT est configuré.
+  if (deps.badgeService !== undefined) {
+    const badgeSvc = deps.badgeService;
+    app.get<{ Params: { userId: string } }>(
+      "/accounts/:userId/badges",
+      (request) => badgeSvc.statusFor(request.params.userId),
+    );
+    app.post<{ Params: { code: string } }>("/badges/:code/claim", (request) => {
+      const body = parseClaimBadge(request.body);
+      return badgeSvc.claim(body.userId, body.walletAddress, request.params.code);
+    });
+    app.post<{ Params: { code: string } }>(
+      "/badges/:code/claim/confirm",
+      async (request, reply) => {
+        const body = parseConfirmBadge(request.body);
+        await badgeSvc.confirmClaim(body.userId, request.params.code, body.txHash);
+        reply.code(200);
+        return { ok: true };
+      },
+    );
   }
 
   return app;
