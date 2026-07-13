@@ -9,11 +9,27 @@ import type { Fill } from "@tide/core";
 import type { Portfolio, TideClient } from "@tide/client";
 import { ALLOC_PALETTE, fmtNum } from "../data/markets";
 import { useSession } from "../composables/useSession";
+import { useBadges } from "../composables/useBadges";
+import { useWallet } from "../composables/useWallet";
 import { errorMessage } from "../composables/messages";
 import { useI18n } from "../i18n/useI18n";
 
 const props = defineProps<{ client: TideClient }>();
 const { userId, connected } = useSession();
+const {
+  badges: badgeList,
+  claiming: badgeClaiming,
+  load: loadBadges,
+  claim: runClaim,
+} = useBadges(props.client);
+const wallet = useWallet(props.client);
+
+/** Réclame un badge : mint serveur → le user signe l'accept (wallet = userId). */
+function claimBadge(code: string): void {
+  void runClaim(userId.value, code, userId.value, (offerId) =>
+    wallet.signBadgeAccept(offerId),
+  );
+}
 
 const { t } = useI18n({
   en: {
@@ -52,6 +68,13 @@ const { t } = useI18n({
     actBtcMeta: "3h ago · market · 2×",
     actEthMeta: "yesterday · stop",
     actDogeMeta: "yesterday · market",
+    badgesTitle: "Badges",
+    badgesSubtitle: "Earn on-chain NFT rewards by trading.",
+    badgeClaim: "Claim",
+    badgeClaiming: "Claiming…",
+    badgeClaimed: "On-chain ✓",
+    badgePending: "Pending",
+    badgeLocked: "Locked",
   },
   fr: {
     title: "Portefeuille",
@@ -89,6 +112,13 @@ const { t } = useI18n({
     actBtcMeta: "il y a 3 h · marché · 2×",
     actEthMeta: "hier · stop",
     actDogeMeta: "hier · marché",
+    badgesTitle: "Badges",
+    badgesSubtitle: "Gagne des récompenses NFT on-chain en tradant.",
+    badgeClaim: "Réclamer",
+    badgeClaiming: "Claim…",
+    badgeClaimed: "On-chain ✓",
+    badgePending: "En attente",
+    badgeLocked: "À débloquer",
   },
 });
 
@@ -109,6 +139,7 @@ async function loadPortfolio(): Promise<void> {
     activity.value = await props.client.orders(userId.value);
     const board = await props.client.leaderboard();
     rank.value = board.find((e) => e.userId === userId.value)?.rank ?? null;
+    await loadBadges(userId.value);
   } catch (e) {
     loadError.value = errorMessage(e);
   }
@@ -243,6 +274,36 @@ onMounted(() => {
           <div>${{ fmtNum(h.value) }}</div>
           <div class="soft">—</div>
           <div>{{ h.alloc.toFixed(0) }}%<div class="allocbar"><i :style="{ width: Math.min(h.alloc, 100) + '%', background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></i></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- badges -->
+    <div class="card badges" v-reveal>
+      <div class="hh">{{ t("badgesTitle") }}</div>
+      <div class="bsub">{{ t("badgesSubtitle") }}</div>
+      <div class="bgrid">
+        <div
+          v-for="b in badgeList"
+          :key="b.code"
+          class="bcard"
+          :class="{ on: b.earned }"
+        >
+          <div class="bic">{{ b.title.slice(0, 1) }}</div>
+          <div class="bmeta"><b>{{ b.title }}</b><span>{{ b.description }}</span></div>
+          <div class="bact">
+            <span v-if="b.status === 'claimed'" class="bpill ok">{{ t("badgeClaimed") }}</span>
+            <span v-else-if="b.status === 'offer_pending'" class="bpill">{{ t("badgePending") }}</span>
+            <button
+              v-else-if="b.earned"
+              class="bbtn"
+              :disabled="badgeClaiming === b.code"
+              @click="claimBadge(b.code)"
+            >
+              {{ badgeClaiming === b.code ? t("badgeClaiming") : t("badgeClaim") }}
+            </button>
+            <span v-else class="bpill soft">{{ t("badgeLocked") }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -665,5 +726,86 @@ onMounted(() => {
   color: var(--soft);
   font-size: 11px;
   font-weight: 400;
+}
+
+/* --- badges --- */
+.badges .bsub {
+  color: var(--soft);
+  font-size: 12px;
+  margin: 2px 0 12px;
+}
+.bgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.bcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 10px;
+  opacity: 0.55;
+}
+.bcard.on {
+  opacity: 1;
+}
+.bic {
+  flex: 0 0 34px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-weight: 700;
+  background: var(--panel-2, rgba(255, 255, 255, 0.06));
+}
+.bcard.on .bic {
+  background: var(--live, #ffb020);
+  color: #10130a;
+}
+.bmeta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.bmeta b {
+  display: block;
+  font-size: 13px;
+}
+.bmeta span {
+  display: block;
+  color: var(--soft);
+  font-size: 11px;
+}
+.bact {
+  flex: 0 0 auto;
+}
+.bbtn {
+  border: 1px solid var(--live, #ffb020);
+  color: var(--live, #ffb020);
+  background: transparent;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.bbtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bpill {
+  font-size: 11px;
+  color: var(--soft);
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.08));
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+.bpill.ok {
+  color: var(--up, #35d07f);
+  border-color: var(--up, #35d07f);
+}
+.bpill.soft {
+  opacity: 0.7;
 }
 </style>
