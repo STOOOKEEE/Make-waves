@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { NftIssuer } from "@tide/xrpl";
 import {
   BadgeService,
+  BadgeClaimUnavailableError,
   BadgeNotEarnedError,
   BadgeUnknownError,
   type BadgeCompetitionSource,
@@ -95,6 +96,45 @@ describe("BadgeService.statusFor", () => {
     await svc.confirmClaim("u1", "first_trade", "HASH");
     const afterConfirm = await svc.statusFor("u1");
     expect(afterConfirm.find((b) => b.code === "first_trade")?.status).toBe("claimed");
+  });
+});
+
+describe("BadgeService sans issuer (affichage off-chain gratuit)", () => {
+  function noIssuerSvc(): BadgeService {
+    return new BadgeService({
+      paper: new FakeOrders(1),
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+    });
+  }
+
+  it("statusFor dérive le mérite sans issuer", async () => {
+    const status = await noIssuerSvc().statusFor("u1");
+    expect(status.find((b) => b.code === "first_trade")?.earned).toBe(true);
+  });
+
+  it("claim sans issuer → BadgeClaimUnavailableError", async () => {
+    await expect(noIssuerSvc().claim("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeClaimUnavailableError,
+    );
+  });
+
+  it("statusFor tolère un compte inexistant (nouveau visiteur → 0 badge)", async () => {
+    const throwingPaper: BadgeOrdersSource = {
+      ordersOf() {
+        const e = new Error("Compte introuvable");
+        e.name = "AccountNotFoundError";
+        throw e;
+      },
+    };
+    const svc = new BadgeService({
+      paper: throwingPaper,
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+    });
+    const status = await svc.statusFor("newbie");
+    expect(status).toHaveLength(3);
+    expect(status.every((b) => !b.earned)).toBe(true);
   });
 });
 

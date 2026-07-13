@@ -122,18 +122,17 @@ export interface App {
 export function createApp(config: AppConfig): App {
   const paper = new PaperService(config.startingEquity, config.accountStore);
   const competition = new CompetitionService(config.competitionStore);
-  // Badges on-chain : montés seulement si un issuer NFT + store + SourceTag sont
-  // fournis (sinon la feature reste OFF, cf. gating dans buildServer).
+  // Badges : montés dès qu'un store est fourni (affichage off-chain gratuit).
+  // Le claim ON-CHAIN reste conditionné à l'issuer NFT (+ SourceTag) : sans eux,
+  // `claim` renvoie 503, mais le statut/l'affichage marchent (mérite dérivé).
   const badgeService =
-    config.nftIssuer !== undefined &&
-    config.badgeStore !== undefined &&
-    config.sourceTag !== undefined
+    config.badgeStore !== undefined
       ? new BadgeService({
           paper,
           competition,
           store: config.badgeStore,
-          issuer: config.nftIssuer,
-          sourceTag: config.sourceTag,
+          ...(config.nftIssuer !== undefined ? { issuer: config.nftIssuer } : {}),
+          ...(config.sourceTag !== undefined ? { sourceTag: config.sourceTag } : {}),
           metadataBaseUrl: config.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL,
         })
       : undefined;
