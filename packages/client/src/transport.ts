@@ -6,6 +6,8 @@ export interface ApiRequest {
   readonly path: string;
   readonly method: ApiMethod;
   readonly body?: unknown;
+  /** En-têtes HTTP additionnels (ex. token admin). */
+  readonly headers?: Record<string, string>;
 }
 
 /** Réponse API : code de statut + corps déjà parsé. */

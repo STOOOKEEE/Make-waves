@@ -229,6 +229,58 @@ export interface ClaimBadgeResult {
   readonly acceptTx: BadgeAcceptTx;
 }
 
+// --- Admin (console opérateur) ---
+
+export type AccountSegment = "operator" | "agent" | "frontend";
+
+export interface AdminUserDto {
+  readonly userId: string;
+  readonly segment: AccountSegment;
+  readonly equity: number;
+  readonly pnl: number;
+  readonly orders: number;
+  readonly positions: number;
+  readonly rank: number;
+}
+
+export interface AdminAgentDto {
+  readonly id: string;
+  readonly name: string;
+  readonly type: "external" | "integrated";
+  readonly status: "active" | "paused" | "stopped";
+  readonly ownerUserId: string;
+  readonly hasLiveAccount: boolean;
+  readonly mandate: {
+    readonly capitalMax: number;
+    readonly maxLeverage: number;
+    readonly validUntil: number;
+  } | null;
+  readonly lastAction: {
+    readonly toolName: string;
+    readonly executedAt: number;
+  } | null;
+  readonly createdAt: number;
+}
+
+export interface AdminWalletDto {
+  readonly address: string | null;
+  readonly kind: "agent" | "prize_pool";
+  readonly agentId: string | null;
+  readonly live: boolean;
+}
+
+export interface AdminOverviewDto {
+  readonly totals: {
+    readonly users: number;
+    readonly bySegment: { readonly operator: number; readonly frontend: number; readonly agent: number };
+    readonly agents: { readonly total: number; readonly active: number; readonly paused: number; readonly stopped: number };
+    readonly wallets: number;
+  };
+  readonly users: readonly AdminUserDto[];
+  readonly agents: readonly AdminAgentDto[];
+  readonly wallets: readonly AdminWalletDto[];
+}
+
 function path(...segments: string[]): string {
   return "/" + segments.map((s) => encodeURIComponent(s)).join("/");
 }
@@ -398,6 +450,15 @@ export class TideClient {
 
   async metrics(): Promise<AttributionMetrics> {
     return this.call({ path: "/metrics", method: "GET" }, 200);
+  }
+
+  // --- Admin (console opérateur, lecture seule) ---
+
+  async adminOverview(token: string): Promise<AdminOverviewDto> {
+    return this.call(
+      { path: "/admin/overview", method: "GET", headers: { "x-admin-token": token } },
+      200,
+    );
   }
 
   // --- Signature non-custodiale (Xaman) ---
