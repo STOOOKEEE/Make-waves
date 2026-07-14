@@ -320,3 +320,24 @@ export function readLlmBaseUrl(): string | undefined {
   }
   return raw;
 }
+
+/** Token d'authentification pour la console admin. `undefined` si non déclaré. */
+export function readAdminToken(): string | undefined {
+  return optional("TIDE_ADMIN_TOKEN");
+}
+
+/**
+ * Identifiants des opérateurs autorisés dans la console admin (CSV). Analyse
+ * la liste en ignorant les espaces vides et les entrées vides.
+ * Renvoie un tableau (peut être vide si absent).
+ */
+export function readOperatorUserIds(): string[] {
+  const raw = optional("TIDE_OPERATOR_USER_IDS");
+  if (raw === undefined) {
+    return [];
+  }
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
