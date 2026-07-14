@@ -70,6 +70,13 @@ export class SqliteAgentStore implements AgentStore {
     return rows.map(toAgent);
   }
 
+  async list(): Promise<Agent[]> {
+    const rows = this.db
+      .prepare(`SELECT * FROM agents ORDER BY created_at DESC`)
+      .all();
+    return rows.map(toAgent);
+  }
+
   async update(id: string, patch: Partial<Agent>): Promise<Agent> {
     const current = await this.get(id);
     if (!current) {
