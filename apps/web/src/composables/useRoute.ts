@@ -11,6 +11,7 @@ export const ROUTES = [
   "/arena",
   "/agent",
   "/learn",
+  "/admin",
 ] as const;
 export type RoutePath = (typeof ROUTES)[number];
 

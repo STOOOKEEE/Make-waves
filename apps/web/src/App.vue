@@ -13,6 +13,7 @@ import ArenaView from "./views/ArenaView.vue";
 import AgentView from "./views/AgentView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
+import AdminView from "./views/AdminView.vue";
 
 const client = createClient();
 const { current, competitionId, routeId, navigate } = useRoute();
@@ -46,6 +47,7 @@ const { current, competitionId, routeId, navigate } = useRoute();
       :slug="routeId"
       @navigate="navigate"
     />
+    <AdminView v-else-if="current === '/admin'" :client="client" />
   </main>
 
   <SignModal :client="client" />
