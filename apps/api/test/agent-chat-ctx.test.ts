@@ -80,7 +80,7 @@ describe("chat agent — fabrique du contexte runtime", () => {
     // Compte paper pré-ouvert (la route d'ordre ne l'auto-crée pas).
     await app.inject({ method: "POST", url: "/accounts", payload: { userId } });
 
-    const factory = buildAgentChatCtxFactory(baseUrl, { agents, mandates, actions }, undefined);
+    const factory = buildAgentChatCtxFactory(baseUrl, { agents, mandates, actions }, undefined, () => "test-token");
     const ctx = await factory("ag1", userId);
 
     // Contexte validé : agent + mandat actif résolus depuis les stores locaux.
@@ -115,7 +115,7 @@ describe("chat agent — fabrique du contexte runtime", () => {
     const { baseUrl, agents, mandates, actions, userId } = await listen();
     await agents.create(activeAgent("ag2", userId));
     // Pas de mandat créé.
-    const factory = buildAgentChatCtxFactory(baseUrl, { agents, mandates, actions }, undefined);
+    const factory = buildAgentChatCtxFactory(baseUrl, { agents, mandates, actions }, undefined, () => "test-token");
     await expect(factory("ag2", userId)).rejects.toThrow(/mandate/i);
   });
 });

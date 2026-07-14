@@ -25,6 +25,12 @@ export interface TideApiHttpConfig {
   readonly baseUrl: string;
   readonly userId: string;
   readonly agentId: string;
+  /**
+   * JWT de session (Bearer) pour l'API authentifiée. Le chat agent in-UI y met
+   * le token du user propriétaire (le serveur s'appelle lui-même en son nom) ;
+   * le serveur MCP externe le lit dans son env. Absent → pas d'en-tête.
+   */
+  readonly authToken?: string;
 }
 
 /** Frais taker prélevé à l'ouverture d'une position (0,06 % du notionnel) —
@@ -56,11 +62,13 @@ export class TideApiHttp {
   private readonly baseUrl: string;
   private readonly userId: string;
   private readonly agentId: string;
+  private readonly authToken: string | undefined;
 
   constructor(config: TideApiHttpConfig) {
     this.baseUrl = config.baseUrl.replace(/\/$/, "");
     this.userId = config.userId;
     this.agentId = config.agentId;
+    this.authToken = config.authToken;
   }
 
   private async request<T>(
@@ -83,6 +91,7 @@ export class TideApiHttp {
         "content-type": "application/json",
         "x-tide-user-id": this.userId,
         "x-tide-agent-id": this.agentId,
+        ...(this.authToken !== undefined ? { authorization: `Bearer ${this.authToken}` } : {}),
       },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
     });

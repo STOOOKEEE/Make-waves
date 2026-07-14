@@ -44,9 +44,17 @@ export function buildAgentChatCtxFactory(
   selfBaseUrl: string,
   stores: AgentChatStores,
   sourceTag: number | undefined,
+  issueToken: (userId: string) => string,
 ): AgentChatCtxFactory {
   return async (agentId, userId) => {
-    const api = new TideApiHttp({ baseUrl: selfBaseUrl, userId, agentId });
+    // Les appels self-HTTP portent un JWT du user propriétaire → ils passent le
+    // garde d'autorisation comme des appels du user lui-même (aucun backdoor).
+    const api = new TideApiHttp({
+      baseUrl: selfBaseUrl,
+      userId,
+      agentId,
+      authToken: issueToken(userId),
+    });
     return loadContext(
       {
         agents: stores.agents,

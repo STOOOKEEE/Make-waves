@@ -1758,7 +1758,7 @@ onUnmounted(() => {
       <div class="modectx">
         <template v-if="mode === 'live'">
           <span class="badge">⚡ {{ t('realBadge') }}</span>
-          <button v-if="session.walletConnected.value" class="wchip" @click="session.disconnectWallet()">
+          <button v-if="session.walletConnected.value" class="wchip" @click="wallet.disconnect()">
             <span class="dot"></span>{{ shorten(session.liveAddress.value) }}
             <span class="via">· {{ walletKind() }}</span>
           </button>

@@ -1,9 +1,10 @@
 import { ref } from "vue";
 import { TideApiError } from "@tide/client";
 import type { ExecSide, SignRequest, TideClient } from "@tide/client";
-import { getAddress, isInstalled, submitTransaction } from "@gemwallet/api";
+import { getAddress, getPublicKey, isInstalled, signMessage, submitTransaction } from "@gemwallet/api";
 import type { BadgeAcceptTx } from "@tide/client";
 import { useSession } from "./useSession";
+import { useAuth } from "./useAuth";
 import { errorMessage } from "./messages";
 
 const POLL_MS = 2500;
@@ -36,6 +37,7 @@ function stopPolling(): void {
  */
 export function useWallet(client: TideClient) {
   const session = useSession();
+  const auth = useAuth(client);
 
   function close(): void {
     open.value = false;
@@ -54,9 +56,18 @@ export function useWallet(client: TideClient) {
     open.value = true;
   }
 
+  /** Déconnexion : retire le wallet ET purge le token de session. */
+  function disconnect(): void {
+    session.disconnectWallet();
+    auth.clear();
+  }
+
   // ---- Xaman (QR + polling) ----
 
-  async function poll(uuid: string, onSigned: (account: string | null) => void): Promise<void> {
+  async function poll(
+    uuid: string,
+    onSigned: (account: string | null, uuid: string) => void,
+  ): Promise<void> {
     pollCount += 1;
     if (pollCount > POLL_MAX) {
       stopPolling();
@@ -70,7 +81,7 @@ export function useWallet(client: TideClient) {
       stopPolling();
       if (status.signed) {
         phase.value = "signed";
-        onSigned(status.account);
+        onSigned(status.account, uuid);
       } else {
         phase.value = "rejected";
       }
@@ -84,7 +95,7 @@ export function useWallet(client: TideClient) {
   async function startXaman(
     titleText: string,
     create: () => Promise<SignRequest>,
-    onSigned: (account: string | null) => void,
+    onSigned: (account: string | null, uuid: string) => void,
   ): Promise<void> {
     title.value = titleText;
     error.value = "";
@@ -112,9 +123,13 @@ export function useWallet(client: TideClient) {
     await startXaman(
       "Connect with Xaman",
       () => client.connectWallet(),
-      (account) => {
+      (account, uuid) => {
         if (account !== null) {
           session.setWallet(account, "xaman");
+          // Le payload SignIn (uuid) prouve la possession → échange contre un JWT.
+          void auth.loginXaman(uuid).catch((e) => {
+            error.value = errorMessage(e);
+          });
         }
       },
     );
@@ -139,6 +154,17 @@ export function useWallet(client: TideClient) {
         phase.value = "rejected";
         return;
       }
+      // Signe le challenge serveur pour prouver le contrôle de l'adresse (SIWX).
+      await auth.loginGem(address, async (message) => {
+        const signed = await signMessage(message);
+        const pub = await getPublicKey();
+        const signature = signed.result?.signedMessage;
+        const publicKey = pub.result?.publicKey;
+        if (signature === undefined || publicKey === undefined) {
+          throw new Error("Signature GemWallet incomplète.");
+        }
+        return { signature, publicKey };
+      });
       session.setWallet(address, "gem");
       phase.value = "signed";
     } catch (e) {
@@ -256,6 +282,7 @@ export function useWallet(client: TideClient) {
     signRequest,
     error,
     connect,
+    disconnect,
     chooseXaman,
     chooseGem,
     signLiveOffer,

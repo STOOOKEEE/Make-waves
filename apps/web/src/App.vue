@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { createClient } from "./lib/client";
 import { useRoute } from "./composables/useRoute";
+import { useAuth } from "./composables/useAuth";
 import AppBar from "./components/AppBar.vue";
 import SignModal from "./components/SignModal.vue";
 import LandingView from "./views/LandingView.vue";
@@ -16,6 +17,8 @@ import LearnArticleView from "./views/LearnArticleView.vue";
 import AdminView from "./views/AdminView.vue";
 
 const client = createClient();
+// Réinjecte un éventuel token de session persisté dès le démarrage (avant tout appel API).
+useAuth(client).restore();
 const { current, competitionId, routeId, navigate } = useRoute();
 </script>
 

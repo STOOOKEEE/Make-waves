@@ -326,6 +326,44 @@ export function readAdminToken(): string | undefined {
   return optional("TIDE_ADMIN_TOKEN");
 }
 
+/** Longueur minimale du secret de session (entropie suffisante pour HS256). */
+const MIN_SESSION_SECRET_LENGTH = 32;
+/** Durée de vie par défaut d'un token de session : 24 h. */
+const DEFAULT_SESSION_TTL_SECONDS = 24 * 60 * 60;
+
+/**
+ * Secret HMAC des JWT de session (Sign-In with XRPL). **Obligatoire** : l'API
+ * garde des fonds → pas de démarrage sans authentification. Lève si absent ou
+ * trop court. Jamais journalisé.
+ */
+export function readSessionSecret(): string {
+  const raw = optional("TIDE_SESSION_SECRET");
+  if (raw === undefined) {
+    throw new Error(
+      "TIDE_SESSION_SECRET manquant (secret de session requis pour l'authentification)",
+    );
+  }
+  if (raw.length < MIN_SESSION_SECRET_LENGTH) {
+    throw new Error(
+      `TIDE_SESSION_SECRET trop court (min ${String(MIN_SESSION_SECRET_LENGTH)} caractères)`,
+    );
+  }
+  return raw;
+}
+
+/** Durée de vie d'un token de session, en secondes. Défaut 24 h. Lève si invalide. */
+export function readSessionTtlSeconds(): number {
+  const raw = optional("TIDE_SESSION_TTL");
+  if (raw === undefined) {
+    return DEFAULT_SESSION_TTL_SECONDS;
+  }
+  const seconds = Number(raw);
+  if (!Number.isInteger(seconds) || seconds <= 0) {
+    throw new Error(`TIDE_SESSION_TTL invalide (entier positif attendu): ${raw}`);
+  }
+  return seconds;
+}
+
 /**
  * Identifiants des opérateurs autorisés dans la console admin (CSV). Analyse
  * la liste en ignorant les espaces vides et les entrées vides.

@@ -2,6 +2,9 @@ import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.
 import { connectXrplClient, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
 import { buildAgentChatCtxFactory } from "./agent/chat-context";
+import { AuthService } from "./auth/auth-service";
+import { InMemoryChallengeStore } from "./auth/challenge-store";
+import type { AuthzResolvers } from "./auth/guard";
 import { createApp } from "./app";
 import * as env from "./config/env";
 import type { FetchJson } from "./feed/cex-price-feed";
@@ -324,10 +327,26 @@ async function main(): Promise<void> {
   const agentService = new AgentService(agentStore, mandateStore);
   const mandateService = new MandateService(mandateStore, mandateXaman);
 
+  // Authentification (Sign-In with XRPL) : obligatoire — l'API garde des fonds,
+  // aucun démarrage sans secret de session. L'auth Xaman réutilise l'API XUMM si
+  // câblée ; le garde résout la propriété agent/mandat via les stores locaux.
+  const CHALLENGE_TTL_MS = 5 * 60_000;
+  const authService = new AuthService({
+    secret: env.readSessionSecret(),
+    ttlSeconds: env.readSessionTtlSeconds(),
+    challenges: new InMemoryChallengeStore(CHALLENGE_TTL_MS),
+    ...(sign !== undefined ? { xaman: sign.api } : {}),
+  });
+  const authResolvers: AuthzResolvers = {
+    agentOwner: async (id) => (await agentStore.get(id))?.userId ?? null,
+    mandateOwner: async (id) => (await mandateStore.get(id))?.userId ?? null,
+  };
+
   // Fabrique du contexte de chat agent : backends = adapters HTTP pointés sur
   // ce serveur (self), agent/mandat/actions = stores locaux. Le port est lu ici
   // (avant l'écoute) pour construire l'URL de boucle locale. Câblée seulement
-  // si le chat est activé (clé LLM présente).
+  // si le chat est activé (clé LLM présente). Les appels self-HTTP portent un JWT
+  // du user propriétaire → ils passent le garde d'autorisation.
   const port = env.readPort();
   const agentChatCtx =
     agentChatService === undefined
@@ -336,6 +355,7 @@ async function main(): Promise<void> {
           `http://127.0.0.1:${String(port)}`,
           { agents: agentStore, mandates: mandateStore, actions: agentActionsStore },
           sourceTag,
+          (userId) => authService.issueToken(userId),
         );
 
   const { app, cache, refreshPrices } = createApp({
@@ -367,6 +387,7 @@ async function main(): Promise<void> {
     agentStore,
     mandateStore,
     prizePoolAddress: env.readPrizePoolAddress(),
+    auth: { service: authService, resolvers: authResolvers },
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

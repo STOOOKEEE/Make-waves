@@ -103,6 +103,8 @@ export interface AppConfig {
   readonly metadataBaseUrl?: string;
   /** Adresse du prize pool — affichée en lecture seule dans la console admin. */
   readonly prizePoolAddress?: string;
+  /** Authentification (garde global + routes /auth/*). Absente → API non protégée. */
+  readonly auth?: import("./http/server").ServerDeps["auth"];
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -246,6 +248,7 @@ export function createApp(config: AppConfig): App {
     agentChatCtx: config.agentChatCtx,
     badgeService,
     admin,
+    auth: config.auth,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

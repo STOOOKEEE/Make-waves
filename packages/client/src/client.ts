@@ -78,6 +78,26 @@ export interface PayloadStatus {
   readonly txid: string | null;
 }
 
+/** Challenge d'authentification GemWallet : nonce + message à signer. */
+export interface AuthChallengeDto {
+  readonly nonce: string;
+  readonly message: string;
+}
+
+/** Preuve GemWallet d'un challenge (signature du message par la clé de l'adresse). */
+export interface GemProof {
+  readonly address: string;
+  readonly nonce: string;
+  readonly signature: string;
+  readonly publicKey: string;
+}
+
+/** Token de session délivré après vérification d'une preuve. */
+export interface AuthTokenDto {
+  readonly token: string;
+  readonly address: string;
+}
+
 /** Config publique pour la signature côté client (GemWallet). */
 export interface PublicConfig {
   /** SourceTag d'attribution (entier public) ; null si Live non configuré. */
@@ -292,6 +312,37 @@ function path(...segments: string[]): string {
  */
 export class TideClient {
   constructor(private readonly transport: ApiTransport) {}
+
+  /** JWT de session courant, injecté en `Authorization: Bearer` sur chaque appel. */
+  private token: string | null = null;
+
+  /** Pose (ou retire avec `null`) le token de session. */
+  setToken(token: string | null): void {
+    this.token = token;
+  }
+
+  // --- Authentification (Sign-In with XRPL) ---
+
+  /** Demande un challenge GemWallet pour l'adresse : nonce + message à signer. */
+  async authChallenge(address: string): Promise<AuthChallengeDto> {
+    return this.call({ path: "/auth/challenge", method: "POST", body: { address } }, 200);
+  }
+
+  /** Vérifie une preuve GemWallet et récupère un token de session. */
+  async authVerifyGem(proof: GemProof): Promise<AuthTokenDto> {
+    return this.call(
+      { path: "/auth/verify", method: "POST", body: { wallet: "gem", ...proof } },
+      200,
+    );
+  }
+
+  /** Vérifie un payload Xaman SignIn (par uuid) et récupère un token de session. */
+  async authVerifyXaman(uuid: string): Promise<AuthTokenDto> {
+    return this.call(
+      { path: "/auth/verify", method: "POST", body: { wallet: "xaman", uuid } },
+      200,
+    );
+  }
 
   // --- Comptes ---
 
@@ -689,7 +740,14 @@ export class TideClient {
   }
 
   private async call<T>(request: ApiRequest, okStatus: number): Promise<T> {
-    const response = await this.transport(request);
+    const authed =
+      this.token === null
+        ? request
+        : {
+            ...request,
+            headers: { ...request.headers, authorization: `Bearer ${this.token}` },
+          };
+    const response = await this.transport(authed);
     if (response.status !== okStatus) {
       throw new TideApiError(
         response.status,

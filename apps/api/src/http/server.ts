@@ -43,6 +43,10 @@ import {
 } from "./parse";
 import type { BadgeService } from "../services/badge-service";
 import { badgeByCode } from "../badges/catalog";
+import { authorize } from "../auth/guard";
+import type { AuthzResolvers } from "../auth/guard";
+import type { AuthService } from "../auth/auth-service";
+import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
 
 /**
@@ -125,6 +129,12 @@ export interface ServerDeps {
   readonly badgeService?: BadgeService;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: { readonly token: string; readonly service: AdminService };
+  /**
+   * Authentification : garde global (Sign-In with XRPL) + routes /auth/*. Absente
+   * → API non protégée (tests unitaires / legacy). En prod, `main.ts` la câble
+   * toujours (secret de session requis au boot).
+   */
+  readonly auth?: { readonly service: AuthService; readonly resolvers: AuthzResolvers };
 }
 
 /**
@@ -278,6 +288,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
           : "Erreur";
     void reply.status(status).send({ error: message });
   });
+
+  // Authentification (Sign-In with XRPL) : pose le garde global + les routes
+  // /auth/* si câblée. Absente en test/legacy → API non protégée.
+  if (deps.auth !== undefined) {
+    registerAuth(app, deps.auth);
+  }
 
   app.post("/accounts", (request, reply) => {
     const { userId } = parseUserId(request.body, "openAccount");
@@ -815,6 +831,86 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   }
 
   return app;
+}
+
+/** Extrait `address` d'un corps `{address}` (chaîne, sinon vide → rejet en aval). */
+function readAddressField(body: unknown): string {
+  const rec = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  return typeof rec.address === "string" ? rec.address : "";
+}
+
+/**
+ * Authentification : garde global (autorisation par route) + routes `/auth/*`.
+ * Le garde s'exécute en `preHandler` (après parsing du body → params/query/body
+ * disponibles) : route publique OU token JWT valide + règles de propriété. Les
+ * routes `/auth/challenge` et `/auth/verify` sont publiques (handshake de login).
+ */
+function registerAuth(
+  app: FastifyInstance,
+  auth: { service: AuthService; resolvers: AuthzResolvers },
+): void {
+  const { service, resolvers } = auth;
+
+  app.addHook("preHandler", async (request, reply) => {
+    const decision = await authorize(
+      {
+        method: request.method,
+        routeUrl: request.routeOptions.url ?? "",
+        params: request.params as Record<string, string | undefined>,
+        query: (request.query ?? {}) as Record<string, unknown>,
+        body: request.body,
+        tokenAddress: service.verifyToken(request.headers.authorization),
+      },
+      resolvers,
+    );
+    if (!decision.ok) {
+      return reply.code(decision.status).send({ error: decision.error });
+    }
+  });
+
+  // Challenge GemWallet : nonce + message à signer. Adresse invalide → 400.
+  app.post("/auth/challenge", (request, reply) => {
+    try {
+      return service.issueChallenge(readAddressField(request.body));
+    } catch (err) {
+      reply.code(400);
+      return { error: err instanceof Error ? err.message : "adresse invalide" };
+    }
+  });
+
+  // Vérifie une preuve (Gem ou Xaman) et délivre un JWT de session.
+  app.post("/auth/verify", async (request, reply) => {
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    if (body.wallet === "gem") {
+      try {
+        const address = service.verifyGem({
+          address: typeof body.address === "string" ? body.address : "",
+          nonce: typeof body.nonce === "string" ? body.nonce : "",
+          signature: typeof body.signature === "string" ? body.signature : "",
+          publicKey: typeof body.publicKey === "string" ? body.publicKey : "",
+        });
+        return { token: service.issueToken(address), address };
+      } catch (err) {
+        reply.code(401);
+        return { error: err instanceof Error ? err.message : "authentification échouée" };
+      }
+    }
+    if (body.wallet === "xaman") {
+      try {
+        const address = await service.verifyXaman(typeof body.uuid === "string" ? body.uuid : "");
+        return { token: service.issueToken(address), address };
+      } catch (err) {
+        if (err instanceof XamanNotConfiguredError) {
+          reply.code(501);
+          return { error: err.message };
+        }
+        reply.code(401);
+        return { error: err instanceof Error ? err.message : "authentification échouée" };
+      }
+    }
+    reply.code(400);
+    return { error: "wallet invalide (attendu: gem | xaman)" };
+  });
 }
 
 /**
