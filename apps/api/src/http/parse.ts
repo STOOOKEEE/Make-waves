@@ -386,7 +386,12 @@ export function parseSignMandateCallback(body: unknown): { mandateId: string; si
     "mandateId",
   );
   const signature = shortString(obj, "signature", "signMandateCallback", 2000);
-  return { mandateId, signature };
+  // uuid optionnel : payload Xaman prouvant la signature (obligatoire pour un mandat
+  // Live, cf. F2 — vérifié serveur). Absent → activation Paper (fonds virtuels).
+  const rawUuid = obj["uuid"];
+  const payloadUuid =
+    typeof rawUuid === "string" && rawUuid.trim().length > 0 ? rawUuid.trim() : undefined;
+  return { mandateId, signature, ...(payloadUuid !== undefined ? { uuid: payloadUuid } : {}) };
 }
 
 /**

@@ -13,6 +13,15 @@ function safeGet(key: string): string | null {
   }
 }
 
+/**
+ * Token de session courant (persisté). Utile hors client typé — flux SSE qui ne
+ * passent pas par `TideClient` : EventSource (`?token=`) et le fetch du chat agent
+ * (`Authorization: Bearer`).
+ */
+export function readSessionToken(): string | null {
+  return safeGet(TOKEN_KEY);
+}
+
 function safeSet(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);

@@ -32,6 +32,8 @@ export class MandateService {
   constructor(
     private readonly store: MandateStore,
     private readonly xaman: MandateXamanApi,
+    /** Vrai si l'agent trade en Live (fonds réels) → signature Xaman obligatoire. */
+    private readonly agentIsLive: (agentId: string) => Promise<boolean> = async () => false,
   ) {}
 
   /** Crée un mandat en status `pending` (non signé). */
@@ -69,7 +71,11 @@ export class MandateService {
    * Callback Xaman : passe un mandat `pending` en `active`, enregistre la
    * signature et l'horodatage. Refuse tout autre état.
    */
-  async onSignCallback(payload: { mandateId: string; signature: string }): Promise<Mandate> {
+  async onSignCallback(payload: {
+    mandateId: string;
+    signature: string;
+    uuid?: string;
+  }): Promise<Mandate> {
     const mandate = await this.store.get(payload.mandateId);
     if (!mandate) {
       throw new MandateInvalidError("mandate not found");
@@ -77,11 +83,43 @@ export class MandateService {
     if (mandate.status !== "pending") {
       throw new MandateInvalidError(`status is ${mandate.status}`);
     }
-    return this.store.update(payload.mandateId, {
+
+    // Fonds RÉELS (agent Live) OU preuve Xaman fournie → vérification cryptographique
+    // OBLIGATOIRE : le mandat doit être signé par le wallet propriétaire (fail-closed).
+    // Sinon les garde-fous (capitalMax, maxLeverage, perteMaxJour) seraient
+    // auto-déclarés par l'appelant → aucune protection des fonds réels.
+    const live = await this.agentIsLive(mandate.agentId);
+    if (live || payload.uuid !== undefined) {
+      const signature = await this.verifyOwnerSignature(mandate, payload.uuid);
+      return this.store.update(mandate.id, {
+        signature,
+        signedAt: Date.now(),
+        status: "active",
+      });
+    }
+
+    // Paper (simulation, pas de fonds réels) : l'activation par le propriétaire suffit
+    // — l'appelant est déjà authentifié comme propriétaire par le garde (F1).
+    return this.store.update(mandate.id, {
       signature: payload.signature,
       signedAt: Date.now(),
       status: "active",
     });
+  }
+
+  /**
+   * Exige un payload Xaman `signed` dont l'adresse signataire est le propriétaire
+   * du mandat. Lève sinon (payload absent, non signé, ou signé par un tiers).
+   */
+  private async verifyOwnerSignature(mandate: Mandate, uuid: string | undefined): Promise<string> {
+    if (uuid === undefined) {
+      throw new MandateInvalidError("mandat Live : payload Xaman signé requis");
+    }
+    const status = await this.xaman.getPayloadStatus(uuid);
+    if (!status.meta.signed || status.meta.address !== mandate.userId) {
+      throw new MandateInvalidError("signature du mandat non vérifiée pour le propriétaire");
+    }
+    return uuid;
   }
 
   /** Révoque tous les mandats actifs d'un agent. */

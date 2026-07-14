@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import { errorMessage } from "./messages";
 import { useSession } from "./useSession";
+import { readSessionToken } from "./useAuth";
 import { API_BASE } from "../lib/client";
 
 /** Borne haute du buffer de messages en mémoire (évite la croissance non
@@ -69,9 +70,13 @@ export function useAgentChat() {
     let assistantContent = "";
     const toolCalls: NonNullable<ChatMessage["toolCalls"]> = [];
     try {
+      const token = readSessionToken();
       const response = await fetch(`${API_BASE}/api/agent-chat/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token !== null ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ agentId, userId: userId.value, message: content, history }),
       });
       if (!response.body) throw new Error("No response body");

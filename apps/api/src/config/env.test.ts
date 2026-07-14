@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   readAdminToken,
+  readCorsOrigin,
   readOperatorUserIds,
   readSessionSecret,
   readSessionTtlSeconds,
@@ -11,6 +12,7 @@ const KEYS = [
   "TIDE_OPERATOR_USER_IDS",
   "TIDE_SESSION_SECRET",
   "TIDE_SESSION_TTL",
+  "TIDE_CORS_ORIGIN",
 ] as const;
 
 afterEach(() => {
@@ -62,5 +64,15 @@ describe("readSessionTtlSeconds", () => {
   it("lit une valeur en secondes", () => {
     process.env["TIDE_SESSION_TTL"] = "3600";
     expect(readSessionTtlSeconds()).toBe(3600);
+  });
+});
+
+describe("readCorsOrigin", () => {
+  it("undefined si absent", () => {
+    expect(readCorsOrigin()).toBeUndefined();
+  });
+  it("parse un CSV d'origines", () => {
+    process.env["TIDE_CORS_ORIGIN"] = "https://tidetrade.xyz, https://www.tidetrade.xyz";
+    expect(readCorsOrigin()).toEqual(["https://tidetrade.xyz", "https://www.tidetrade.xyz"]);
   });
 });

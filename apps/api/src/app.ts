@@ -105,6 +105,10 @@ export interface AppConfig {
   readonly prizePoolAddress?: string;
   /** Authentification (garde global + routes /auth/*). Absente → API non protégée. */
   readonly auth?: import("./http/server").ServerDeps["auth"];
+  /** Origine(s) CORS autorisée(s) (F6). Absente → reflète toute origine (dev). */
+  readonly corsOrigin?: string | string[];
+  /** Limites de débit (F7). Absente → pas de rate-limit. */
+  readonly rateLimit?: import("./http/server").ServerDeps["rateLimit"];
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -249,6 +253,10 @@ export function createApp(config: AppConfig): App {
     badgeService,
     admin,
     auth: config.auth,
+    corsOrigin: config.corsOrigin,
+    // F8 : les métadonnées NFT utilisent cette base publique, jamais le header Host.
+    publicBaseUrl: config.metadataBaseUrl,
+    rateLimit: config.rateLimit,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

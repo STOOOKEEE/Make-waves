@@ -1,8 +1,11 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { createRateLimiter } from "./rate-limiter";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { PriceMap } from "@tide/core";
 import { agentBroadcaster } from "../sse/agent-broadcast";
+import type { AgentEvent } from "../sse/agent-broadcast";
+import { makeEventFilter } from "../sse/event-filter";
 import type { BookDepth } from "../feed/binance-book-feed";
 import type { AttributionMetrics } from "@tide/xrpl";
 import type { Candle } from "../feed/klines";
@@ -135,6 +138,15 @@ export interface ServerDeps {
    * toujours (secret de session requis au boot).
    */
   readonly auth?: { readonly service: AuthService; readonly resolvers: AuthzResolvers };
+  /** Origine(s) CORS autorisée(s) (F6). Absente → reflète toute origine (dev). */
+  readonly corsOrigin?: string | string[];
+  /** Base publique des URL de métadonnées NFT (F8) — jamais le header Host. */
+  readonly publicBaseUrl?: string;
+  /** Limites de débit (F7). Absente → pas de rate-limit (tests/legacy). */
+  readonly rateLimit?: {
+    readonly global: { readonly max: number; readonly windowMs: number };
+    readonly strict: { readonly max: number; readonly windowMs: number };
+  };
 }
 
 /**
@@ -240,6 +252,9 @@ function startEventStream(request: FastifyRequest, reply: FastifyReply): void {
   reply.raw.flushHeaders();
 }
 
+/** Base publique par défaut des URL de métadonnées NFT (dev / tests). */
+const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
+
 /**
  * Construit le serveur HTTP (Fastify) qui expose les services. Aucune écoute
  * réseau ici : `buildServer` retourne l'instance, testable via `inject()`.
@@ -247,10 +262,28 @@ function startEventStream(request: FastifyRequest, reply: FastifyReply): void {
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
-  // CORS : le front (Vite, port distinct) appelle l'API en cross-origin. Sans
-  // ça, le navigateur bloque toutes les requêtes. `origin: true` reflète l'origine
-  // de l'appelant (suffisant pour la démo ; à restreindre en prod réelle).
-  void app.register(cors, { origin: true });
+  // CORS (F6) : le front (port/domaine distinct) appelle l'API en cross-origin.
+  // En prod, `deps.corsOrigin` restreint aux origines du front (env) ; absent →
+  // reflète toute origine (dev/démo).
+  void app.register(cors, { origin: deps.corsOrigin ?? true });
+
+  // Rate limiting (F7) : borne globale par IP + borne stricte sur /auth/* (brute-
+  // force de challenge/signature). Montée seulement si configurée (main.ts) → les
+  // tests ne sont pas limités. Hook onRequest (avant tout traitement).
+  if (deps.rateLimit !== undefined) {
+    const rl = deps.rateLimit;
+    const globalLimiter = createRateLimiter(rl.global.max, rl.global.windowMs);
+    const strictLimiter = createRateLimiter(rl.strict.max, rl.strict.windowMs);
+    app.addHook("onRequest", async (request, reply) => {
+      const url = request.routeOptions.url ?? request.url;
+      const strict = url.startsWith("/auth/");
+      const limiter = strict ? strictLimiter : globalLimiter;
+      const key = `${strict ? "strict" : "global"}:${request.ip}`;
+      if (!limiter.hit(key)) {
+        return reply.code(429).send({ error: "trop de requêtes" });
+      }
+    });
+  }
 
   // Tolère un corps JSON vide : certains POST n'ont pas de body (/sign/connect,
   // /competitions/:id/close) mais un client peut quand même poser le content-type
@@ -531,16 +564,30 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     );
 
     // Flux SSE des événements agent (`agent_killed`, `agent_action`, etc.).
-    // Header `text/event-stream`, hijack pour prendre la main sur la socket,
-    // ping commentaire toutes les 30 s pour garder la connexion ouverte
-    // (les proxies coupent au-delà de ~60 s d'inactivité).
-    app.get("/api/agents/events", (request, reply) => {
+    // Auto-gardé (route publique côté garde global) : EventSource ne pose pas de
+    // header → le token passe en query (`?token=`). Sans token valide (auth
+    // câblée) → 401 ; sinon on ne relaie QUE les events des agents du viewer
+    // (F3 : plus de fuite cross-user). Header `text/event-stream`, hijack, ping
+    // 30 s (les proxies coupent au-delà de ~60 s d'inactivité).
+    app.get<{ Querystring: { token?: string } }>("/api/agents/events", (request, reply) => {
+      const bearer =
+        request.headers.authorization ??
+        (request.query.token !== undefined ? `Bearer ${request.query.token}` : undefined);
+      const me = deps.auth === undefined ? null : deps.auth.service.verifyToken(bearer);
+      if (deps.auth !== undefined && me === null) {
+        return reply.code(401).send({ error: "authentification requise" });
+      }
+      const relayable = makeEventFilter(me, deps.auth?.resolvers);
+
       startEventStream(request, reply);
 
-      const send = (event: unknown) => {
-        reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+      const handler = (event: AgentEvent): void => {
+        void relayable(event).then((ok) => {
+          if (ok) {
+            reply.raw.write(`data: ${JSON.stringify(event)}\n\n`);
+          }
+        });
       };
-      const handler = (event: unknown) => send(event);
       agentBroadcaster.on("event", handler);
 
       // Keep-alive : commentaire SSE (`:`) — les navigateurs l'ignorent mais
@@ -784,8 +831,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       reply.code(404);
       return { error: "unknown badge" };
     }
-    const host = request.headers.host ?? "localhost";
-    const base = `${request.protocol}://${host}`;
+    // F8 : l'URL de l'image vient de la base publique configurée (jamais du header
+    // Host, contrôlable par l'appelant → injection dans les métadonnées NFT).
+    const base = deps.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL;
     return {
       name: badge.title,
       description: badge.description,

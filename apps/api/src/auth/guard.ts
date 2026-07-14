@@ -43,6 +43,9 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/nft-metadata/:code" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
+  // Flux SSE agent : auto-gardé dans le handler (token en query + filtrage par
+  // propriétaire) car EventSource ne peut pas poser de header Authorization.
+  { method: "GET", url: "/api/agents/events" },
   { method: "GET", url: "/competitions" },
   { method: "GET", url: "/competitions/:id" },
   { method: "GET", url: "/competitions/:id/participants" },
@@ -136,8 +139,14 @@ export async function authorize(
   if (routeUrl === "/sign/buy-in" || routeUrl === "/sign/live-offer" || routeUrl === "/exec/plan") {
     return ensure(body.account === me);
   }
-  // Claim de badge : userId du corps = soi (walletAddress == soi = F4).
-  if (routeUrl === "/badges/:code/claim" || routeUrl === "/badges/:code/claim/confirm") {
+  // Claim de badge : mint UNIQUEMENT vers l'adresse authentifiée (F4) — userId ET
+  // walletAddress doivent être soi (sinon un attaquant fait minter l'issuer vers
+  // une adresse arbitraire).
+  if (routeUrl === "/badges/:code/claim") {
+    return ensure(body.userId === me && body.walletAddress === me);
+  }
+  // Confirmation d'un claim : le compte doit être soi.
+  if (routeUrl === "/badges/:code/claim/confirm") {
     return ensure(body.userId === me);
   }
 

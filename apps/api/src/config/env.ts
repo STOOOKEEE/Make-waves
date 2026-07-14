@@ -326,6 +326,22 @@ export function readAdminToken(): string | undefined {
   return optional("TIDE_ADMIN_TOKEN");
 }
 
+/**
+ * Origines CORS autorisées (F6, CSV). Absent → `undefined` (le serveur reflète
+ * toute origine — dev/démo). En prod, poser l'origine du front pour restreindre.
+ */
+export function readCorsOrigin(): string[] | undefined {
+  const raw = optional("TIDE_CORS_ORIGIN");
+  if (raw === undefined) {
+    return undefined;
+  }
+  const origins = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  return origins.length > 0 ? origins : undefined;
+}
+
 /** Longueur minimale du secret de session (entropie suffisante pour HS256). */
 const MIN_SESSION_SECRET_LENGTH = 32;
 /** Durée de vie par défaut d'un token de session : 24 h. */

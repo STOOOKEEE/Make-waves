@@ -52,6 +52,13 @@ const DEFAULT_VS_CURRENCY = "usd";
 const REFERENCE_CURRENCY = DEFAULT_VS_CURRENCY;
 const PRICE_REFRESH_MS = 30_000;
 const INDEXER_SYNC_MS = 15_000;
+// Rate limiting (F7) : borne globale généreuse par IP (usage normal jamais
+// atteint) + borne stricte sur /auth/* (brute-force de challenge/signature).
+const ONE_MINUTE_MS = 60_000;
+const RATE_LIMIT = {
+  global: { max: 300, windowMs: ONE_MINUTE_MS },
+  strict: { max: 15, windowMs: ONE_MINUTE_MS },
+} as const;
 // Feed « markets » CoinGecko : top N coins par capitalisation en UN appel (prix +
 // %24h + nom), sans mapping manuel par coin. La PriceMap couvre donc ces N coins
 // (watchlist dynamique + actifs tradables en Paper ; un actif coté ne casse pas
@@ -312,20 +319,42 @@ async function main(): Promise<void> {
   const agentStore = new SqliteAgentStore(db);
   const mandateStore = new SqliteMandateStore(db);
   const agentActionsStore = new SqliteAgentActionsStore(db);
+  // Vérification de signature du mandat (F2). Pour un mandat Live (fonds réels),
+  // `getPayloadStatus` doit prouver que le wallet propriétaire a signé — on adapte
+  // l'API Xaman réelle (si XUMM câblé) au shape attendu ; sans XUMM, la vérif lève
+  // → un mandat Live ne peut pas s'activer (fail-closed, conforme à la règle
+  // « pas de Live agent avant F2 »). La création du payload de mandat n'est pas
+  // encore câblée (le front active en Paper via signature simulée).
   const mandateXaman: MandateXamanApi = {
     createSignRequest() {
       throw new Error(
         "mandate Xaman signing not wired — le mandat est signé via /api/sign/mandate-callback",
       );
     },
-    getPayloadStatus() {
-      throw new Error(
-        "mandate Xaman status not wired — le mandat est signé via /api/sign/mandate-callback",
-      );
-    },
+    getPayloadStatus:
+      sign !== undefined
+        ? async (uuid) => {
+            const status = await sign.api.get(uuid);
+            return {
+              meta: {
+                signed: status?.signed ?? false,
+                ...(status?.account !== null && status?.account !== undefined
+                  ? { address: status.account }
+                  : {}),
+              },
+            };
+          }
+        : () => {
+            throw new Error(
+              "mandate Xaman status not wired — signature Live non vérifiable sans XUMM",
+            );
+          },
   };
   const agentService = new AgentService(agentStore, mandateStore);
-  const mandateService = new MandateService(mandateStore, mandateXaman);
+  const mandateService = new MandateService(mandateStore, mandateXaman, async (agentId) => {
+    const agent = await agentStore.get(agentId);
+    return agent?.hasLiveAccount ?? false;
+  });
 
   // Authentification (Sign-In with XRPL) : obligatoire — l'API garde des fonds,
   // aucun démarrage sans secret de session. L'auth Xaman réutilise l'API XUMM si
@@ -388,6 +417,8 @@ async function main(): Promise<void> {
     mandateStore,
     prizePoolAddress: env.readPrizePoolAddress(),
     auth: { service: authService, resolvers: authResolvers },
+    corsOrigin: env.readCorsOrigin(),
+    rateLimit: RATE_LIMIT,
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

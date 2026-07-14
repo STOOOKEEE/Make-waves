@@ -91,6 +91,11 @@ describe("authorize — propriété par body/query", () => {
   it("claim de badge : body.userId doit être soi", async () => {
     expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: OTHER } }), resolvers)).ok).toBe(false);
   });
+
+  it("claim de badge : walletAddress doit aussi être soi (F4 — mint vers l'adresse authentifiée)", async () => {
+    expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: ME, walletAddress: OTHER } }), resolvers)).ok).toBe(false);
+    expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: ME, walletAddress: ME } }), resolvers)).ok).toBe(true);
+  });
 });
 
 describe("authorize — propriété d'agent (via resolver)", () => {

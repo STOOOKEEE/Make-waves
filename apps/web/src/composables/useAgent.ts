@@ -2,6 +2,7 @@ import { ref, onUnmounted } from "vue";
 import type { AgentActionDto, AgentDto, MandateDto, TideClient } from "@tide/client";
 import { errorMessage } from "./messages";
 import { useSession } from "./useSession";
+import { readSessionToken } from "./useAuth";
 import { API_BASE } from "../lib/client";
 
 /** Borne haute du buffer d'actions en mémoire (évite la croissance non bornée). */
@@ -69,7 +70,12 @@ export function useAgent(client: TideClient) {
 
   function connectSse(): void {
     if (events) return;
-    events = new EventSource(`${API_BASE}/api/agents/events`);
+    // EventSource ne pose pas de header → le token de session passe en query.
+    const token = readSessionToken();
+    const url = token
+      ? `${API_BASE}/api/agents/events?token=${encodeURIComponent(token)}`
+      : `${API_BASE}/api/agents/events`;
+    events = new EventSource(url);
     events.onmessage = (ev) => {
       const parsed = JSON.parse(ev.data) as { type: string; [k: string]: unknown };
       if (parsed.type === "agent_killed") {
