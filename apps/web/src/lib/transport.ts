@@ -23,7 +23,10 @@ export function createFetchTransport(
     // /competitions/:id/close) et renvoie une erreur.
     const response = await fetchLike(baseUrl + request.path, {
       method: request.method,
-      headers: hasBody ? { "content-type": "application/json" } : {},
+      headers: {
+        ...(hasBody ? { "content-type": "application/json" } : {}),
+        ...(request.headers ?? {}),
+      },
       ...(hasBody ? { body: JSON.stringify(request.body) } : {}),
     });
     return { status: response.status, body: await response.json() };
