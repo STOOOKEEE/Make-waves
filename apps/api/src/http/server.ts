@@ -43,6 +43,7 @@ import {
 } from "./parse";
 import type { BadgeService } from "../services/badge-service";
 import { badgeByCode } from "../badges/catalog";
+import type { AdminService } from "../services/admin-service";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -122,6 +123,8 @@ export interface ServerDeps {
   readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
   /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
   readonly badgeService?: BadgeService;
+  /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
+  readonly admin?: { readonly token: string; readonly service: AdminService };
 }
 
 /**
@@ -795,6 +798,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         return { ok: true };
       },
     );
+  }
+
+  // Console admin (lecture seule) : montée uniquement si un token est configuré
+  // (TIDE_ADMIN_TOKEN). Absente → 404, rien n'est exposé en prod par défaut.
+  if (deps.admin !== undefined) {
+    const admin = deps.admin;
+    app.get("/admin/overview", async (request, reply) => {
+      const token = request.headers["x-admin-token"];
+      if (typeof token !== "string" || token !== admin.token) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      return admin.service.overview(deps.getPrices());
+    });
   }
 
   return app;
