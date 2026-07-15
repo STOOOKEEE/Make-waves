@@ -28,6 +28,9 @@ import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
 import type { AccountStore } from "./store/account-store";
 import type { CompetitionStore } from "./store/competition-store";
 import type { AgentActionsStore } from "./store/agent-actions-store";
+import { AdminService } from "./services/admin-service";
+import type { AgentStore } from "./store/agent-store";
+import type { MandateStore } from "./store/mandate-store";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -67,6 +70,14 @@ export interface AppConfig {
   readonly mandateService?: import("./services/mandate-service").MandateService;
   /** Store d'actions d'agent (route /api/agent-actions) — absent si pas câblé. */
   readonly agentActionsStore?: AgentActionsStore;
+  /** Token de la console admin (route /admin/overview) — absent → route non montée. */
+  readonly adminToken?: string;
+  /** Comptes classés "operator" dans la console admin (défaut : aucun). */
+  readonly operatorUserIds?: readonly string[];
+  /** Store des agents — requis avec `adminToken` pour activer la console admin. */
+  readonly agentStore?: AgentStore;
+  /** Store des mandats — requis avec `adminToken` pour activer la console admin. */
+  readonly mandateStore?: MandateStore;
   /** Service de chat agent (route /api/agent-chat/stream) — absent si pas câblé. */
   readonly agentChatService?: import("./services/agent-chat-service").AgentChatService;
   /** Fabrique du `McpContext` runtime du chat agent (backends réels) — absente → stub. */
@@ -90,6 +101,8 @@ export interface AppConfig {
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées NFT. */
   readonly metadataBaseUrl?: string;
+  /** Adresse du prize pool — affichée en lecture seule dans la console admin. */
+  readonly prizePoolAddress?: string;
 }
 
 /** Composition par défaut : CEX référence, divergence on-chain tolérée à 5 %. */
@@ -136,6 +149,26 @@ export function createApp(config: AppConfig): App {
           metadataBaseUrl: config.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL,
         })
       : undefined;
+  // Console admin : active seulement si un token ET les stores agents/mandats/actions
+  // sont fournis (le reste — comptes paper — est toujours là via `paper`).
+  const admin =
+    config.adminToken !== undefined &&
+    config.agentStore !== undefined &&
+    config.mandateStore !== undefined &&
+    config.agentActionsStore !== undefined
+      ? {
+          token: config.adminToken,
+          service: new AdminService({
+            paper,
+            agents: config.agentStore,
+            mandates: config.mandateStore,
+            actions: config.agentActionsStore,
+            prizePoolAddress: config.prizePoolAddress ?? null,
+            operatorUserIds: new Set(config.operatorUserIds ?? []),
+          }),
+        }
+      : undefined;
+
   const cache = new PriceCache();
   // Lignes de marché (watchlist) du dernier rafraîchissement en mode `markets`.
   let marketRows: readonly MarketRow[] = [];
@@ -212,6 +245,7 @@ export function createApp(config: AppConfig): App {
     agentChatService: config.agentChatService,
     agentChatCtx: config.agentChatCtx,
     badgeService,
+    admin,
   });
 
   const compose = config.compose ?? DEFAULT_COMPOSE;

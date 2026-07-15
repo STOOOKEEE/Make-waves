@@ -362,6 +362,11 @@ async function main(): Promise<void> {
     badgeStore,
     sourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
+    adminToken: env.readAdminToken(),
+    operatorUserIds: env.readOperatorUserIds(),
+    agentStore,
+    mandateStore,
+    prizePoolAddress: env.readPrizePoolAddress(),
   });
 
   // Premier remplissage du cache (on ne bloque pas le démarrage si le CEX échoue).

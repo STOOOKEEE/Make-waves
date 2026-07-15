@@ -16,6 +16,8 @@ export interface AgentStore {
   create(agent: Agent): Promise<void>;
   get(id: string): Promise<Agent | null>;
   listByUser(userId: string): Promise<Agent[]>;
+  /** Tous les agents (pour la console admin), plus récent d'abord. */
+  list(): Promise<Agent[]>;
   update(id: string, patch: Partial<Agent>): Promise<Agent>;
   delete(id: string): Promise<void>;
 }
@@ -40,6 +42,10 @@ export class InMemoryAgentStore implements AgentStore {
 
   async listByUser(userId: string): Promise<Agent[]> {
     return [...this.agents.values()].filter((a) => a.userId === userId);
+  }
+
+  async list(): Promise<Agent[]> {
+    return [...this.agents.values()].sort((a, b) => b.createdAt - a.createdAt);
   }
 
   async update(id: string, patch: Partial<Agent>): Promise<Agent> {
