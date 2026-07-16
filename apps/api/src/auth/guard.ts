@@ -45,6 +45,9 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/badges/weekly_trade.svg" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
+  // Le déclencheur E2E porte la même garde admin ; sans cette exception, le
+  // garde JWT global renverrait 401 avant que le handler ne voie son token.
+  { method: "POST", url: "/admin/testnet-e2e/run" },
   // Flux SSE agent : auto-gardé dans le handler (token en query + filtrage par
   // propriétaire) car EventSource ne peut pas poser de header Authorization.
   { method: "GET", url: "/api/agents/events" },
