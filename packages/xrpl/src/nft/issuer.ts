@@ -6,6 +6,7 @@ import {
   readOfferId,
 } from "../tx/nft";
 import { assertAttributionTag } from "../tx/source-tag";
+import { XrplRequestError } from "../client/errors";
 
 // ponytail: on utilise le Client `xrpl` en direct pour le mint issuer (le
 // wrapper read-only du package n'a pas de signature par seed — la signature
@@ -121,6 +122,20 @@ export class XrplNftIssuer implements NftIssuer {
   ): Promise<SubmitResult> {
     const prepared = await client.autofill(tx);
     const signed = this.wallet.sign(prepared);
-    return client.submitAndWait(signed.tx_blob);
+    const submitted = await client.submitAndWait(signed.tx_blob);
+    assertValidatedSuccess(submitted);
+    return submitted;
+  }
+}
+
+/** `submitAndWait` peut retourner un tec inclus : un hash ne suffit pas. */
+function assertValidatedSuccess(submitted: SubmitResult): void {
+  const meta = submitted.result.meta;
+  if (typeof meta !== "object" || meta === null) {
+    throw new XrplRequestError("submitAndWait: metadata de validation absente");
+  }
+  const result = (meta as Record<string, unknown>)["TransactionResult"];
+  if (result !== "tesSUCCESS") {
+    throw new XrplRequestError(`Transaction XRPL non appliquée: ${String(result)}`);
   }
 }

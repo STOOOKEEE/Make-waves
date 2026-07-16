@@ -64,6 +64,18 @@ export function parseConfirmBadge(
   return { userId, txHash };
 }
 
+/** Lundi UTC encodé par le programme de récompenses, ex. `2026-07-13`. */
+export function parseWeeklyRewardWeek(value: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new BadRequestError("weekly reward: semaine invalide");
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new BadRequestError("weekly reward: semaine invalide");
+  }
+  return value;
+}
+
 export function parseOrder(body: unknown): MarketOrderInput {
   const obj = asRecord(body, "order");
   const pair = asRecord(obj["pair"], "order.pair");

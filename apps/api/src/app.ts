@@ -3,6 +3,7 @@ import type { PriceMap } from "@tide/core";
 import { PaperService } from "./services/paper-service";
 import { CompetitionService } from "./services/competition-service";
 import { BadgeService } from "./services/badge-service";
+import type { WeeklyRewardService } from "./services/weekly-reward-service";
 import type { NftIssuer } from "@tide/xrpl";
 import type { BadgeStore } from "./store/badge-store";
 import { PriceCache } from "./feed/price-cache";
@@ -97,6 +98,8 @@ export interface AppConfig {
   readonly nftIssuer?: NftIssuer;
   /** Store des claims de badges (SQLite en prod). Requis avec `nftIssuer`. */
   readonly badgeStore?: BadgeStore;
+  /** Programme « trade de la semaine » : wallet Paper financé + claim NFT. */
+  readonly weeklyRewards?: WeeklyRewardService;
   /** SourceTag d'attribution des mints. Requis avec `nftIssuer`. */
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées NFT. */
@@ -251,6 +254,7 @@ export function createApp(config: AppConfig): App {
     agentChatService: config.agentChatService,
     agentChatCtx: config.agentChatCtx,
     badgeService,
+    weeklyRewards: config.weeklyRewards,
     admin,
     auth: config.auth,
     corsOrigin: config.corsOrigin,

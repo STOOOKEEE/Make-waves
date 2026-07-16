@@ -10,6 +10,7 @@ import type { Portfolio, TideClient } from "@tide/client";
 import { ALLOC_PALETTE, fmtNum } from "../data/markets";
 import { useSession } from "../composables/useSession";
 import { useBadges } from "../composables/useBadges";
+import { useWeeklyRewards } from "../composables/useWeeklyRewards";
 import { useWallet } from "../composables/useWallet";
 import { errorMessage } from "../composables/messages";
 import { useI18n } from "../i18n/useI18n";
@@ -22,6 +23,12 @@ const {
   load: loadBadges,
   claim: runClaim,
 } = useBadges(props.client);
+const {
+  rewards: weeklyRewards,
+  claiming: weeklyClaiming,
+  load: loadWeeklyRewards,
+  claim: claimWeeklyReward,
+} = useWeeklyRewards(props.client);
 const wallet = useWallet(props.client);
 
 /** Réclame un badge : mint serveur → le user signe l'accept (wallet = userId). */
@@ -29,6 +36,10 @@ function claimBadge(code: string): void {
   void runClaim(userId.value, code, userId.value, (acceptTx) =>
     wallet.signBadgeAccept(acceptTx),
   );
+}
+
+function claimWeek(week: string): void {
+  void claimWeeklyReward(userId.value, week);
 }
 
 const { t } = useI18n({
@@ -75,6 +86,10 @@ const { t } = useI18n({
     badgeClaimed: "On-chain ✓",
     badgePending: "Pending",
     badgeLocked: "Locked",
+    weeklyRewards: "Weekly trade proofs",
+    weeklySubtitle: "One claimable NFT for every active Paper trading week.",
+    weeklyClaim: "Claim weekly NFT",
+    weeklyClaiming: "Claiming…",
   },
   fr: {
     title: "Portefeuille",
@@ -119,6 +134,10 @@ const { t } = useI18n({
     badgeClaimed: "On-chain ✓",
     badgePending: "En attente",
     badgeLocked: "À débloquer",
+    weeklyRewards: "Preuves de trade hebdomadaires",
+    weeklySubtitle: "Un NFT claimable pour chaque semaine Paper active.",
+    weeklyClaim: "Claim le NFT hebdo",
+    weeklyClaiming: "Claim en cours…",
   },
 });
 
@@ -140,6 +159,7 @@ async function loadPortfolio(): Promise<void> {
     const board = await props.client.leaderboard();
     rank.value = board.find((e) => e.userId === userId.value)?.rank ?? null;
     await loadBadges(userId.value);
+    await loadWeeklyRewards(userId.value);
   } catch (e) {
     loadError.value = errorMessage(e);
   }
@@ -303,6 +323,32 @@ onMounted(() => {
               {{ badgeClaiming === b.code ? t("badgeClaiming") : t("badgeClaim") }}
             </button>
             <span v-else class="bpill soft">{{ t("badgeLocked") }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="weeklyRewards.length > 0" class="card badges" v-reveal>
+      <div class="hh">{{ t("weeklyRewards") }}</div>
+      <div class="bsub">{{ t("weeklySubtitle") }}</div>
+      <div class="bgrid">
+        <div v-for="reward in weeklyRewards" :key="reward.week" class="bcard on">
+          <div class="bic">W</div>
+          <div class="bmeta"><b>{{ reward.week }}</b><span>Weekly Trade Proof</span></div>
+          <div class="bact">
+            <span v-if="reward.status === 'claimed'" class="bpill ok">{{ t("badgeClaimed") }}</span>
+            <span
+              v-else-if="reward.status === 'offer_pending' || reward.status === 'minting'"
+              class="bpill"
+            >{{ t("badgePending") }}</span>
+            <button
+              v-else
+              class="bbtn"
+              :disabled="weeklyClaiming === reward.week"
+              @click="claimWeek(reward.week)"
+            >
+              {{ weeklyClaiming === reward.week ? t("weeklyClaiming") : t("weeklyClaim") }}
+            </button>
           </div>
         </div>
       </div>

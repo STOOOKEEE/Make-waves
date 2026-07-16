@@ -41,6 +41,8 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/config" },
   { method: "GET", url: "/leaderboard" },
   { method: "GET", url: "/nft-metadata/:code" },
+  { method: "GET", url: "/nft-metadata/weekly/:week" },
+  { method: "GET", url: "/badges/weekly_trade.svg" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
   // Flux SSE agent : auto-gardé dans le handler (token en query + filtrage par
@@ -147,6 +149,9 @@ export async function authorize(
   }
   // Confirmation d'un claim : le compte doit être soi.
   if (routeUrl === "/badges/:code/claim/confirm") {
+    return ensure(body.userId === me);
+  }
+  if (routeUrl === "/weekly-rewards/:week/claim") {
     return ensure(body.userId === me);
   }
 

@@ -1,5 +1,5 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
-import { connectXrplClient, XrplNftIssuer } from "@tide/xrpl";
+import { connectXrplClient, XrplCustodialWalletGateway, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
 import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { AuthService } from "./auth/auth-service";
@@ -26,9 +26,13 @@ import { AgentService } from "./services/agent-service";
 import { MandateService } from "./services/mandate-service";
 import type { MandateXamanApi } from "./services/mandate-service";
 import { PaperService } from "./services/paper-service";
+import { PaperWalletService } from "./services/paper-wallet-service";
+import { WeeklyRewardService } from "./services/weekly-reward-service";
 import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
 import { SqliteBadgeStore } from "./store/sqlite-badge-store";
+import { SqlitePaperWalletStore } from "./store/sqlite-paper-wallet-store";
+import { SqliteWeeklyRewardStore } from "./store/sqlite-weekly-reward-store";
 import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
@@ -38,6 +42,7 @@ import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
 import { openDatabase } from "./store/sqlite";
 import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
 import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
+import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-paper-wallet-rewards";
 import { createXamanApi } from "./xaman/sdk";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
@@ -274,6 +279,7 @@ async function main(): Promise<void> {
   const db = openDatabase(env.readDbPath());
   migrateAgentTables(db);
   migrateBadgeTables(db);
+  migratePaperWalletRewardTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
@@ -300,6 +306,38 @@ async function main(): Promise<void> {
     issuerSeed !== undefined && wsUrl !== undefined && sourceTag !== undefined
       ? new XrplNftIssuer({ serverUrl: wsUrl, issuerSeed, sourceTag })
       : undefined;
+  const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
+  if (
+    paperWalletRuntime !== undefined &&
+    (wsUrl === undefined || sourceTag === undefined || nftIssuer === undefined)
+  ) {
+    throw new Error(
+      "Wallet Paper configuré mais XRPL_WSS_URL, TIDE_SOURCE_TAG ou TIDE_NFT_ISSUER_SEED manquant",
+    );
+  }
+  const weeklyRewards =
+    paperWalletRuntime === undefined || wsUrl === undefined || sourceTag === undefined || nftIssuer === undefined
+      ? undefined
+      : (() => {
+          const gateway = new XrplCustodialWalletGateway({
+            serverUrl: wsUrl,
+            funderSeed: paperWalletRuntime.funderSeed,
+            sourceTag,
+          });
+          const wallets = new PaperWalletService({
+            store: new SqlitePaperWalletStore(db),
+            gateway,
+            masterKeyHex: paperWalletRuntime.masterKeyHex,
+            masterKeyId: paperWalletRuntime.masterKeyId,
+          });
+          return new WeeklyRewardService({
+            store: new SqliteWeeklyRewardStore(db),
+            wallets,
+            issuer: nftIssuer,
+            gateway,
+            metadataBaseUrl: env.readPublicBaseUrl(),
+          });
+        })();
 
   // Compétitions de démo (idempotent) : le front fusionne leur état live avec
   // son catalogue de présentation. Sans seed, la liste serait vide au premier boot.
@@ -409,6 +447,7 @@ async function main(): Promise<void> {
     agentChatCtx,
     nftIssuer,
     badgeStore,
+    weeklyRewards,
     sourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
     adminToken: env.readAdminToken(),

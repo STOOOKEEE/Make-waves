@@ -20,7 +20,10 @@ function fakeLedger(): {
   state: { connected: boolean; disconnected: boolean; submits: number };
 } {
   const state = { connected: false, disconnected: false, submits: 0 };
-  const metas = [{ nftoken_id: NFT_ID }, { offer_id: OFFER_ID }];
+  const metas = [
+    { TransactionResult: "tesSUCCESS", nftoken_id: NFT_ID },
+    { TransactionResult: "tesSUCCESS", offer_id: OFFER_ID },
+  ];
   const hashes = [`${"A".repeat(64)}`, `${"B".repeat(64)}`];
   const client: IssuerLedgerClient = {
     connect: async () => {

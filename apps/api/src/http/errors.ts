@@ -22,6 +22,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   MandateInvalidError: 400,
   InvalidNftError: 400,
   BadgeNotEarnedError: 400,
+  WeeklyRewardNotEligibleError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
@@ -39,8 +40,12 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   AgentAlreadyExistsError: 409,
   MandateAlreadyExistsError: 409,
   BadgeAlreadyClaimedError: 409,
+  WeeklyRewardAlreadyClaimedError: 409,
+  WeeklyRewardClaimInProgressError: 409,
   // 503 — dépendance non configurée
   BadgeClaimUnavailableError: 503,
+  WeeklyRewardUnavailableError: 503,
+  PaperWalletFundingFailedError: 503,
   // 502 — échec d'un service amont (feed de prix, Xaman)
   PriceFeedError: 502,
   XamanError: 502,

@@ -10,6 +10,41 @@ import {
   MEMO_TYPE_JOIN,
 } from "../constants";
 
+/** Paramètres du funding d'un wallet Tide créé côté serveur. */
+export interface WalletFundingPaymentParams {
+  /** Compte opérateur qui finance le nouveau wallet. */
+  readonly account: string;
+  /** Adresse fraîchement générée à activer. */
+  readonly destination: string;
+  /** Montant entier en drops XRP. */
+  readonly amountDrops: string;
+  /** SourceTag Tide, pour l'attribution du funding. */
+  readonly sourceTag: number;
+}
+
+/**
+ * Payment de provision d'un wallet Paper. Le montant reste en drops afin de ne
+ * jamais introduire de flottant dans une transaction de valeur réelle.
+ */
+export function buildWalletFundingPayment(
+  params: WalletFundingPaymentParams,
+): Payment {
+  assertValidAddress(params.account, "account");
+  assertValidAddress(params.destination, "destination");
+  if (params.account === params.destination) {
+    throw new InvalidAddressError("account et destination doivent être différents");
+  }
+  assertValidAmount(params.amountDrops, "amountDrops");
+  assertAttributionTag(params.sourceTag);
+  return {
+    TransactionType: "Payment",
+    Account: params.account,
+    Destination: params.destination,
+    Amount: params.amountDrops,
+    SourceTag: params.sourceTag,
+  };
+}
+
 /** Paramètres d'un buy-in de tournoi (inscription = `Payment` taggé). */
 export interface BuyInPaymentParams {
   /** Joueur qui paie (signera la tx via Xaman). */

@@ -286,6 +286,36 @@ export function readAgentKeyMaster(): string | undefined {
   return raw;
 }
 
+/** Configuration volontairement complète du wallet Paper financé. */
+export interface PaperWalletRuntimeConfig {
+  readonly funderSeed: string;
+  readonly masterKeyHex: string;
+  readonly masterKeyId: string;
+}
+
+/**
+ * Le programme est OFF si ses deux secrets sont absents. Une configuration
+ * partielle est dangereuse (wallet créé mais impossible à déchiffrer) : on
+ * refuse donc le démarrage plutôt que de dégrader silencieusement.
+ */
+export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undefined {
+  const funderSeed = optional("TIDE_PAPER_WALLET_FUNDER_SEED");
+  const masterKeyHex = optional("TIDE_PAPER_WALLET_KEY_MASTER");
+  if (funderSeed === undefined && masterKeyHex === undefined) return undefined;
+  if (funderSeed === undefined || masterKeyHex === undefined) {
+    throw new Error(
+      "TIDE_PAPER_WALLET_FUNDER_SEED et TIDE_PAPER_WALLET_KEY_MASTER doivent être fournis ensemble",
+    );
+  }
+  if (!/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(funderSeed)) {
+    throw new Error("TIDE_PAPER_WALLET_FUNDER_SEED mal formé (seed XRPL base58 attendu)");
+  }
+  if (!/^[0-9a-fA-F]{64}$/.test(masterKeyHex)) {
+    throw new Error("TIDE_PAPER_WALLET_KEY_MASTER doit contenir 64 caractères hexadécimaux");
+  }
+  return { funderSeed, masterKeyHex, masterKeyId: optional("TIDE_PAPER_WALLET_KEY_ID") ?? "v1" };
+}
+
 /** Modèle Claude par défaut pour le chat agent (Tâche 27). Surchargeable via
  * `TIDE_LLM_MODEL`. Format : identifiant nu (`claude-sonnet-4-5`,
  * `claude-opus-4-8`...) — pas de suffixe de date. */

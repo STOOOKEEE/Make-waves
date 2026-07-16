@@ -39,13 +39,19 @@ import {
   parseLiveOfferRequest,
   parseOpenPosition,
   parseOrder,
+  parseWeeklyRewardWeek,
   parseProvisionLiveAccount,
   parseSignMandateCallback,
   parseUpdateAgent,
   parseUserId,
 } from "./parse";
 import type { BadgeService } from "../services/badge-service";
+import {
+  WeeklyRewardUnavailableError,
+  type WeeklyRewardService,
+} from "../services/weekly-reward-service";
 import { badgeByCode } from "../badges/catalog";
+import { WEEKLY_TRADE_SVG } from "../badges/weekly-trade-svg";
 import { authorize } from "../auth/guard";
 import type { AuthzResolvers } from "../auth/guard";
 import type { AuthService } from "../auth/auth-service";
@@ -130,6 +136,8 @@ export interface ServerDeps {
   readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
   /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
   readonly badgeService?: BadgeService;
+  /** Une carte/NFT par semaine avec au moins un trade Paper. */
+  readonly weeklyRewards?: WeeklyRewardService;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: { readonly token: string; readonly service: AdminService };
   /**
@@ -262,6 +270,20 @@ const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
+  /** Découple le fill Paper immédiat du funding Mainnet (lent et optionnel). */
+  const registerPaperTrade = async (userId: string): Promise<void> => {
+    const rewards = deps.weeklyRewards;
+    if (rewards === undefined) return;
+    try {
+      await rewards.recordTrade(userId);
+    } catch (error) {
+      console.error("[weekly-rewards] qualification échouée:", error);
+    }
+    void rewards.provisionWallet(userId).catch((error: unknown) => {
+      console.error("[weekly-rewards] provision wallet échouée:", error);
+    });
+  };
+
   // CORS (F6) : le front (port/domaine distinct) appelle l'API en cross-origin.
   // En prod, `deps.corsOrigin` restreint aux origines du front (env) ; absent →
   // reflète toute origine (dev/démo).
@@ -359,9 +381,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   app.post<{ Params: { userId: string } }>(
     "/accounts/:userId/orders",
-    (request, reply) => {
+    async (request, reply) => {
       const order = parseOrder(request.body);
       const fill = deps.paper.placeOrder(request.params.userId, order);
+      // Le trading Paper reste disponible si XRPL est momentanément indisponible.
+      // Un funding ambigu est gelé pour reprise opérateur, jamais retenté en boucle.
+      await registerPaperTrade(request.params.userId);
       reply.code(201);
       return fill;
     },
@@ -374,9 +399,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   app.post<{ Params: { userId: string } }>(
     "/accounts/:userId/positions",
-    (request, reply) => {
+    async (request, reply) => {
       const input = parseOpenPosition(request.body);
       const position = deps.paper.openPosition(request.params.userId, input);
+      await registerPaperTrade(request.params.userId);
       reply.code(201);
       return position;
     },
@@ -842,6 +868,25 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     };
   });
 
+  app.get<{ Params: { week: string } }>("/nft-metadata/weekly/:week", (request) => {
+    const week = parseWeeklyRewardWeek(request.params.week);
+    const base = deps.publicBaseUrl ?? DEFAULT_PUBLIC_BASE_URL;
+    return {
+      name: `Tide Weekly Trade Proof · ${week}`,
+      description: "One verified week with at least one Paper trade on Tide.",
+      image: `${base}/badges/weekly_trade.svg`,
+      attributes: [
+        { trait_type: "programme", value: "weekly_trade_proof" },
+        { trait_type: "week", value: week },
+      ],
+    };
+  });
+
+  app.get("/badges/weekly_trade.svg", (_request, reply) => {
+    reply.type("image/svg+xml");
+    return WEEKLY_TRADE_SVG;
+  });
+
   // Badges + claim NFT — montés seulement si un issuer NFT est configuré.
   if (deps.badgeService !== undefined) {
     const badgeSvc = deps.badgeService;
@@ -863,6 +908,22 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       },
     );
   }
+
+  // La liste existe aussi programme OFF (tableau vide) : le front ne dépend pas
+  // de la configuration Mainnet. Le claim, lui, échoue explicitement en 503.
+  app.get<{ Params: { userId: string } }>(
+    "/accounts/:userId/weekly-rewards",
+    (request) => deps.weeklyRewards?.list(request.params.userId) ?? [],
+  );
+  app.post<{ Params: { week: string } }>(
+    "/weekly-rewards/:week/claim",
+    async (request) => {
+      const { userId } = parseUserId(request.body, "claimWeeklyReward");
+      const rewards = deps.weeklyRewards;
+      if (rewards === undefined) throw new WeeklyRewardUnavailableError();
+      return rewards.claim(userId, parseWeeklyRewardWeek(request.params.week));
+    },
+  );
 
   // Console admin (lecture seule) : montée uniquement si un token est configuré
   // (TIDE_ADMIN_TOKEN). Absente → 404, rien n'est exposé en prod par défaut.

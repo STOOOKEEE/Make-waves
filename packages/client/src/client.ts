@@ -249,6 +249,15 @@ export interface ClaimBadgeResult {
   readonly acceptTx: BadgeAcceptTx;
 }
 
+/** Récompense NFT gagnée après au moins un trade Paper dans la semaine UTC. */
+export interface WeeklyRewardDto {
+  readonly week: string;
+  readonly qualifiedAt: number;
+  readonly status: "eligible" | "minting" | "offer_pending" | "claimed";
+  readonly nftTokenId: string | null;
+  readonly claimedAt: number | null;
+}
+
 // --- Admin (console opérateur) ---
 
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -734,6 +743,26 @@ export class TideClient {
         path: path("badges", code, "claim", "confirm"),
         method: "POST",
         body: txHash === undefined ? { userId } : { userId, txHash },
+      },
+      200,
+    );
+  }
+
+  /** Récompenses hebdomadaires éligibles du compte Paper. */
+  async weeklyRewards(userId: string): Promise<WeeklyRewardDto[]> {
+    return this.call(
+      { path: path("accounts", userId, "weekly-rewards"), method: "GET" },
+      200,
+    );
+  }
+
+  /** Claim explicite : le serveur accepte le NFT dans le wallet Paper custodial. */
+  async claimWeeklyReward(userId: string, week: string): Promise<WeeklyRewardDto> {
+    return this.call(
+      {
+        path: path("weekly-rewards", week, "claim"),
+        method: "POST",
+        body: { userId },
       },
       200,
     );

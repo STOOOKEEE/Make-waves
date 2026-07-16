@@ -94,6 +94,26 @@ describe("TideClient", () => {
     });
   });
 
+  it("weeklyRewards et claimWeeklyReward utilisent les routes dédiées", async () => {
+    const { client, requests } = stub((request) => ({
+      status: 200,
+      body:
+        request.method === "GET"
+          ? []
+          : { week: "2026-07-13", qualifiedAt: 1, status: "claimed", nftTokenId: "N", claimedAt: 2 },
+    }));
+    await client.weeklyRewards("paper:u1");
+    await client.claimWeeklyReward("paper:u1", "2026-07-13");
+    expect(requests).toEqual([
+      { path: "/accounts/paper%3Au1/weekly-rewards", method: "GET" },
+      {
+        path: "/weekly-rewards/2026-07-13/claim",
+        method: "POST",
+        body: { userId: "paper:u1" },
+      },
+    ]);
+  });
+
   it("openPosition -> POST /accounts/:id/positions (201)", async () => {
     const position = {
       id: "p1",
