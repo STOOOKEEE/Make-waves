@@ -215,10 +215,17 @@ export class PaperService {
     };
   }
 
-  /** Classement de tous les comptes (réutilise le leaderboard du domaine). */
-  leaderboard(prices: PriceMap): LeaderboardEntry[] {
+  /**
+   * Classement des comptes sélectionnés. Le filtre est appliqué avant le calcul
+   * des rangs : les profils techniques ne peuvent donc pas déformer le rang des
+   * utilisateurs visibles sur les surfaces publiques.
+   */
+  leaderboard(
+    prices: PriceMap,
+    includeUser: (userId: string) => boolean = () => true,
+  ): LeaderboardEntry[] {
     return buildLeaderboard(
-      this.store.snapshots(),
+      this.store.snapshots().filter((account) => includeUser(account.userId)),
       prices,
       QUOTE_CURRENCY,
       this.startingEquity,

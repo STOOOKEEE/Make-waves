@@ -8,6 +8,7 @@ import { InMemoryAgentStore } from "../store/agent-store";
 import { InMemoryMandateStore } from "../store/mandate-store";
 import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import { InMemoryCompetitionStore } from "../store/competition-store";
+import { arenaSimulationUserId } from "../simulation/arena-ids";
 
 const ADMIN_TOKEN = "secret";
 
@@ -15,6 +16,7 @@ function buildAdminServer() {
   const accounts = new InMemoryAccountStore();
   const paper = new PaperService(undefined, accounts);
   paper.openAccount("visitor");
+  paper.openAccount(arenaSimulationUserId(0));
   const service = new AdminService({
     paper,
     agents: new InMemoryAgentStore(),
@@ -61,6 +63,15 @@ describe("GET /admin/overview", () => {
     const body = res.json();
     expect(body.totals.users).toBe(1);
     expect(body.users[0].segment).toBe("frontend");
+    expect(body.simulation.enabled).toBe(false);
+    await app.close();
+  });
+
+  it("exclut les profils de simulation du leaderboard public", async () => {
+    const app = buildAdminServer();
+    const res = await app.inject({ method: "GET", url: "/leaderboard" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().map((entry: { userId: string }) => entry.userId)).toEqual(["visitor"]);
     await app.close();
   });
 

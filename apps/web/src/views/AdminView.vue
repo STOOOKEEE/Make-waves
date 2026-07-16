@@ -4,7 +4,7 @@ import type { TideClient } from "@tide/client";
 import { useAdmin } from "../composables/useAdmin";
 
 const props = defineProps<{ client: TideClient }>();
-const { token, overview, error, loading, load, logout } = useAdmin(props.client);
+const { token, overview, error, loading, load, runTestnetE2E, logout } = useAdmin(props.client);
 
 const SEGMENT_LABEL: Record<string, string> = {
   operator: "À moi",
@@ -67,6 +67,30 @@ onMounted(() => {
         <div class="card">
           <span class="card__label">Wallets</span>
           <strong class="card__value">{{ overview.totals.wallets }}</strong>
+        </div>
+
+        <div class="card">
+          <span class="card__label">Arène de simulation</span>
+          <strong class="card__value">{{ overview.simulation.enabled ? `${overview.simulation.provisionedUsers} profils` : "Désactivée" }}</strong>
+          <ul class="segments">
+            <li v-if="overview.simulation.enabled">{{ overview.simulation.tradesPerTick }} trades / {{ Math.round(overview.simulation.tickIntervalMs / 1000) }} s</li>
+            <li v-if="overview.simulation.enabled">{{ overview.simulation.executedTrades }} exécutés depuis le boot</li>
+            <li v-if="overview.simulation.enabled">Exclue des utilisateurs, rangs et récompenses</li>
+            <li v-if="overview.simulation.lastError" class="admin__error">{{ overview.simulation.lastError }}</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <span class="card__label">Parcours E2E Testnet</span>
+          <strong class="card__value">{{ overview.testnetE2E.enabled ? overview.testnetE2E.state : "Désactivé" }}</strong>
+          <ul class="segments">
+            <li v-if="overview.testnetE2E.enabled">{{ overview.testnetE2E.completedUsers }} / {{ overview.testnetE2E.configuredUsers }} profils terminés</li>
+            <li v-if="overview.testnetE2E.enabled">LLM · wallet faucet · ordre Paper · NFT</li>
+            <li v-if="overview.testnetE2E.lastError" class="admin__error">{{ overview.testnetE2E.lastError }}</li>
+          </ul>
+          <button v-if="overview.testnetE2E.enabled" type="button" :disabled="loading || overview.testnetE2E.state === 'running'" @click="runTestnetE2E">
+            Lancer le parcours Testnet
+          </button>
         </div>
       </div>
 

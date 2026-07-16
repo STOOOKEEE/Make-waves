@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   readAdminToken,
+  readArenaSimulationConfig,
+  readTestnetE2EConfig,
   readCorsOrigin,
   readOperatorUserIds,
   readSessionSecret,
@@ -13,6 +15,14 @@ const KEYS = [
   "TIDE_SESSION_SECRET",
   "TIDE_SESSION_TTL",
   "TIDE_CORS_ORIGIN",
+  "TIDE_SIMULATION_USERS",
+  "TIDE_SIMULATION_TRADES_PER_TICK",
+  "TIDE_SIMULATION_TICK_MS",
+  "TIDE_E2E_TESTNET_USERS",
+  "TIDE_E2E_TESTNET_ISSUER_SEED",
+  "TIDE_E2E_TESTNET_SOURCE_TAG",
+  "TIDE_E2E_TESTNET_WSS_URL",
+  "TIDE_XRPL_NETWORK",
 ] as const;
 
 afterEach(() => {
@@ -74,5 +84,43 @@ describe("readCorsOrigin", () => {
   it("parse un CSV d'origines", () => {
     process.env["TIDE_CORS_ORIGIN"] = "https://tidetrade.xyz, https://www.tidetrade.xyz";
     expect(readCorsOrigin()).toEqual(["https://tidetrade.xyz", "https://www.tidetrade.xyz"]);
+  });
+});
+
+describe("readArenaSimulationConfig", () => {
+  it("reste désactivée sans configuration", () => {
+    expect(readArenaSimulationConfig()).toMatchObject({ users: 0, tradesPerTick: 0 });
+  });
+  it("lit le scénario de charge explicite", () => {
+    process.env["TIDE_SIMULATION_USERS"] = "300";
+    process.env["TIDE_SIMULATION_TRADES_PER_TICK"] = "15";
+    process.env["TIDE_SIMULATION_TICK_MS"] = "60000";
+    expect(readArenaSimulationConfig()).toEqual({
+      users: 300,
+      tradesPerTick: 15,
+      tickIntervalMs: 60_000,
+    });
+  });
+  it("refuse une cadence trop rapide", () => {
+    process.env["TIDE_SIMULATION_USERS"] = "300";
+    process.env["TIDE_SIMULATION_TICK_MS"] = "1000";
+    expect(() => readArenaSimulationConfig()).toThrow();
+  });
+});
+
+describe("readTestnetE2EConfig", () => {
+  it("reste off sans nombre de profils", () => {
+    expect(readTestnetE2EConfig()).toBeUndefined();
+  });
+  it("refuse tout réseau autre que Testnet", () => {
+    process.env["TIDE_E2E_TESTNET_USERS"] = "1";
+    expect(() => readTestnetE2EConfig()).toThrow("testnet");
+  });
+  it("lit une configuration Testnet complète", () => {
+    process.env["TIDE_XRPL_NETWORK"] = "testnet";
+    process.env["TIDE_E2E_TESTNET_USERS"] = "2";
+    process.env["TIDE_E2E_TESTNET_ISSUER_SEED"] = "sEd7e5DsqP1E3Vpv6t3knnP7E4EcaD2";
+    process.env["TIDE_E2E_TESTNET_SOURCE_TAG"] = "123";
+    expect(readTestnetE2EConfig()).toMatchObject({ users: 2, sourceTag: 123 });
   });
 });

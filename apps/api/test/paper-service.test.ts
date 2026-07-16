@@ -118,6 +118,18 @@ describe("PaperService — leaderboard", () => {
     expect(new PaperService(START).leaderboard(PRICES)).toEqual([]);
   });
 
+  it("applique le filtre avant de calculer les rangs", () => {
+    const service = new PaperService(START);
+    service.openAccount("human");
+    service.openAccount("sim:arena:001");
+    service.placeOrder("sim:arena:001", buy(2_000, 0.5));
+
+    const board = service.leaderboard({ XRP: 0.6 }, (userId) => !userId.startsWith("sim:"));
+
+    expect(board).toHaveLength(1);
+    expect(board[0]).toMatchObject({ userId: "human", rank: 1 });
+  });
+
   it("lève si une devise détenue n'a pas de prix", () => {
     const service = new PaperService(START);
     service.openAccount("bob");

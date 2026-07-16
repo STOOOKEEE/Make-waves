@@ -57,6 +57,8 @@ import type { AuthzResolvers } from "../auth/guard";
 import type { AuthService } from "../auth/auth-service";
 import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
+import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
+import type { TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -139,7 +141,11 @@ export interface ServerDeps {
   /** Une carte/NFT par semaine avec au moins un trade Paper. */
   readonly weeklyRewards?: WeeklyRewardService;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
-  readonly admin?: { readonly token: string; readonly service: AdminService };
+  readonly admin?: {
+    readonly token: string;
+    readonly service: AdminService;
+    readonly testnetE2E?: TestnetE2ERunner;
+  };
   /**
    * Authentification : garde global (Sign-In with XRPL) + routes /auth/*. Absente
    * → API non protégée (tests unitaires / legacy). En prod, `main.ts` la câble
@@ -272,6 +278,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   /** Découple le fill Paper immédiat du funding Mainnet (lent et optionnel). */
   const registerPaperTrade = async (userId: string): Promise<void> => {
+    // Les profils du banc de charge ne reçoivent ni wallet XRPL ni récompense :
+    // ils n'existent que pour exercer le moteur Paper local.
+    if (isArenaSimulationUserId(userId)) return;
     const rewards = deps.weeklyRewards;
     if (rewards === undefined) return;
     try {
@@ -420,7 +429,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       ),
   );
 
-  app.get("/leaderboard", () => deps.paper.leaderboard(deps.getPrices()));
+  app.get("/leaderboard", () =>
+    deps.paper.leaderboard(deps.getPrices(), (userId) => !isTechnicalTestUserId(userId)),
+  );
 
   /** Carte de prix courante (instantané du cache off-chain). */
   app.get("/prices", () => deps.getPrices());
@@ -937,6 +948,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       }
       return admin.service.overview(deps.getPrices());
     });
+    if (admin.testnetE2E !== undefined) {
+      const testnetE2E = admin.testnetE2E;
+      app.post("/admin/testnet-e2e/run", async (request, reply) => {
+        const token = request.headers["x-admin-token"];
+        if (typeof token !== "string" || token !== admin.token) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        return testnetE2E.run();
+      });
+    }
   }
 
   return app;

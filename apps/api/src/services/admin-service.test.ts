@@ -6,6 +6,7 @@ import { InMemoryAgentStore, type Agent } from "../store/agent-store";
 import { InMemoryMandateStore, type Mandate } from "../store/mandate-store";
 import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import type { PriceMap } from "@tide/core";
+import { ArenaSimulationService } from "../simulation/arena-simulation-service";
 
 const PRICES: PriceMap = { XRP: 0.5 };
 
@@ -133,5 +134,31 @@ describe("AdminService.overview", () => {
       agentId: null,
       live: true,
     });
+  });
+
+  it("sépare les profils de simulation des totaux humains", async () => {
+    const { paper, agents, mandates, actions } = makeService([]);
+    paper.openAccount("visitor");
+    const arena = new ArenaSimulationService(paper, {
+      users: 2,
+      tradesPerTick: 1,
+      tickIntervalMs: 60_000,
+    });
+    arena.provision();
+    const service = new AdminService({
+      paper,
+      agents,
+      mandates,
+      actions,
+      prizePoolAddress: null,
+      operatorUserIds: new Set(),
+      simulation: arena,
+    });
+
+    const overview = await service.overview(PRICES);
+
+    expect(overview.totals.users).toBe(1);
+    expect(overview.users.map((user) => user.userId)).toEqual(["visitor"]);
+    expect(overview.simulation).toMatchObject({ enabled: true, provisionedUsers: 2 });
   });
 });

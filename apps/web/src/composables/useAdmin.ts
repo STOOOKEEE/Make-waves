@@ -41,5 +41,22 @@ export function useAdmin(client: TideClient) {
     }
   }
 
-  return { token, overview, error, loading, load, logout };
+  async function runTestnetE2E(): Promise<void> {
+    if (token.value === "") {
+      error.value = "Token requis.";
+      return;
+    }
+    loading.value = true;
+    error.value = "";
+    try {
+      const status = await client.runTestnetE2E(token.value);
+      if (overview.value !== null) overview.value = { ...overview.value, testnetE2E: status };
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  return { token, overview, error, loading, load, runTestnetE2E, logout };
 }

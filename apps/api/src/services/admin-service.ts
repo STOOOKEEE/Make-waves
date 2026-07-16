@@ -3,6 +3,9 @@ import type { PaperService } from "./paper-service";
 import type { Agent, AgentStatus, AgentType, AgentStore } from "../store/agent-store";
 import type { MandateStore } from "../store/mandate-store";
 import type { AgentActionsStore } from "../store/agent-actions-store";
+import { isTechnicalTestUserId } from "../simulation/arena-ids";
+import type { ArenaSimulationStatus, ArenaSimulationStatusReader } from "../simulation/arena-simulation-service";
+import type { TestnetE2EStatus, TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 
 /** Origine d'un compte paper. Précédence : operator > agent > frontend. */
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -59,6 +62,7 @@ export interface AdminAgentTotals {
 }
 
 export interface AdminTotals {
+  /** Utilisateurs humains uniquement : les profils d'arène sont séparés. */
   readonly users: number;
   readonly bySegment: AdminSegmentTotals;
   readonly agents: AdminAgentTotals;
@@ -70,6 +74,10 @@ export interface AdminOverview {
   readonly users: readonly AdminUserRow[];
   readonly agents: readonly AdminAgentRow[];
   readonly wallets: readonly AdminWalletRow[];
+  /** Banc de charge Paper, explicitement séparé de la population humaine. */
+  readonly simulation: ArenaSimulationStatus;
+  /** Parcours LLM + wallet + NFT, visible et déclenchable par l'opérateur. */
+  readonly testnetE2E: TestnetE2EStatus;
 }
 
 export interface AdminServiceDeps {
@@ -79,6 +87,8 @@ export interface AdminServiceDeps {
   readonly actions: AgentActionsStore;
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
+  readonly simulation?: ArenaSimulationStatusReader;
+  readonly testnetE2E?: TestnetE2ERunner;
 }
 
 /** Nombre d'actions récentes à charger par agent (seule la dernière est exposée). */
@@ -105,6 +115,8 @@ export class AdminService {
       users,
       agents: agentRows,
       wallets,
+      simulation: this.deps.simulation?.status() ?? disabledSimulationStatus(),
+      testnetE2E: this.deps.testnetE2E?.status() ?? disabledTestnetE2EStatus(),
     };
   }
 
@@ -122,7 +134,7 @@ export class AdminService {
     prices: PriceMap,
     agentOwners: ReadonlySet<string>,
   ): AdminUserRow[] {
-    return this.deps.paper.leaderboard(prices).map((entry) => ({
+    return this.deps.paper.leaderboard(prices, (userId) => !isTechnicalTestUserId(userId)).map((entry) => ({
       userId: entry.userId,
       segment: this.classify(entry.userId, agentOwners),
       equity: entry.equity,
@@ -201,4 +213,30 @@ export class AdminService {
       wallets: wallets.length,
     };
   }
+}
+
+function disabledSimulationStatus(): ArenaSimulationStatus {
+  return {
+    enabled: false,
+    configuredUsers: 0,
+    provisionedUsers: 0,
+    tradesPerTick: 0,
+    tickIntervalMs: 60_000,
+    lastTickAt: null,
+    completedTicks: 0,
+    executedTrades: 0,
+    skippedTrades: 0,
+    lastError: null,
+  };
+}
+
+function disabledTestnetE2EStatus(): TestnetE2EStatus {
+  return {
+    enabled: false,
+    state: "idle",
+    configuredUsers: 0,
+    completedUsers: 0,
+    lastRunAt: null,
+    lastError: null,
+  };
 }

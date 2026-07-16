@@ -308,6 +308,26 @@ export interface AdminOverviewDto {
   readonly users: readonly AdminUserDto[];
   readonly agents: readonly AdminAgentDto[];
   readonly wallets: readonly AdminWalletDto[];
+  readonly simulation: {
+    readonly enabled: boolean;
+    readonly configuredUsers: number;
+    readonly provisionedUsers: number;
+    readonly tradesPerTick: number;
+    readonly tickIntervalMs: number;
+    readonly lastTickAt: number | null;
+    readonly completedTicks: number;
+    readonly executedTrades: number;
+    readonly skippedTrades: number;
+    readonly lastError: string | null;
+  };
+  readonly testnetE2E: {
+    readonly enabled: boolean;
+    readonly state: "idle" | "running" | "succeeded" | "failed";
+    readonly configuredUsers: number;
+    readonly completedUsers: number;
+    readonly lastRunAt: number | null;
+    readonly lastError: string | null;
+  };
 }
 
 function path(...segments: string[]): string {
@@ -512,11 +532,18 @@ export class TideClient {
     return this.call({ path: "/metrics", method: "GET" }, 200);
   }
 
-  // --- Admin (console opérateur, lecture seule) ---
+  // --- Admin (console opérateur) ---
 
   async adminOverview(token: string): Promise<AdminOverviewDto> {
     return this.call(
       { path: "/admin/overview", method: "GET", headers: { "x-admin-token": token } },
+      200,
+    );
+  }
+
+  async runTestnetE2E(token: string): Promise<AdminOverviewDto["testnetE2E"]> {
+    return this.call(
+      { path: "/admin/testnet-e2e/run", method: "POST", headers: { "x-admin-token": token } },
       200,
     );
   }

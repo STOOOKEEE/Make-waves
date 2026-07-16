@@ -44,6 +44,8 @@ import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
 import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
 import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-paper-wallet-rewards";
 import { createXamanApi } from "./xaman/sdk";
+import { ArenaSimulationService } from "./simulation/arena-simulation-service";
+import { TestnetE2EFlowRunner } from "./simulation/testnet-e2e-runner";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
 // `fetch`, variables d'environnement, écoute réseau, rafraîchissement périodique
@@ -348,6 +350,11 @@ async function main(): Promise<void> {
   // variées dès le premier lancement (équités calculées au prix réel du feed).
   const accountStore = new SqliteAccountStore(db);
   seedDemoAccounts(new PaperService(undefined, accountStore), accountStore);
+  const paper = new PaperService(undefined, accountStore);
+  const arenaSimulation = new ArenaSimulationService(
+    paper,
+    env.readArenaSimulationConfig(),
+  );
 
   // Agents & mandats (AI Agent) : montés systématiquement — le serveur MCP et la
   // vue AgentView consomment ces routes (`/api/agents`, `/api/mandates`,
@@ -425,6 +432,28 @@ async function main(): Promise<void> {
           (userId) => authService.issueToken(userId),
         );
 
+  const testnetE2EConfig = env.readTestnetE2EConfig();
+  const testnetE2E =
+    testnetE2EConfig === undefined
+      ? undefined
+      : (() => {
+          if (agentChatService === undefined || agentChatCtx === undefined) {
+            throw new Error("E2E Testnet configuré mais TIDE_LLM_API_KEY manquant");
+          }
+          return new TestnetE2EFlowRunner({
+            config: {
+              ...testnetE2EConfig,
+              metadataBaseUrl: env.readPublicBaseUrl(),
+            },
+            paper,
+            agents: agentService,
+            mandates: mandateStore,
+            chat: agentChatService,
+            chatCtx: agentChatCtx,
+            weeklyRewardsStore: new SqliteWeeklyRewardStore(db),
+          });
+        })();
+
   const { app, cache, refreshPrices } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
@@ -433,6 +462,7 @@ async function main(): Promise<void> {
     },
     fetchJson,
     accountStore,
+    paper,
     competitionStore,
     onchainPrices,
     getBookDepth: fetchBookDepth,
@@ -452,6 +482,8 @@ async function main(): Promise<void> {
     metadataBaseUrl: env.readPublicBaseUrl(),
     adminToken: env.readAdminToken(),
     operatorUserIds: env.readOperatorUserIds(),
+    simulation: arenaSimulation,
+    testnetE2E,
     agentStore,
     mandateStore,
     prizePoolAddress: env.readPrizePoolAddress(),
@@ -470,6 +502,10 @@ async function main(): Promise<void> {
     });
   }, PRICE_REFRESH_MS);
   priceTimer.unref();
+
+  // Banc de charge explicite, Paper-only et OFF sans TIDE_SIMULATION_USERS.
+  // Les profils sont exclus des rangs, badges et métriques d'utilisateurs.
+  arenaSimulation.start(() => cache.current());
 
   // L'indexeur a besoin du cache de prix (normalisation du volume) → après createApp.
   if (indexerSetup !== undefined && xrpl !== undefined) {
@@ -496,7 +532,8 @@ async function main(): Promise<void> {
       `indexeur:${indexerSetup !== undefined ? "on" : "off"} ` +
       `xaman:${sign !== undefined ? "on" : "off"} ` +
       `live:${exec !== undefined ? "on" : "off"} ` +
-      `chat:${agentChatService !== undefined ? "on" : "off"}]`,
+      `chat:${agentChatService !== undefined ? "on" : "off"} ` +
+      `arena:${arenaSimulation.status().enabled ? String(arenaSimulation.status().configuredUsers) : "off"}]`,
   );
 }
 

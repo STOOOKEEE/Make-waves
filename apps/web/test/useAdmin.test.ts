@@ -12,6 +12,26 @@ const EMPTY: AdminOverviewDto = {
   users: [],
   agents: [],
   wallets: [],
+  simulation: {
+    enabled: false,
+    configuredUsers: 0,
+    provisionedUsers: 0,
+    tradesPerTick: 0,
+    tickIntervalMs: 60_000,
+    lastTickAt: null,
+    completedTicks: 0,
+    executedTrades: 0,
+    skippedTrades: 0,
+    lastError: null,
+  },
+  testnetE2E: {
+    enabled: false,
+    state: "idle",
+    configuredUsers: 0,
+    completedUsers: 0,
+    lastRunAt: null,
+    lastError: null,
+  },
 };
 
 /** Client dont `/admin/overview` répond selon le token reçu en en-tête. */

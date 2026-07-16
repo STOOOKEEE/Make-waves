@@ -32,9 +32,13 @@ import type { AgentActionsStore } from "./store/agent-actions-store";
 import { AdminService } from "./services/admin-service";
 import type { AgentStore } from "./store/agent-store";
 import type { MandateStore } from "./store/mandate-store";
+import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
+import type { TestnetE2ERunner } from "./simulation/testnet-e2e-runner";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
+  /** Service Paper déjà assemblé (partagé avec un éventuel banc de charge). */
+  readonly paper?: PaperService;
   /** Capital de départ des comptes paper (défaut domaine si omis). */
   readonly startingEquity?: number;
   /**
@@ -75,6 +79,10 @@ export interface AppConfig {
   readonly adminToken?: string;
   /** Comptes classés "operator" dans la console admin (défaut : aucun). */
   readonly operatorUserIds?: readonly string[];
+  /** Etat du banc de charge Paper, visible seulement dans la console admin. */
+  readonly simulation?: ArenaSimulationStatusReader;
+  /** Runner Testnet explicitement déclenché depuis la console admin. */
+  readonly testnetE2E?: TestnetE2ERunner;
   /** Store des agents — requis avec `adminToken` pour activer la console admin. */
   readonly agentStore?: AgentStore;
   /** Store des mandats — requis avec `adminToken` pour activer la console admin. */
@@ -142,7 +150,7 @@ export interface App {
  * effet de bord (pas d'écoute réseau, pas de timer) → testable.
  */
 export function createApp(config: AppConfig): App {
-  const paper = new PaperService(config.startingEquity, config.accountStore);
+  const paper = config.paper ?? new PaperService(config.startingEquity, config.accountStore);
   const competition = new CompetitionService(config.competitionStore);
   // Badges : montés dès qu'un store est fourni (affichage off-chain gratuit).
   // Le claim ON-CHAIN reste conditionné à l'issuer NFT (+ SourceTag) : sans eux,
@@ -174,7 +182,10 @@ export function createApp(config: AppConfig): App {
             actions: config.agentActionsStore,
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
+            simulation: config.simulation,
+            testnetE2E: config.testnetE2E,
           }),
+          ...(config.testnetE2E !== undefined ? { testnetE2E: config.testnetE2E } : {}),
         }
       : undefined;
 

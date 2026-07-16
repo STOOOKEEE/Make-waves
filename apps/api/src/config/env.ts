@@ -425,3 +425,104 @@ export function readOperatorUserIds(): string[] {
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
+
+/** Configuration de l'arène Paper ; OFF par défaut pour ne jamais créer de charge par surprise. */
+export interface ArenaSimulationRuntimeConfig {
+  readonly users: number;
+  readonly tradesPerTick: number;
+  readonly tickIntervalMs: number;
+}
+
+const DEFAULT_ARENA_TRADES_PER_TICK = 12;
+const DEFAULT_ARENA_TICK_INTERVAL_MS = 60_000;
+const MAX_ARENA_USERS = 1_000;
+const MIN_ARENA_TICK_INTERVAL_MS = 10_000;
+
+/**
+ * Active le banc de charge Paper avec `TIDE_SIMULATION_USERS` (ex. 300).
+ * `0` ou absence = OFF. Les deux autres variables ne sont lues que si l'arène
+ * est active, pour garder une configuration OFF totalement inerte.
+ */
+export function readArenaSimulationConfig(): ArenaSimulationRuntimeConfig {
+  const rawUsers = optional("TIDE_SIMULATION_USERS");
+  if (rawUsers === undefined || rawUsers === "0") {
+    return { users: 0, tradesPerTick: 0, tickIntervalMs: DEFAULT_ARENA_TICK_INTERVAL_MS };
+  }
+  const users = Number(rawUsers);
+  if (!Number.isInteger(users) || users < 1 || users > MAX_ARENA_USERS) {
+    throw new Error(
+      `TIDE_SIMULATION_USERS invalide (entier 1..${String(MAX_ARENA_USERS)} attendu): ${rawUsers}`,
+    );
+  }
+  const tradesPerTick = readBoundedPositiveInteger(
+    "TIDE_SIMULATION_TRADES_PER_TICK",
+    DEFAULT_ARENA_TRADES_PER_TICK,
+    users,
+  );
+  const tickIntervalMs = readBoundedPositiveInteger(
+    "TIDE_SIMULATION_TICK_MS",
+    DEFAULT_ARENA_TICK_INTERVAL_MS,
+    Number.MAX_SAFE_INTEGER,
+    MIN_ARENA_TICK_INTERVAL_MS,
+  );
+  return { users, tradesPerTick, tickIntervalMs };
+}
+
+/** Parcours réel de vérification : LLM + Paper + NFT, strictement sur Testnet. */
+export interface TestnetE2ERuntimeConfig {
+  readonly users: number;
+  readonly wssUrl: string;
+  readonly issuerSeed: string;
+  readonly sourceTag: number;
+}
+
+const TESTNET_WSS_URL = "wss://s.altnet.rippletest.net:51233";
+
+/**
+ * Le runner est OFF sans `TIDE_E2E_TESTNET_USERS`. Quand activé, il refuse
+ * explicitement tout réseau autre que Testnet : aucune variable Mainnet ne peut
+ * le faire démarrer par erreur.
+ */
+export function readTestnetE2EConfig(): TestnetE2ERuntimeConfig | undefined {
+  const rawUsers = optional("TIDE_E2E_TESTNET_USERS");
+  if (rawUsers === undefined || rawUsers === "0") return undefined;
+  if (readXrplNetwork() !== "testnet") {
+    throw new Error("Le parcours E2E wallets/NFT est autorisé uniquement avec TIDE_XRPL_NETWORK=testnet");
+  }
+  const users = Number(rawUsers);
+  if (!Number.isInteger(users) || users < 1 || users > 10) {
+    throw new Error(`TIDE_E2E_TESTNET_USERS invalide (entier 1..10 attendu): ${rawUsers}`);
+  }
+  const issuerSeed = optional("TIDE_E2E_TESTNET_ISSUER_SEED");
+  if (issuerSeed === undefined || !/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(issuerSeed)) {
+    throw new Error("TIDE_E2E_TESTNET_ISSUER_SEED mal formé (seed Testnet requis)");
+  }
+  const rawTag = optional("TIDE_E2E_TESTNET_SOURCE_TAG");
+  if (rawTag === undefined || !Number.isInteger(Number(rawTag))) {
+    throw new Error("TIDE_E2E_TESTNET_SOURCE_TAG manquant ou invalide");
+  }
+  const sourceTag = Number(rawTag);
+  assertAttributionTag(sourceTag);
+  const wssUrl = optional("TIDE_E2E_TESTNET_WSS_URL") ?? TESTNET_WSS_URL;
+  if (!/^wss:\/\//.test(wssUrl) || !/altnet|testnet/i.test(wssUrl)) {
+    throw new Error("TIDE_E2E_TESTNET_WSS_URL doit cibler un endpoint WSS Testnet");
+  }
+  return { users, wssUrl, issuerSeed, sourceTag };
+}
+
+function readBoundedPositiveInteger(
+  name: string,
+  fallback: number,
+  max: number,
+  min = 1,
+): number {
+  const raw = optional(name);
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(
+      `${name} invalide (entier ${String(min)}..${String(max)} attendu): ${raw}`,
+    );
+  }
+  return value;
+}
