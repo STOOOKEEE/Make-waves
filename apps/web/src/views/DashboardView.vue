@@ -227,9 +227,7 @@ watch(session.walletConnected, (connectedNow) => {
     mode.value = "live";
     pendingLive.value = false;
   }
-  if (connectedNow) {
-    void paper.connect();
-  }
+  void reloadPaperIdentity();
 });
 
 /** Adresse XRPL raccourcie pour l'affichage (rXXXX…abcd). */
@@ -274,7 +272,7 @@ const activeBlotter = ref<"positions" | "orders" | "history">("positions");
 
 const PAPER_MAKER_FEE = 0.0002;
 const PAPER_TAKER_FEE = 0.0006;
-const PAPER_STATE_KEY = "tide.paperTerminal";
+const PAPER_STATE_KEY_PREFIX = "tide.paperTerminal";
 
 // Position d'affichage = position financière du domaine (@tide/core) + métadonnées
 // de trigger locales (cf. PositionMeta, défini plus bas).
@@ -1150,8 +1148,13 @@ interface TradeRow {
 }
 
 function loadPaperTerminal(): void {
+  // Un changement de session doit repartir d'un état local vide. Les positions
+  // financières seront ensuite rechargées depuis SQLite via l'API.
+  positionMeta.value = {};
+  pendingOrders.value = [];
+  tradeHistory.value = [];
   try {
-    const raw = localStorage.getItem(PAPER_STATE_KEY);
+    const raw = localStorage.getItem(paperTerminalKey());
     if (raw === null) {
       return;
     }
@@ -1169,7 +1172,7 @@ function loadPaperTerminal(): void {
 function savePaperTerminal(): void {
   try {
     localStorage.setItem(
-      PAPER_STATE_KEY,
+      paperTerminalKey(),
       JSON.stringify({
         positionMeta: positionMeta.value,
         pendingOrders: pendingOrders.value,
@@ -1179,6 +1182,11 @@ function savePaperTerminal(): void {
   } catch {
     // Stockage indisponible : l'état reste valable en mémoire.
   }
+}
+
+function paperTerminalKey(): string {
+  const id = paper.userId.value.trim();
+  return id === "" ? PAPER_STATE_KEY_PREFIX : `${PAPER_STATE_KEY_PREFIX}:${id}`;
 }
 
 /**
@@ -1714,13 +1722,17 @@ async function loadLiveConfig(): Promise<void> {
 async function initDashboard(): Promise<void> {
   await Promise.all([loadMarkets(), loadLiveConfig()]);
   await Promise.all([loadHistory(), loadStats24h()]);
+  await reloadPaperIdentity();
+}
+
+async function reloadPaperIdentity(): Promise<void> {
   await paper.connect();
+  loadPaperTerminal();
   await refreshPositions();
 }
 
 // ---------- cycle de vie ----------
 onMounted(() => {
-  loadPaperTerminal();
   renderChart();
   void loadBook();
   startBookRefresh();

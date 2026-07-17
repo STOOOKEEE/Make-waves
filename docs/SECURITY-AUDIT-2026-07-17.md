@@ -51,6 +51,9 @@ L'identité Paper et son JWT sont conservés dans `localStorage` sous
 deux valeurs ; un test couvre la reconstruction complète de l'app. L'interface
 affiche maintenant une empreinte courte « Session Paper » pour détecter
 immédiatement un changement de profil navigateur ou un effacement du stockage.
+L'historique, les ordres limit et les métadonnées TP/SL locales sont également
+scopés par userId ; une ancienne session ne peut plus laisser un historique
+« fantôme » dans une nouvelle session vide.
 
 Observation production pendant l'audit : une position perp est bien persistée
 sous une ancienne identité Paper, tandis qu'une identité plus récente est vide.

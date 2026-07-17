@@ -2267,7 +2267,8 @@ zéro wallet Paper provisionné.
 permissions privées pour la DB et `api.env`, `ws` forcé en 8.21.0, Vite 6.4.3
 et Vitest 3.2.6. La console locale affiche désormais les wallets Paper sans
 aucune donnée de clé. Le terminal affiche une empreinte de session Paper afin de
-détecter un changement de localStorage après refresh.
+détecter un changement de localStorage après refresh, et scope désormais son
+état terminal local par userId (suppression des historiques fantômes entre sessions).
 
 **Vérifié.** 954 tests, typecheck 8/8, lint 0, build production, `pnpm audit`
 sans vulnérabilité connue et Gitleaks sur 184 commits sans fuite. Rapport :
