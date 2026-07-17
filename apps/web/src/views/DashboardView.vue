@@ -1429,7 +1429,7 @@ const positions = computed<PosRow[]>(() => {
         (p.product === "perp" ? ` ${String(p.leverage)}x` : ""),
       size: fmt(p.qty),
       px: `$${fmt(p.entry)} → $${fmt(mark > 0 ? mark : p.entry)}`,
-      pnl: (pnlValue >= 0 ? "+" : "") + "$" + fmt(pnlValue),
+      pnl: (pnlValue >= 0 ? "+$" : "−$") + fmt(Math.abs(pnlValue)),
       pnlCls: pnlValue >= 0 ? "up" : "down",
       closed: false,
     } satisfies PosRow;
@@ -1443,6 +1443,9 @@ const positions = computed<PosRow[]>(() => {
         .filter(([ccy]) => !paperPositions.value.some((p) => p.product === "spot" && p.symbol === ccy))
         .map(([ccy, amt]) => {
           const price = livePrices.value[ccy];
+          const holding = paper.portfolio.value?.holdings.find((row) => row.currency === ccy);
+          const averagePrice = holding?.averagePrice ?? null;
+          const pnlValue = holding?.unrealizedPnl ?? null;
           return {
             id: `backend:${ccy}`,
             product: "spot" as const,
@@ -1451,9 +1454,17 @@ const positions = computed<PosRow[]>(() => {
             sideCls: "l" as const,
             sideLabel: "SPOT",
             size: fmt(amt),
-            px: price !== undefined ? `$${fmt(price)}` : "—",
-            pnl: price !== undefined ? "$" + fmt(amt * price) : "—",
-            pnlCls: "up" as const,
+            px:
+              price !== undefined && averagePrice !== null
+                ? `$${fmt(averagePrice)} → $${fmt(price)}`
+                : price !== undefined
+                  ? `$${fmt(price)}`
+                  : "—",
+            pnl:
+              pnlValue === null
+                ? "—"
+                : (pnlValue >= 0 ? "+$" : "−$") + fmt(Math.abs(pnlValue)),
+            pnlCls: pnlValue !== null && pnlValue < 0 ? ("down" as const) : ("up" as const),
             closed: false,
           };
         });

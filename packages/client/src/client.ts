@@ -59,6 +59,9 @@ export interface Holding {
   readonly currency: string;
   readonly amount: number;
   readonly value: number;
+  readonly costBasis: number | null;
+  readonly averagePrice: number | null;
+  readonly unrealizedPnl: number | null;
 }
 
 /** Portefeuille agrégé d'un compte : soldes valorisés, equity et PnL. */

@@ -1,5 +1,5 @@
 import { ref } from "vue";
-import type { PaperWalletRewardDto, TideClient } from "@tide/client";
+import type { PaperWalletRewardDto, Portfolio, TideClient } from "@tide/client";
 import type { Balances, Fill, MarketOrderInput } from "@tide/core";
 import { errorMessage } from "./messages";
 import { useAuth } from "./useAuth";
@@ -15,6 +15,7 @@ export function usePaper(client: TideClient) {
   const connected = ref(false);
   const balances = ref<Balances | null>(null);
   const orders = ref<readonly Fill[]>([]);
+  const portfolio = ref<Portfolio | null>(null);
   const walletReward = ref<PaperWalletRewardDto | null>(null);
   const error = ref("");
 
@@ -29,14 +30,16 @@ export function usePaper(client: TideClient) {
 
   async function refresh(): Promise<void> {
     const id = await resolveUserId();
-    // Deux requêtes indépendantes (mêmes paramètres) → en parallèle.
-    const [nextBalances, nextOrders, nextWalletReward] = await Promise.all([
+    // Requêtes indépendantes du même compte → en parallèle.
+    const [nextBalances, nextOrders, nextPortfolio, nextWalletReward] = await Promise.all([
       client.balances(id),
       client.orders(id),
+      client.portfolio(id),
       client.paperWalletStatus(id),
     ]);
     balances.value = nextBalances;
     orders.value = nextOrders;
+    portfolio.value = nextPortfolio;
     walletReward.value = nextWalletReward;
   }
 
@@ -71,6 +74,7 @@ export function usePaper(client: TideClient) {
     connected,
     balances,
     orders,
+    portfolio,
     walletReward,
     error,
     connect,

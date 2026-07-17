@@ -14,23 +14,32 @@ beforeEach(() => {
 });
 
 function clientWith(routes: Record<string, ApiResponse>): TideClient {
-  const transport: ApiTransport = (request) =>
-    Promise.resolve(
-      routes[`${request.method} ${request.path}`] ??
-        (request.method === "GET" && request.path.endsWith("/paper-wallet")
-          ? {
-              status: 200,
-              body: {
-                walletAddress: null,
-                walletStatus: "not_created",
-                fundingTxHash: null,
-                rewardStatus: "not_earned",
-                nftTokenId: null,
-                claimTxHash: null,
-              },
-            }
-          : { status: 404, body: { error: "introuvable" } }),
-    );
+  const transport: ApiTransport = (request) => {
+    const configured = routes[`${request.method} ${request.path}`];
+    if (configured !== undefined) {
+      return Promise.resolve(configured);
+    }
+    if (request.method === "GET" && request.path.endsWith("/portfolio")) {
+      return Promise.resolve({
+        status: 200,
+        body: { balances: {}, holdings: [], equity: 0, pnl: 0 },
+      });
+    }
+    if (request.method === "GET" && request.path.endsWith("/paper-wallet")) {
+      return Promise.resolve({
+        status: 200,
+        body: {
+          walletAddress: null,
+          walletStatus: "not_created",
+          fundingTxHash: null,
+          rewardStatus: "not_earned",
+          nftTokenId: null,
+          claimTxHash: null,
+        },
+      });
+    }
+    return Promise.resolve({ status: 404, body: { error: "introuvable" } });
+  };
   return new TideClient(transport);
 }
 

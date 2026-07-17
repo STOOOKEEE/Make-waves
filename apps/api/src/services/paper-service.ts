@@ -39,6 +39,12 @@ export interface Holding {
   readonly amount: number;
   /** Valeur en devise de référence (amount × prix ; = amount pour la devise de réf). */
   readonly value: number;
+  /** Coût restant des unités détenues, selon la méthode du coût moyen pondéré. */
+  readonly costBasis: number | null;
+  /** Prix d'achat moyen des unités encore détenues. */
+  readonly averagePrice: number | null;
+  /** PnL latent de l'avoir spot (valeur courante − coût restant). */
+  readonly unrealizedPnl: number | null;
 }
 
 /** Portefeuille agrégé d'un compte : soldes valorisés, equity et PnL. */
@@ -201,11 +207,20 @@ export class PaperService {
   portfolioOf(userId: string, prices: PriceMap): Portfolio {
     const balances = this.requireBalances(userId);
     const positions = this.store.getPositions(userId) ?? [];
-    const holdings = Object.entries(balances).map(([currency, amount]) => ({
-      currency,
-      amount,
-      value: equity({ [currency]: amount }, prices, QUOTE_CURRENCY),
-    }));
+    const orders = this.store.getOrders(userId) ?? [];
+    const holdings = Object.entries(balances).map(([currency, amount]) => {
+      const value = equity({ [currency]: amount }, prices, QUOTE_CURRENCY);
+      const averagePrice = spotAveragePrice(currency, orders);
+      const costBasis = averagePrice === null ? null : averagePrice * amount;
+      return {
+        currency,
+        amount,
+        value,
+        costBasis,
+        averagePrice,
+        unrealizedPnl: costBasis === null ? null : value - costBasis,
+      };
+    });
     const equityValue = equityWithPositions(balances, positions, prices, QUOTE_CURRENCY);
     return {
       balances,
@@ -239,4 +254,38 @@ export class PaperService {
     }
     return balances;
   }
+}
+
+/**
+ * Coût moyen pondéré des unités spot encore détenues. Une vente retire du coût
+ * au prix moyen historique : son produit ne doit jamais être pris pour du PnL
+ * latent des unités restantes.
+ */
+function spotAveragePrice(currency: string, orders: readonly Fill[]): number | null {
+  if (currency === QUOTE_CURRENCY) {
+    return null;
+  }
+  let quantity = 0;
+  let cost = 0;
+  for (const fill of orders) {
+    if (fill.pair.base !== currency || fill.pair.quote !== QUOTE_CURRENCY) {
+      continue;
+    }
+    if (fill.side === "buy") {
+      quantity += fill.amount;
+      cost += fill.quoteAmount;
+      continue;
+    }
+    if (quantity <= 0) {
+      continue;
+    }
+    const sold = Math.min(fill.amount, quantity);
+    cost -= (cost / quantity) * sold;
+    quantity -= sold;
+    if (quantity < Number.EPSILON) {
+      quantity = 0;
+      cost = 0;
+    }
+  }
+  return quantity > 0 ? cost / quantity : null;
 }

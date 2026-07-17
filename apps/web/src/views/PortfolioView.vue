@@ -178,6 +178,8 @@ interface HoldingRow {
   currency: string;
   amount: number;
   value: number;
+  averagePrice: number | null;
+  unrealizedPnl: number | null;
   alloc: number;
 }
 const holdings = computed<HoldingRow[]>(() => {
@@ -189,6 +191,8 @@ const holdings = computed<HoldingRow[]>(() => {
     currency: h.currency,
     amount: h.amount,
     value: h.value,
+    averagePrice: h.averagePrice,
+    unrealizedPnl: h.unrealizedPnl,
     alloc: (h.value / p.equity) * 100,
   }));
 });
@@ -290,9 +294,9 @@ onMounted(() => {
         <div v-for="(h, i) in holdings" :key="h.currency" class="trow">
           <div class="as"><span class="ic" :style="{ background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }">{{ h.currency.slice(0, 3) }}</span><span><b>{{ h.currency }}</b><span>spot</span></span></div>
           <div>{{ fmtNum(h.amount) }}</div>
-          <div class="soft">—</div>
+          <div :class="{ soft: h.averagePrice === null }">{{ h.averagePrice === null ? "—" : "$" + fmtNum(h.averagePrice) }}</div>
           <div>${{ fmtNum(h.value) }}</div>
-          <div class="soft">—</div>
+          <div :class="h.unrealizedPnl === null ? 'soft' : h.unrealizedPnl >= 0 ? 'up' : 'down'">{{ h.unrealizedPnl === null ? "—" : signed(h.unrealizedPnl) }}</div>
           <div>{{ h.alloc.toFixed(0) }}%<div class="allocbar"><i :style="{ width: Math.min(h.alloc, 100) + '%', background: ALLOC_PALETTE[i % ALLOC_PALETTE.length] }"></i></div></div>
         </div>
       </div>
@@ -775,6 +779,14 @@ onMounted(() => {
 }
 
 /* --- badges --- */
+.badges {
+  padding: 20px 22px;
+  margin-top: 14px;
+}
+.badges .hh {
+  font-weight: 700;
+  font-size: 16px;
+}
 .badges .bsub {
   color: var(--soft);
   font-size: 12px;

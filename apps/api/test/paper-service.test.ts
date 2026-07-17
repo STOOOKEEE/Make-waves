@@ -80,6 +80,45 @@ describe("PaperService — ordres", () => {
     expect(service.pnlOf("alice", PRICES)).toBe(0);
   });
 
+  it("expose le coût moyen et uniquement le PnL latent d'un avoir spot", () => {
+    service.placeOrder("alice", buy(500, 1));
+
+    const atEntry = service.portfolioOf("alice", { XRP: 1 });
+    expect(atEntry.holdings.find((holding) => holding.currency === "XRP")).toMatchObject({
+      amount: 500,
+      value: 500,
+      costBasis: 500,
+      averagePrice: 1,
+      unrealizedPnl: 0,
+    });
+
+    const afterMove = service.portfolioOf("alice", { XRP: 1.1 });
+    expect(
+      afterMove.holdings.find((holding) => holding.currency === "XRP")?.unrealizedPnl,
+    ).toBeCloseTo(50);
+  });
+
+  it("conserve le coût moyen après une vente partielle", () => {
+    service.placeOrder("alice", buy(10, 2));
+    service.placeOrder("alice", {
+      pair: { base: "XRP", quote: "RLUSD" },
+      side: "sell",
+      amount: 4,
+      price: 3,
+    });
+
+    const holding = service
+      .portfolioOf("alice", { XRP: 3 })
+      .holdings.find((row) => row.currency === "XRP");
+    expect(holding).toMatchObject({
+      amount: 6,
+      value: 18,
+      costBasis: 12,
+      averagePrice: 2,
+      unrealizedPnl: 6,
+    });
+  });
+
   it("lève sur ordre pour un compte inconnu", () => {
     expect(() => service.placeOrder("bob", buy(1, 0.5))).toThrow(
       AccountNotFoundError,
