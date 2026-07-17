@@ -28,11 +28,13 @@ import type { MandateXamanApi } from "./services/mandate-service";
 import { PaperService } from "./services/paper-service";
 import { PaperWalletService } from "./services/paper-wallet-service";
 import { WeeklyRewardService } from "./services/weekly-reward-service";
+import { FirstTradeRewardService } from "./services/first-trade-reward-service";
 import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
 import { SqliteBadgeStore } from "./store/sqlite-badge-store";
 import { SqlitePaperWalletStore } from "./store/sqlite-paper-wallet-store";
 import { SqliteWeeklyRewardStore } from "./store/sqlite-weekly-reward-store";
+import { SqlitePaperBadgeRewardStore } from "./store/sqlite-paper-badge-reward-store";
 import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { seedDemoAccounts } from "./seed/accounts";
 import { seedCompetitions } from "./seed/competitions";
@@ -309,22 +311,20 @@ async function main(): Promise<void> {
       ? new XrplNftIssuer({ serverUrl: wsUrl, issuerSeed, sourceTag })
       : undefined;
   const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
-  if (
-    paperWalletRuntime !== undefined &&
-    (wsUrl === undefined || sourceTag === undefined || nftIssuer === undefined)
-  ) {
-    throw new Error(
-      "Wallet Paper configuré mais XRPL_WSS_URL, TIDE_SOURCE_TAG ou TIDE_NFT_ISSUER_SEED manquant",
-    );
-  }
-  const weeklyRewards =
-    paperWalletRuntime === undefined || wsUrl === undefined || sourceTag === undefined || nftIssuer === undefined
+  const firstTradeImageUri = env.readFirstTradeImageUri();
+  const paperRewardRuntime =
+    paperWalletRuntime === undefined
       ? undefined
       : (() => {
+          const issuer = new XrplNftIssuer({
+            serverUrl: paperWalletRuntime.serverUrl,
+            issuerSeed: paperWalletRuntime.issuerSeed,
+            sourceTag: paperWalletRuntime.sourceTag,
+          });
           const gateway = new XrplCustodialWalletGateway({
-            serverUrl: wsUrl,
+            serverUrl: paperWalletRuntime.serverUrl,
             funderSeed: paperWalletRuntime.funderSeed,
-            sourceTag,
+            sourceTag: paperWalletRuntime.sourceTag,
           });
           const wallets = new PaperWalletService({
             store: new SqlitePaperWalletStore(db),
@@ -332,14 +332,28 @@ async function main(): Promise<void> {
             masterKeyHex: paperWalletRuntime.masterKeyHex,
             masterKeyId: paperWalletRuntime.masterKeyId,
           });
-          return new WeeklyRewardService({
-            store: new SqliteWeeklyRewardStore(db),
-            wallets,
-            issuer: nftIssuer,
-            gateway,
-            metadataBaseUrl: env.readPublicBaseUrl(),
-          });
+          return { gateway, issuer, wallets };
         })();
+  const weeklyRewards =
+    paperRewardRuntime === undefined
+      ? undefined
+      : new WeeklyRewardService({
+          store: new SqliteWeeklyRewardStore(db),
+          wallets: paperRewardRuntime.wallets,
+          issuer: paperRewardRuntime.issuer,
+          gateway: paperRewardRuntime.gateway,
+          metadataBaseUrl: env.readPublicBaseUrl(),
+        });
+  const firstTradeRewards =
+    paperRewardRuntime === undefined
+      ? undefined
+      : new FirstTradeRewardService({
+          store: new SqlitePaperBadgeRewardStore(db),
+          wallets: paperRewardRuntime.wallets,
+          issuer: paperRewardRuntime.issuer,
+          gateway: paperRewardRuntime.gateway,
+          metadataBaseUrl: env.readPublicBaseUrl(),
+        });
 
   // Compétitions de démo (idempotent) : le front fusionne leur état live avec
   // son catalogue de présentation. Sans seed, la liste serait vide au premier boot.
@@ -478,8 +492,10 @@ async function main(): Promise<void> {
     nftIssuer,
     badgeStore,
     weeklyRewards,
+    firstTradeRewards,
     sourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
+    firstTradeImageUri,
     adminToken: env.readAdminToken(),
     operatorUserIds: env.readOperatorUserIds(),
     simulation: arenaSimulation,

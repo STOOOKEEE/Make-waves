@@ -8,6 +8,8 @@ import {
 } from "../src/services/weekly-reward-service";
 import { InMemoryPaperWalletStore } from "../src/store/paper-wallet-store";
 import { InMemoryWeeklyRewardStore } from "../src/store/weekly-reward-store";
+import { FirstTradeRewardService } from "../src/services/first-trade-reward-service";
+import { InMemoryPaperBadgeRewardStore } from "../src/store/paper-badge-reward-store";
 
 const MASTER = "a".repeat(64);
 const NFT_ID = "A".repeat(64);
@@ -101,5 +103,44 @@ describe("WeeklyRewardService", () => {
     expect(issuer.calls).toBe(1);
     expect(gateway.accepted).toHaveLength(1);
     await expect(svc.claim("paper:u1", week)).rejects.toBeInstanceOf(WeeklyRewardAlreadyClaimedError);
+  });
+});
+
+describe("FirstTradeRewardService", () => {
+  it("finance le wallet et remet exactement un NFT au premier trade", async () => {
+    const now = Date.UTC(2026, 6, 17, 12);
+    const gateway = new FakeGateway();
+    const wallets = new PaperWalletService({
+      store: new InMemoryPaperWalletStore(),
+      gateway,
+      masterKeyHex: MASTER,
+      masterKeyId: "paper-v1",
+      now: () => now,
+    });
+    const issuer = new FakeIssuer();
+    const service = new FirstTradeRewardService({
+      store: new InMemoryPaperBadgeRewardStore(),
+      wallets,
+      issuer,
+      gateway,
+      metadataBaseUrl: "https://api.tidetrade.xyz",
+      now: () => now,
+    });
+
+    await Promise.all([
+      service.recordFirstTrade("paper:u1"),
+      service.recordFirstTrade("paper:u1"),
+    ]);
+    await service.recordFirstTrade("paper:u1");
+
+    const status = await service.status("paper:u1");
+    expect(status.walletAddress).toMatch(/^r/);
+    expect(status.walletStatus).toBe("funded");
+    expect(status.rewardStatus).toBe("claimed");
+    expect(status.nftTokenId).toBe(NFT_ID);
+    expect(status.claimTxHash).toBe("CLAIM");
+    expect(issuer.calls).toBe(1);
+    expect(gateway.funding).toHaveLength(1);
+    expect(gateway.accepted).toHaveLength(1);
   });
 });

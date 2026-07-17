@@ -43,6 +43,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/nft-metadata/:code" },
   { method: "GET", url: "/nft-metadata/weekly/:week" },
   { method: "GET", url: "/badges/weekly_trade.svg" },
+  { method: "GET", url: "/badges/first_trade.svg" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
   // Le déclencheur E2E porte la même garde admin ; sans cette exception, le
@@ -55,6 +56,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/competitions/:id" },
   { method: "GET", url: "/competitions/:id/participants" },
   { method: "POST", url: "/auth/challenge" },
+  { method: "POST", url: "/auth/paper" },
   { method: "POST", url: "/auth/verify" },
   { method: "POST", url: "/sign/connect" },
   { method: "GET", url: "/sign/status/:uuid" },

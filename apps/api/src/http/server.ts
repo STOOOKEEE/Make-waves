@@ -52,6 +52,7 @@ import {
 } from "../services/weekly-reward-service";
 import { badgeByCode } from "../badges/catalog";
 import { WEEKLY_TRADE_SVG } from "../badges/weekly-trade-svg";
+import { FIRST_TRADE_SVG } from "../badges/first-trade-svg";
 import { authorize } from "../auth/guard";
 import type { AuthzResolvers } from "../auth/guard";
 import type { AuthService } from "../auth/auth-service";
@@ -59,6 +60,7 @@ import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
+import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -140,6 +142,8 @@ export interface ServerDeps {
   readonly badgeService?: BadgeService;
   /** Une carte/NFT par semaine avec au moins un trade Paper. */
   readonly weeklyRewards?: WeeklyRewardService;
+  /** Wallet Testnet + badge custodial remis automatiquement au premier trade. */
+  readonly firstTradeRewards?: FirstTradeRewardService;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: {
     readonly token: string;
@@ -156,6 +160,8 @@ export interface ServerDeps {
   readonly corsOrigin?: string | string[];
   /** Base publique des URL de métadonnées NFT (F8) — jamais le header Host. */
   readonly publicBaseUrl?: string;
+  /** Image IPFS du badge First Trade. */
+  readonly firstTradeImageUri?: string;
   /** Limites de débit (F7). Absente → pas de rate-limit (tests/legacy). */
   readonly rateLimit?: {
     readonly global: { readonly max: number; readonly windowMs: number };
@@ -276,21 +282,29 @@ const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
-  /** Découple le fill Paper immédiat du funding Mainnet (lent et optionnel). */
+  /** Découple le fill Paper immédiat du funding Testnet (lent et optionnel). */
   const registerPaperTrade = async (userId: string): Promise<void> => {
     // Les profils du banc de charge ne reçoivent ni wallet XRPL ni récompense :
     // ils n'existent que pour exercer le moteur Paper local.
     if (isArenaSimulationUserId(userId)) return;
     const rewards = deps.weeklyRewards;
-    if (rewards === undefined) return;
-    try {
-      await rewards.recordTrade(userId);
-    } catch (error) {
-      console.error("[weekly-rewards] qualification échouée:", error);
+    if (rewards !== undefined) {
+      try {
+        await rewards.recordTrade(userId);
+      } catch (error) {
+        console.error("[weekly-rewards] qualification échouée:", error);
+      }
+      void rewards.provisionWallet(userId).catch((error: unknown) => {
+        console.error("[weekly-rewards] provision wallet échouée:", error);
+      });
     }
-    void rewards.provisionWallet(userId).catch((error: unknown) => {
-      console.error("[weekly-rewards] provision wallet échouée:", error);
-    });
+    // Appelé à chaque fill : le store rend la récompense idempotente et permet
+    // de reprendre un `offer_pending` après un redémarrage sans remint.
+    if (deps.firstTradeRewards !== undefined) {
+      void deps.firstTradeRewards.recordFirstTrade(userId).catch((error: unknown) => {
+        console.error("[first-trade-reward] remise échouée:", error);
+      });
+    }
   };
 
   // CORS (F6) : le front (port/domaine distinct) appelle l'API en cross-origin.
@@ -874,7 +888,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     return {
       name: badge.title,
       description: badge.description,
-      image: `${base}${badge.imageUrl}`,
+      image:
+        badge.code === "first_trade" && deps.firstTradeImageUri !== undefined
+          ? deps.firstTradeImageUri
+          : `${base}${badge.imageUrl}`,
       attributes: [{ trait_type: "badge", value: badge.code }],
     };
   });
@@ -896,6 +913,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.get("/badges/weekly_trade.svg", (_request, reply) => {
     reply.type("image/svg+xml");
     return WEEKLY_TRADE_SVG;
+  });
+  app.get("/badges/first_trade.svg", (_request, reply) => {
+    reply.type("image/svg+xml");
+    return FIRST_TRADE_SVG;
   });
 
   // Badges + claim NFT — montés seulement si un issuer NFT est configuré.
@@ -925,6 +946,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.get<{ Params: { userId: string } }>(
     "/accounts/:userId/weekly-rewards",
     (request) => deps.weeklyRewards?.list(request.params.userId) ?? [],
+  );
+  app.get<{ Params: { userId: string } }>(
+    "/accounts/:userId/paper-wallet",
+    (request) =>
+      deps.firstTradeRewards?.status(request.params.userId) ?? {
+        walletAddress: null,
+        walletStatus: "not_created",
+        fundingTxHash: null,
+        rewardStatus: "not_earned",
+        nftTokenId: null,
+        claimTxHash: null,
+      },
   );
   app.post<{ Params: { week: string } }>(
     "/weekly-rewards/:week/claim",
@@ -1008,6 +1041,11 @@ function registerAuth(
       return { error: err instanceof Error ? err.message : "adresse invalide" };
     }
   });
+
+  // Session Paper anonyme : identité aléatoire + JWT générés côté serveur.
+  // Aucun wallet utilisateur n'est requis, mais toutes les routes comptes
+  // restent protégées par le même garde de propriété que les comptes Live.
+  app.post("/auth/paper", () => service.issuePaperSession());
 
   // Vérifie une preuve (Gem ou Xaman) et délivre un JWT de session.
   app.post("/auth/verify", async (request, reply) => {

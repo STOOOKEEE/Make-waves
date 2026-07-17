@@ -98,6 +98,12 @@ export interface AuthTokenDto {
   readonly address: string;
 }
 
+/** Session anonyme dédiée au Paper trading, signée par l'API. */
+export interface PaperSessionDto {
+  readonly token: string;
+  readonly userId: string;
+}
+
 /** Config publique pour la signature côté client (GemWallet). */
 export interface PublicConfig {
   /** SourceTag d'attribution (entier public) ; null si Live non configuré. */
@@ -258,6 +264,21 @@ export interface WeeklyRewardDto {
   readonly claimedAt: number | null;
 }
 
+export interface PaperWalletRewardDto {
+  readonly walletAddress: string | null;
+  readonly walletStatus:
+    | "not_created"
+    | "pending_funding"
+    | "funding_in_progress"
+    | "funded"
+    | "funding_failed"
+    | "reclaimed";
+  readonly fundingTxHash: string | null;
+  readonly rewardStatus: "not_earned" | "eligible" | "minting" | "offer_pending" | "claimed";
+  readonly nftTokenId: string | null;
+  readonly claimTxHash: string | null;
+}
+
 // --- Admin (console opérateur) ---
 
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -355,6 +376,11 @@ export class TideClient {
   /** Demande un challenge GemWallet pour l'adresse : nonce + message à signer. */
   async authChallenge(address: string): Promise<AuthChallengeDto> {
     return this.call({ path: "/auth/challenge", method: "POST", body: { address } }, 200);
+  }
+
+  /** Crée une identité Paper opaque et récupère son JWT de session. */
+  async authPaper(): Promise<PaperSessionDto> {
+    return this.call({ path: "/auth/paper", method: "POST" }, 200);
   }
 
   /** Vérifie une preuve GemWallet et récupère un token de session. */
@@ -763,6 +789,14 @@ export class TideClient {
   async weeklyRewards(userId: string): Promise<WeeklyRewardDto[]> {
     return this.call(
       { path: path("accounts", userId, "weekly-rewards"), method: "GET" },
+      200,
+    );
+  }
+
+  /** Wallet technique Testnet + état du NFT First Trade (jamais la seed). */
+  async paperWalletStatus(userId: string): Promise<PaperWalletRewardDto> {
+    return this.call(
+      { path: path("accounts", userId, "paper-wallet"), method: "GET" },
       200,
     );
   }

@@ -17,6 +17,15 @@ function stub(responder: (request: ApiRequest) => ApiResponse): {
 }
 
 describe("TideClient", () => {
+  it("authPaper -> POST /auth/paper (200)", async () => {
+    const { client, requests } = stub(() => ({
+      status: 200,
+      body: { token: "jwt", userId: "paper:u1" },
+    }));
+    expect(await client.authPaper()).toEqual({ token: "jwt", userId: "paper:u1" });
+    expect(requests[0]).toEqual({ path: "/auth/paper", method: "POST" });
+  });
+
   it("openAccount -> POST /accounts (201)", async () => {
     const { client, requests } = stub(() => ({ status: 201, body: { userId: "a" } }));
     expect(await client.openAccount("a")).toEqual({ userId: "a" });
@@ -112,6 +121,23 @@ describe("TideClient", () => {
         body: { userId: "paper:u1" },
       },
     ]);
+  });
+
+  it("paperWalletStatus lit uniquement le statut public du wallet technique", async () => {
+    const status = {
+      walletAddress: "rTest",
+      walletStatus: "funded" as const,
+      fundingTxHash: "FUND",
+      rewardStatus: "claimed" as const,
+      nftTokenId: "NFT",
+      claimTxHash: "CLAIM",
+    };
+    const { client, requests } = stub(() => ({ status: 200, body: status }));
+    expect(await client.paperWalletStatus("paper:u1")).toEqual(status);
+    expect(requests[0]).toEqual({
+      path: "/accounts/paper%3Au1/paper-wallet",
+      method: "GET",
+    });
   });
 
   it("openPosition -> POST /accounts/:id/positions (201)", async () => {

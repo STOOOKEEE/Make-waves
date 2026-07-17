@@ -10,15 +10,26 @@ const XRP_ACCOUNT = "rPaperUser11111111111111111111111111111";
 
 beforeEach(() => {
   useSession().disconnectWallet();
+  localStorage.clear();
 });
 
 function clientWith(routes: Record<string, ApiResponse>): TideClient {
   const transport: ApiTransport = (request) =>
     Promise.resolve(
-      routes[`${request.method} ${request.path}`] ?? {
-        status: 404,
-        body: { error: "introuvable" },
-      },
+      routes[`${request.method} ${request.path}`] ??
+        (request.method === "GET" && request.path.endsWith("/paper-wallet")
+          ? {
+              status: 200,
+              body: {
+                walletAddress: null,
+                walletStatus: "not_created",
+                fundingTxHash: null,
+                rewardStatus: "not_earned",
+                nftTokenId: null,
+                claimTxHash: null,
+              },
+            }
+          : { status: 404, body: { error: "introuvable" } }),
     );
   return new TideClient(transport);
 }
@@ -66,11 +77,21 @@ describe("usePaper", () => {
     expect(paper.error.value).toBe("");
   });
 
-  it("exige un wallet XRP", async () => {
-    const paper = usePaper(clientWith({}));
+  it("crée une session anonyme sans exiger de wallet XRP", async () => {
+    const userId = "paper:anonymous-test";
+    const paper = usePaper(clientWith({
+      "POST /auth/paper": { status: 200, body: { token: "jwt-paper", userId } },
+      "POST /accounts/ensure": { status: 200, body: { userId, created: true } },
+      [`GET /accounts/${encodeURIComponent(userId)}/balances`]: {
+        status: 200,
+        body: { RLUSD: 10_000 },
+      },
+      [`GET /accounts/${encodeURIComponent(userId)}/orders`]: { status: 200, body: [] },
+    }));
     await paper.connect();
-    expect(paper.connected.value).toBe(false);
-    expect(paper.error.value).not.toBe("");
+    expect(paper.connected.value).toBe(true);
+    expect(paper.userId.value).toBe(userId);
+    expect(paper.balances.value).toEqual({ RLUSD: 10_000 });
   });
 
   it("place un ordre puis rafraîchit", async () => {

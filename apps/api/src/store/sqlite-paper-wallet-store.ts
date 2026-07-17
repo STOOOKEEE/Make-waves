@@ -59,10 +59,19 @@ export class SqlitePaperWalletStore implements PaperWalletStore {
       .prepare("UPDATE paper_wallets SET status = 'funding_failed' WHERE user_id = ?")
       .run(userId);
   }
+
+  async markReclaimed(userId: string): Promise<void> {
+    this.db.prepare("UPDATE paper_wallets SET status = 'reclaimed' WHERE user_id = ?").run(userId);
+  }
 }
 
 function parseStatus(value: string): PaperWallet["status"] {
-  if (value === "funded" || value === "funding_failed" || value === "funding_in_progress") {
+  if (
+    value === "funded" ||
+    value === "funding_failed" ||
+    value === "funding_in_progress" ||
+    value === "reclaimed"
+  ) {
     return value;
   }
   return "pending_funding";

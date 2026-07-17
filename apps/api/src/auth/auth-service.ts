@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import type { JwtPayload } from "jsonwebtoken";
 import { addressFromPublicKey, assertValidAddress, verifyMessageSignature } from "@tide/xrpl";
 import type { ChallengeStore } from "./challenge-store";
@@ -28,6 +29,8 @@ export interface AuthServiceDeps {
   readonly challenges: ChallengeStore;
   /** API Xaman (si XUMM configuré) pour l'auth via payload SignIn. */
   readonly xaman?: XamanPayloadApi;
+  /** Fabrique injectable pour les identités Paper anonymes (tests déterministes). */
+  readonly paperSessionId?: () => string;
 }
 
 export interface GemVerifyInput {
@@ -61,6 +64,19 @@ export class AuthService {
   /** Vrai si l'auth Xaman est disponible (clés XUMM câblées). */
   get xamanEnabled(): boolean {
     return this.deps.xaman !== undefined;
+  }
+
+  /**
+   * Crée une identité Paper opaque et son JWT. L'identifiant est généré côté
+   * serveur : le navigateur ne peut ni choisir ni usurper le compte d'un autre.
+   */
+  issuePaperSession(): { token: string; userId: string } {
+    const id = (this.deps.paperSessionId ?? randomUUID)();
+    if (id.trim() === "") {
+      throw new AuthError("identité Paper invalide");
+    }
+    const userId = `paper:${id}`;
+    return { token: this.issueToken(userId), userId };
   }
 
   /** Émet un challenge pour l'adresse (GemWallet). Renvoie le nonce + le message à signer. */
@@ -106,7 +122,7 @@ export class AuthService {
     return status.account;
   }
 
-  /** JWT de session HS256, `sub = adresse`, expiration = TTL configuré. */
+  /** JWT de session HS256, `sub = identité wallet ou Paper`, expiration = TTL. */
   issueToken(address: string): string {
     return jwt.sign({}, this.deps.secret, {
       subject: address,

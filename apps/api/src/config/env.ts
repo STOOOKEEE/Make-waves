@@ -198,6 +198,16 @@ export function readPublicBaseUrl(): string {
   return raw.replace(/\/+$/, "");
 }
 
+/** URI IPFS immuable de l'image du badge First Trade. */
+export function readFirstTradeImageUri(): string | undefined {
+  const raw = optional("TIDE_FIRST_TRADE_IMAGE_URI");
+  if (raw === undefined) return undefined;
+  if (!/^ipfs:\/\/[a-zA-Z0-9]+(?:\/[^\s]*)?$/.test(raw)) {
+    throw new Error(`TIDE_FIRST_TRADE_IMAGE_URI doit être une URI ipfs:// : ${raw}`);
+  }
+  return raw;
+}
+
 /**
  * Comptes XRPL à scanner par l'indexeur (séparés par des virgules) : le prize
  * pool (buy-ins) et les comptes joueurs Live (swaps `OfferCreate`). Chaque adresse
@@ -288,24 +298,64 @@ export function readAgentKeyMaster(): string | undefined {
 
 /** Configuration volontairement complète du wallet Paper financé. */
 export interface PaperWalletRuntimeConfig {
+  readonly network: "testnet";
+  readonly serverUrl: string;
+  readonly sourceTag: number;
+  readonly issuerSeed: string;
   readonly funderSeed: string;
   readonly masterKeyHex: string;
   readonly masterKeyId: string;
+  readonly firstTradeImageUri: string;
 }
 
 /**
- * Le programme est OFF si ses deux secrets sont absents. Une configuration
- * partielle est dangereuse (wallet créé mais impossible à déchiffrer) : on
- * refuse donc le démarrage plutôt que de dégrader silencieusement.
+ * Runtime custodial isolé du runtime Live : même si Tide cible Mainnet, ce
+ * sous-système doit déclarer explicitement son propre réseau Testnet, nœud,
+ * SourceTag et issuer. Une configuration partielle est refusée.
  */
 export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undefined {
+  const network = optional("TIDE_PAPER_WALLET_NETWORK");
+  const serverUrl = optional("TIDE_PAPER_WALLET_WSS_URL");
+  const rawSourceTag = optional("TIDE_PAPER_WALLET_SOURCE_TAG");
+  const issuerSeed = optional("TIDE_PAPER_WALLET_ISSUER_SEED");
   const funderSeed = optional("TIDE_PAPER_WALLET_FUNDER_SEED");
   const masterKeyHex = optional("TIDE_PAPER_WALLET_KEY_MASTER");
-  if (funderSeed === undefined && masterKeyHex === undefined) return undefined;
-  if (funderSeed === undefined || masterKeyHex === undefined) {
+  const firstTradeImageUri = readFirstTradeImageUri();
+  const activation = [
+    network,
+    serverUrl,
+    rawSourceTag,
+    issuerSeed,
+    funderSeed,
+    masterKeyHex,
+  ];
+  if (activation.every((value) => value === undefined)) return undefined;
+  if (
+    network === undefined ||
+    serverUrl === undefined ||
+    rawSourceTag === undefined ||
+    issuerSeed === undefined ||
+    funderSeed === undefined ||
+    masterKeyHex === undefined ||
+    firstTradeImageUri === undefined
+  ) {
     throw new Error(
-      "TIDE_PAPER_WALLET_FUNDER_SEED et TIDE_PAPER_WALLET_KEY_MASTER doivent être fournis ensemble",
+      "Configuration wallet Paper Testnet incomplète: réseau, WSS, SourceTag, issuer, funder, clé maître et URI IPFS sont requis",
     );
+  }
+  if (network !== "testnet") {
+    throw new Error("TIDE_PAPER_WALLET_NETWORK doit être testnet");
+  }
+  if (!/^wss?:\/\//.test(serverUrl)) {
+    throw new Error("TIDE_PAPER_WALLET_WSS_URL doit être une URL ws:// ou wss://");
+  }
+  const sourceTag = Number(rawSourceTag);
+  if (!Number.isInteger(sourceTag)) {
+    throw new Error("TIDE_PAPER_WALLET_SOURCE_TAG doit être un entier");
+  }
+  assertAttributionTag(sourceTag);
+  if (!/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(issuerSeed)) {
+    throw new Error("TIDE_PAPER_WALLET_ISSUER_SEED mal formé (seed XRPL base58 attendu)");
   }
   if (!/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(funderSeed)) {
     throw new Error("TIDE_PAPER_WALLET_FUNDER_SEED mal formé (seed XRPL base58 attendu)");
@@ -313,7 +363,16 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   if (!/^[0-9a-fA-F]{64}$/.test(masterKeyHex)) {
     throw new Error("TIDE_PAPER_WALLET_KEY_MASTER doit contenir 64 caractères hexadécimaux");
   }
-  return { funderSeed, masterKeyHex, masterKeyId: optional("TIDE_PAPER_WALLET_KEY_ID") ?? "v1" };
+  return {
+    network,
+    serverUrl,
+    sourceTag,
+    issuerSeed,
+    funderSeed,
+    masterKeyHex,
+    masterKeyId: optional("TIDE_PAPER_WALLET_KEY_ID") ?? "v1",
+    firstTradeImageUri,
+  };
 }
 
 /** Modèle Claude par défaut pour le chat agent (Tâche 27). Surchargeable via

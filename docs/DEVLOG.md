@@ -2225,3 +2225,33 @@ site et l'API publics ne doivent exposer aucune surface de découverte admin.
 **Vérifié.** 32 tests ciblés verts, typecheck client/API/web, lint 0, build web
 production réussi et scan du `dist` sans `AdminView`, libellés/token admin ni
 chemins `/admin/*`.
+
+## 2026-07-17 — Réparation Paper + wallet/NFT Testnet
+
+**Cause.** Le garde JWT ajouté par la sécurité F1 protégeait correctement les
+routes `/accounts/*`, mais le mode Paper anonyme n'obtenait aucun token. Le
+`ensureAccount` répondait 401, le front conservait `$0.000` et le bouton de trade
+restait désactivé. Le provisioning wallet/1,25 XRP existait partiellement mais
+était OFF sans secrets et n'était pas verrouillé au Testnet.
+
+**Correctif.** Nouvelle session `POST /auth/paper` : UUID et JWT générés côté
+serveur, persistés séparément de la session wallet Live. Un visiteur retrouve
+ainsi son compte Paper sans connecter Xaman/GemWallet, tout en restant isolé par
+le garde de propriété. Au premier fill, `FirstTradeRewardService` provisionne un
+wallet XRPL Testnet, seed chiffrée AES-256-GCM en SQLite, funding 1,25 Test XRP,
+mint + accept idempotents du NFT First Trade. Le front affiche uniquement
+l'adresse raccourcie et le statut de la récompense.
+
+**Sécurité.** Le runtime Paper possède un nœud, un SourceTag, un issuer et un
+funder dédiés, indépendants du Live ; il refuse le provisioning si
+`TIDE_PAPER_WALLET_NETWORK !== testnet`. L'image doit être une URI `ipfs://` réelle. Une
+commande locale de récupération brûle les NFT, vérifie les obligations et le
+délai de 255 ledgers, puis soumet `AccountDelete` avec `fail_hard` vers le funder.
+Aucun endpoint HTTP de destruction n'est exposé.
+
+**Vérifié.** Smoke navigateur local réel : capital initial `$10,000`, ordre XRP
+accepté, balance `$5,000`, historique `1`, zéro erreur console. Réserves Testnet
+interrogées au ledger 19148406 : base 1 XRP, owner 0,2 XRP. Visuel SVG First
+Trade vérifié au rendu. Suite complète : **951 tests**, typecheck 8/8, lint 0 et
+build web de production vert.
+Documentation : `docs/PAPER-WALLET-TESTNET.md`.

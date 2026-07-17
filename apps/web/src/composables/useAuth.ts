@@ -1,6 +1,8 @@
 import type { GemProof, TideClient } from "@tide/client";
 
 const TOKEN_KEY = "tide.sessionToken";
+const PAPER_TOKEN_KEY = "tide.paperSessionToken";
+const PAPER_USER_KEY = "tide.paperUserId";
 
 /** Signe un message avec le wallet et renvoie signature + clé publique (GemWallet). */
 export type GemSigner = (message: string) => Promise<{ signature: string; publicKey: string }>;
@@ -19,7 +21,7 @@ function safeGet(key: string): string | null {
  * (`Authorization: Bearer`).
  */
 export function readSessionToken(): string | null {
-  return safeGet(TOKEN_KEY);
+  return safeGet(TOKEN_KEY) ?? safeGet(PAPER_TOKEN_KEY);
 }
 
 function safeSet(key: string, value: string): void {
@@ -51,7 +53,7 @@ export function useAuth(client: TideClient) {
 
   /** Réinjecte un token persisté dans le client (au boot de l'app). */
   function restore(): void {
-    const token = safeGet(TOKEN_KEY);
+    const token = readSessionToken();
     if (token !== null) {
       client.setToken(token);
     }
@@ -60,7 +62,26 @@ export function useAuth(client: TideClient) {
   /** Purge la session (déconnexion / token invalide). */
   function clear(): void {
     safeRemove(TOKEN_KEY);
-    client.setToken(null);
+    client.setToken(safeGet(PAPER_TOKEN_KEY));
+  }
+
+  /**
+   * Retourne la session Paper persistée, ou en demande une nouvelle à l'API.
+   * Token et userId sont séparés de la session wallet pour pouvoir revenir au
+   * même portefeuille virtuel après une déconnexion Xaman/GemWallet.
+   */
+  async function ensurePaperSession(): Promise<string> {
+    const userId = safeGet(PAPER_USER_KEY);
+    const token = safeGet(PAPER_TOKEN_KEY);
+    if (userId !== null && userId.startsWith("paper:") && token !== null) {
+      client.setToken(token);
+      return userId;
+    }
+    const created = await client.authPaper();
+    safeSet(PAPER_USER_KEY, created.userId);
+    safeSet(PAPER_TOKEN_KEY, created.token);
+    client.setToken(created.token);
+    return created.userId;
   }
 
   /** Auth Xaman : le payload SignIn (uuid) prouve la possession de l'adresse. */
@@ -78,5 +99,5 @@ export function useAuth(client: TideClient) {
     persist(token);
   }
 
-  return { restore, clear, loginXaman, loginGem };
+  return { restore, clear, ensurePaperSession, loginXaman, loginGem };
 }

@@ -88,6 +88,8 @@ const { t } = useI18n({
     liveXrpOnly: "Live: XRP only",
     liveNotConfigured: "Live not configured",
     virtualBalance: "Virtual balance",
+    testnetWallet: "Testnet wallet",
+    firstTradeNft: "First Trade NFT",
     realBadge: "REAL FUNDS",
     connectToTrade: "Connect wallet",
     paperHint: "Simulated — no real funds",
@@ -166,6 +168,8 @@ const { t } = useI18n({
     liveXrpOnly: "Live : XRP uniquement",
     liveNotConfigured: "Live non configuré",
     virtualBalance: "Solde virtuel",
+    testnetWallet: "Wallet Testnet",
+    firstTradeNft: "NFT First Trade",
     realBadge: "ARGENT RÉEL",
     connectToTrade: "Connecter le wallet",
     paperHint: "Simulé — aucun fonds réel",
@@ -229,6 +233,12 @@ watch(session.walletConnected, (connectedNow) => {
 /** Adresse XRPL raccourcie pour l'affichage (rXXXX…abcd). */
 function shorten(addr: string): string {
   return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
+}
+function paperWalletLabel(): string {
+  const reward = paper.walletReward.value;
+  if (reward?.walletAddress === null || reward?.walletAddress === undefined) return "";
+  const nft = reward.rewardStatus === "claimed" ? "✓" : "…";
+  return `${t("testnetWallet")} ${shorten(reward.walletAddress)} · ${t("firstTradeNft")} ${nft}`;
 }
 /** Nom lisible du wallet connecté. */
 function walletKind(): string {
@@ -1767,6 +1777,7 @@ onUnmounted(() => {
           </button>
         </template>
         <template v-else>
+          <span v-if="paperWalletLabel()" class="badge">{{ paperWalletLabel() }}</span>
           <span class="ctxlabel">{{ t('virtualBalance') }}</span>
           <span class="ctxval">{{ availLabel() }}</span>
         </template>

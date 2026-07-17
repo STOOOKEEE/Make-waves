@@ -18,6 +18,13 @@ export class PaperWalletFundingFailedError extends Error {
   }
 }
 
+export class PaperWalletReclaimedError extends Error {
+  constructor() {
+    super("Wallet Paper déjà détruit et fonds récupérés");
+    this.name = "PaperWalletReclaimedError";
+  }
+}
+
 export interface PaperWalletServiceDeps {
   readonly store: PaperWalletStore;
   readonly gateway: Pick<XrplCustodialWalletGateway, "fundWallet">;
@@ -52,6 +59,11 @@ export class PaperWalletService {
     }
   }
 
+  /** Statut public du wallet technique ; la seed chiffrée reste dans le store. */
+  async get(userId: string): Promise<PaperWallet | null> {
+    return this.deps.store.get(userId);
+  }
+
   private async ensureFundedOnce(userId: string): Promise<PaperWallet> {
     let wallet = await this.deps.store.get(userId);
     if (wallet === null) {
@@ -75,6 +87,7 @@ export class PaperWalletService {
     if (wallet.status === "funding_failed" || wallet.status === "funding_in_progress") {
       throw new PaperWalletFundingFailedError();
     }
+    if (wallet.status === "reclaimed") throw new PaperWalletReclaimedError();
     if (wallet.status === "pending_funding") {
       let fundingStarted = false;
       try {

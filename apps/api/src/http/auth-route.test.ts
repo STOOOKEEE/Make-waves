@@ -79,6 +79,40 @@ describe("preHandler d'autorisation", () => {
   });
 });
 
+describe("POST /auth/paper", () => {
+  it("crée une identité Paper serveur et un token qui protège son compte", async () => {
+    const accounts = new InMemoryAccountStore();
+    const paper = new PaperService(undefined, accounts);
+    const service = new AuthService({
+      secret: SECRET,
+      ttlSeconds: 3600,
+      challenges: new InMemoryChallengeStore(300_000),
+      paperSessionId: () => "paper-session-test",
+    });
+    const app = buildServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      auth: { service, resolvers: NO_RESOLVERS },
+    });
+
+    const session = await app.inject({ method: "POST", url: "/auth/paper" });
+    expect(session.statusCode).toBe(200);
+    const { token, userId } = session.json();
+    expect(userId).toBe("paper:paper-session-test");
+
+    const ensured = await app.inject({
+      method: "POST",
+      url: "/accounts/ensure",
+      headers: { authorization: `Bearer ${String(token)}` },
+      payload: { userId },
+    });
+    expect(ensured.statusCode).toBe(200);
+    expect(ensured.json().created).toBe(true);
+    await app.close();
+  });
+});
+
 describe("POST /auth/challenge", () => {
   it("renvoie un nonce + message pour une adresse valide", async () => {
     const { app } = buildAuthServer();

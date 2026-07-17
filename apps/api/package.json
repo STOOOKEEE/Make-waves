@@ -8,7 +8,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "tsx src/main.ts",
     "dev": "tsx watch src/main.ts",
-    "spike:tx": "tsx src/scripts/build-spike-tx.ts"
+    "spike:tx": "tsx src/scripts/build-spike-tx.ts",
+    "paper-wallet:reclaim": "tsx src/scripts/reclaim-paper-wallet.ts",
+    "nft:pin-first-trade": "tsx src/scripts/pin-first-trade-ipfs.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",

@@ -43,6 +43,14 @@ describe("authorize — routes publiques", () => {
     ).toBe(true);
   });
 
+  it("laisse créer une session Paper anonyme sans token", async () => {
+    const d = await authorize(
+      req({ method: "POST", routeUrl: "/auth/paper", tokenAddress: null }),
+      resolvers,
+    );
+    expect(d.ok).toBe(true);
+  });
+
   it("laisse passer les préflights OPTIONS", async () => {
     const d = await authorize(req({ method: "OPTIONS", routeUrl: "/accounts/:userId/orders", tokenAddress: null }), resolvers);
     expect(d.ok).toBe(true);

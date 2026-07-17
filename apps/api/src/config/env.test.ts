@@ -5,6 +5,8 @@ import {
   readTestnetE2EConfig,
   readCorsOrigin,
   readOperatorUserIds,
+  readFirstTradeImageUri,
+  readPaperWalletRuntimeConfig,
   readSessionSecret,
   readSessionTtlSeconds,
 } from "./env";
@@ -23,6 +25,14 @@ const KEYS = [
   "TIDE_E2E_TESTNET_SOURCE_TAG",
   "TIDE_E2E_TESTNET_WSS_URL",
   "TIDE_XRPL_NETWORK",
+  "TIDE_FIRST_TRADE_IMAGE_URI",
+  "TIDE_PAPER_WALLET_NETWORK",
+  "TIDE_PAPER_WALLET_WSS_URL",
+  "TIDE_PAPER_WALLET_SOURCE_TAG",
+  "TIDE_PAPER_WALLET_ISSUER_SEED",
+  "TIDE_PAPER_WALLET_FUNDER_SEED",
+  "TIDE_PAPER_WALLET_KEY_MASTER",
+  "TIDE_PAPER_WALLET_KEY_ID",
 ] as const;
 
 afterEach(() => {
@@ -50,6 +60,55 @@ describe("readAdminToken", () => {
         process.env["NODE_ENV"] = previousNodeEnv;
       }
     }
+  });
+});
+
+describe("readFirstTradeImageUri", () => {
+  it("reste optionnelle", () => {
+    expect(readFirstTradeImageUri()).toBeUndefined();
+  });
+  it("accepte uniquement une URI IPFS", () => {
+    process.env["TIDE_FIRST_TRADE_IMAGE_URI"] = "ipfs://bafybeigdyrzt/first-trade.png";
+    expect(readFirstTradeImageUri()).toBe("ipfs://bafybeigdyrzt/first-trade.png");
+    process.env["TIDE_FIRST_TRADE_IMAGE_URI"] = "https://example.com/first.png";
+    expect(() => readFirstTradeImageUri()).toThrow(/ipfs/);
+  });
+});
+
+describe("readPaperWalletRuntimeConfig", () => {
+  const validSeed = `s${"a".repeat(28)}`;
+
+  function configure(network = "testnet"): void {
+    process.env["TIDE_PAPER_WALLET_NETWORK"] = network;
+    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://s.altnet.rippletest.net:51233";
+    process.env["TIDE_PAPER_WALLET_SOURCE_TAG"] = "123";
+    process.env["TIDE_PAPER_WALLET_ISSUER_SEED"] = validSeed;
+    process.env["TIDE_PAPER_WALLET_FUNDER_SEED"] = validSeed;
+    process.env["TIDE_PAPER_WALLET_KEY_MASTER"] = "ab".repeat(32);
+    process.env["TIDE_FIRST_TRADE_IMAGE_URI"] = "ipfs://bafyfirsttrade";
+  }
+
+  it("reste désactivé si aucune variable dédiée n'est présente", () => {
+    expect(readPaperWalletRuntimeConfig()).toBeUndefined();
+  });
+
+  it("isole un runtime Testnet complet du réseau Live", () => {
+    configure();
+    process.env["TIDE_XRPL_NETWORK"] = "mainnet";
+    expect(readPaperWalletRuntimeConfig()).toMatchObject({
+      network: "testnet",
+      sourceTag: 123,
+      serverUrl: "wss://s.altnet.rippletest.net:51233",
+      firstTradeImageUri: "ipfs://bafyfirsttrade",
+    });
+  });
+
+  it("refuse Mainnet et toute configuration partielle", () => {
+    configure("mainnet");
+    expect(() => readPaperWalletRuntimeConfig()).toThrow(/testnet/);
+    for (const k of KEYS) delete process.env[k];
+    process.env["TIDE_PAPER_WALLET_FUNDER_SEED"] = validSeed;
+    expect(() => readPaperWalletRuntimeConfig()).toThrow(/incomplète/);
   });
 });
 

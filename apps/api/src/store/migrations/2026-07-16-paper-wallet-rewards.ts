@@ -24,5 +24,19 @@ export function migratePaperWalletRewardTables(db: DatabaseSync): void {
       PRIMARY KEY (user_id, week)
     );
     CREATE INDEX IF NOT EXISTS idx_weekly_rewards_user ON weekly_rewards(user_id, week DESC);
+
+    CREATE TABLE IF NOT EXISTS paper_badge_rewards (
+      user_id TEXT NOT NULL,
+      badge_code TEXT NOT NULL,
+      qualified_at INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      nft_token_id TEXT,
+      sell_offer_id TEXT,
+      claim_tx_hash TEXT,
+      claimed_at INTEGER,
+      PRIMARY KEY (user_id, badge_code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_paper_badge_rewards_user
+      ON paper_badge_rewards(user_id, qualified_at DESC);
   `);
 }

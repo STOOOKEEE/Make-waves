@@ -108,10 +108,14 @@ export interface AppConfig {
   readonly badgeStore?: BadgeStore;
   /** Programme « trade de la semaine » : wallet Paper financé + claim NFT. */
   readonly weeklyRewards?: WeeklyRewardService;
+  /** Wallet Testnet + badge automatique du premier trade. */
+  readonly firstTradeRewards?: import("./services/first-trade-reward-service").FirstTradeRewardService;
   /** SourceTag d'attribution des mints. Requis avec `nftIssuer`. */
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées NFT. */
   readonly metadataBaseUrl?: string;
+  /** Image IPFS du badge First Trade. */
+  readonly firstTradeImageUri?: string;
   /** Adresse du prize pool — affichée en lecture seule dans la console admin. */
   readonly prizePoolAddress?: string;
   /** Authentification (garde global + routes /auth/*). Absente → API non protégée. */
@@ -266,11 +270,13 @@ export function createApp(config: AppConfig): App {
     agentChatCtx: config.agentChatCtx,
     badgeService,
     weeklyRewards: config.weeklyRewards,
+    firstTradeRewards: config.firstTradeRewards,
     admin,
     auth: config.auth,
     corsOrigin: config.corsOrigin,
     // F8 : les métadonnées NFT utilisent cette base publique, jamais le header Host.
     publicBaseUrl: config.metadataBaseUrl,
+    firstTradeImageUri: config.firstTradeImageUri,
     rateLimit: config.rateLimit,
   });
 

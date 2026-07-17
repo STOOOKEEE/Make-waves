@@ -8,7 +8,8 @@ export interface PaperWallet {
     | "pending_funding"
     | "funding_in_progress"
     | "funded"
-    | "funding_failed";
+    | "funding_failed"
+    | "reclaimed";
   readonly fundingTxHash: string | null;
   readonly createdAt: number;
 }
@@ -20,6 +21,7 @@ export interface PaperWalletStore {
   markFundingInProgress(userId: string): Promise<boolean>;
   markFunded(userId: string, fundingTxHash: string): Promise<void>;
   markFundingFailed(userId: string): Promise<void>;
+  markReclaimed(userId: string): Promise<void>;
 }
 
 export class InMemoryPaperWalletStore implements PaperWalletStore {
@@ -51,5 +53,11 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
     const current = this.wallets.get(userId);
     if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
     this.wallets.set(userId, { ...current, status: "funding_failed" });
+  }
+
+  async markReclaimed(userId: string): Promise<void> {
+    const current = this.wallets.get(userId);
+    if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
+    this.wallets.set(userId, { ...current, status: "reclaimed" });
   }
 }
