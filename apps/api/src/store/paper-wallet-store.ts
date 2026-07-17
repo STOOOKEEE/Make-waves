@@ -16,6 +16,7 @@ export interface PaperWallet {
 
 export interface PaperWalletStore {
   get(userId: string): Promise<PaperWallet | null>;
+  list(): Promise<readonly PaperWallet[]>;
   create(wallet: PaperWallet): Promise<void>;
   /** Transition atomique pending → in-progress. */
   markFundingInProgress(userId: string): Promise<boolean>;
@@ -29,6 +30,10 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
 
   async get(userId: string): Promise<PaperWallet | null> {
     return this.wallets.get(userId) ?? null;
+  }
+
+  async list(): Promise<readonly PaperWallet[]> {
+    return [...this.wallets.values()].sort((a, b) => b.createdAt - a.createdAt);
   }
 
   async create(wallet: PaperWallet): Promise<void> {

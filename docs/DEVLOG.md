@@ -2255,3 +2255,20 @@ interrogées au ledger 19148406 : base 1 XRP, owner 0,2 XRP. Visuel SVG First
 Trade vérifié au rendu. Suite complète : **951 tests**, typecheck 8/8, lint 0 et
 build web de production vert.
 Documentation : `docs/PAPER-WALLET-TESTNET.md`.
+
+## 2026-07-17 — Audit sécurité custody + sessions Paper
+
+**Résultat.** Funder historique Testnet retrouvé dans `tide-fleet/.env` (seed
+locale `0600`, ignorée par Git), adresse publique vérifiée et seed transmise
+uniquement via le presse-papiers local. Le programme reste OFF en production :
+zéro wallet Paper provisionné.
+
+**Durcissements.** CORS production fail-closed, API Docker non-root, umask 077,
+permissions privées pour la DB et `api.env`, `ws` forcé en 8.21.0, Vite 6.4.3
+et Vitest 3.2.6. La console locale affiche désormais les wallets Paper sans
+aucune donnée de clé. Le terminal affiche une empreinte de session Paper afin de
+détecter un changement de localStorage après refresh.
+
+**Vérifié.** 954 tests, typecheck 8/8, lint 0, build production, `pnpm audit`
+sans vulnérabilité connue et Gitleaks sur 184 commits sans fuite. Rapport :
+`docs/SECURITY-AUDIT-2026-07-17.md`.

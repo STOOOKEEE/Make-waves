@@ -36,8 +36,8 @@ export interface PaperWalletServiceDeps {
 
 /**
  * Wallet XRPL généré au premier trade Paper. La clé est chiffrée AES-GCM ; le
- * front ne la reçoit jamais. Le bouton de claim reste volontaire : Tide ne mint
- * ni n'accepte un NFT sans action explicite de l'utilisateur.
+ * front ne la reçoit jamais. Les services de récompense peuvent signer avec
+ * cette clé en mémoire ; aucun endpoint HTTP ne l'expose.
  */
 export class PaperWalletService {
   private readonly now: () => number;

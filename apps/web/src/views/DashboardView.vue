@@ -90,6 +90,7 @@ const { t } = useI18n({
     virtualBalance: "Virtual balance",
     testnetWallet: "Testnet wallet",
     firstTradeNft: "First Trade NFT",
+    paperSession: "Paper session",
     realBadge: "REAL FUNDS",
     connectToTrade: "Connect wallet",
     paperHint: "Simulated — no real funds",
@@ -170,6 +171,7 @@ const { t } = useI18n({
     virtualBalance: "Solde virtuel",
     testnetWallet: "Wallet Testnet",
     firstTradeNft: "NFT First Trade",
+    paperSession: "Session Paper",
     realBadge: "ARGENT RÉEL",
     connectToTrade: "Connecter le wallet",
     paperHint: "Simulé — aucun fonds réel",
@@ -234,9 +236,12 @@ watch(session.walletConnected, (connectedNow) => {
 function shorten(addr: string): string {
   return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
 }
-function paperWalletLabel(): string {
+function paperIdentityLabel(): string {
   const reward = paper.walletReward.value;
-  if (reward?.walletAddress === null || reward?.walletAddress === undefined) return "";
+  if (reward?.walletAddress === null || reward?.walletAddress === undefined) {
+    const id = paper.userId.value.replace(/^paper:/, "");
+    return id === "" ? "" : `${t("paperSession")} ${shorten(id)}`;
+  }
   const nft = reward.rewardStatus === "claimed" ? "✓" : "…";
   return `${t("testnetWallet")} ${shorten(reward.walletAddress)} · ${t("firstTradeNft")} ${nft}`;
 }
@@ -1777,7 +1782,7 @@ onUnmounted(() => {
           </button>
         </template>
         <template v-else>
-          <span v-if="paperWalletLabel()" class="badge">{{ paperWalletLabel() }}</span>
+          <span v-if="paperIdentityLabel()" class="badge">{{ paperIdentityLabel() }}</span>
           <span class="ctxlabel">{{ t('virtualBalance') }}</span>
           <span class="ctxval">{{ availLabel() }}</span>
         </template>

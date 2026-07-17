@@ -7,6 +7,7 @@ import { InMemoryMandateStore, type Mandate } from "../store/mandate-store";
 import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import type { PriceMap } from "@tide/core";
 import { ArenaSimulationService } from "../simulation/arena-simulation-service";
+import { InMemoryPaperWalletStore } from "../store/paper-wallet-store";
 
 const PRICES: PriceMap = { XRP: 0.5 };
 
@@ -47,6 +48,7 @@ function makeService(operatorUserIds: string[]) {
   const agents = new InMemoryAgentStore();
   const mandates = new InMemoryMandateStore();
   const actions = new InMemoryAgentActionsStore();
+  const paperWallets = new InMemoryPaperWalletStore();
   const service = new AdminService({
     paper,
     agents,
@@ -54,8 +56,9 @@ function makeService(operatorUserIds: string[]) {
     actions,
     prizePoolAddress: "rPrizePoolXXXXXXXXXXXXXXXXXXXXXXXXX",
     operatorUserIds: new Set(operatorUserIds),
+    paperWallets,
   });
-  return { paper, agents, mandates, actions, service };
+  return { paper, agents, mandates, actions, paperWallets, service };
 }
 
 describe("AdminService.overview", () => {
@@ -132,8 +135,35 @@ describe("AdminService.overview", () => {
       address: "rPrizePoolXXXXXXXXXXXXXXXXXXXXXXXXX",
       kind: "prize_pool",
       agentId: null,
+      userId: null,
       live: true,
+      status: null,
     });
+  });
+
+  it("liste les wallets Paper sans exposer leur seed chiffrée", async () => {
+    const { paperWallets, service } = makeService([]);
+    await paperWallets.create({
+      userId: "paper:user-1",
+      address: "rPaperWalletXXXXXXXXXXXXXXXXXXXXXXXX",
+      encryptedSeed: "secret-chiffré-interne",
+      masterKeyId: "paper-v1",
+      status: "funded",
+      fundingTxHash: "ABC",
+      createdAt: 10,
+    });
+
+    const { wallets } = await service.overview(PRICES);
+
+    expect(wallets).toContainEqual({
+      address: "rPaperWalletXXXXXXXXXXXXXXXXXXXXXXXX",
+      kind: "paper",
+      agentId: null,
+      userId: "paper:user-1",
+      live: false,
+      status: "funded",
+    });
+    expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
   });
 
   it("sépare les profils de simulation des totaux humains", async () => {

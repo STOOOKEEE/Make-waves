@@ -134,14 +134,16 @@ onMounted(() => {
       <h2>Wallets</h2>
       <table class="admin__table">
         <thead>
-          <tr><th>Adresse</th><th>Type</th><th>Agent</th><th>Live</th></tr>
+          <tr><th>Adresse</th><th>Type</th><th>Utilisateur</th><th>Agent</th><th>Réseau</th><th>Statut</th></tr>
         </thead>
         <tbody>
           <tr v-for="(w, i) in overview.wallets" :key="i">
             <td>{{ w.address ?? "—" }}</td>
             <td>{{ w.kind }}</td>
+            <td>{{ w.userId ?? "—" }}</td>
             <td>{{ w.agentId ?? "—" }}</td>
-            <td>{{ w.live ? "oui" : "non" }}</td>
+            <td>{{ w.live ? "Live" : "Testnet" }}</td>
+            <td>{{ w.status ?? "—" }}</td>
           </tr>
         </tbody>
       </table>

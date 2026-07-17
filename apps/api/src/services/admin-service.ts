@@ -6,6 +6,7 @@ import type { AgentActionsStore } from "../store/agent-actions-store";
 import { isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { ArenaSimulationStatus, ArenaSimulationStatusReader } from "../simulation/arena-simulation-service";
 import type { TestnetE2EStatus, TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
+import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 
 /** Origine d'un compte paper. Précédence : operator > agent > frontend. */
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -39,13 +40,15 @@ export interface AdminAgentRow {
   readonly createdAt: number;
 }
 
-export type WalletKind = "agent" | "prize_pool";
+export type WalletKind = "agent" | "paper" | "prize_pool";
 
 export interface AdminWalletRow {
   readonly address: string | null;
   readonly kind: WalletKind;
   readonly agentId: string | null;
+  readonly userId: string | null;
   readonly live: boolean;
+  readonly status: PaperWallet["status"] | null;
 }
 
 export interface AdminSegmentTotals {
@@ -87,6 +90,7 @@ export interface AdminServiceDeps {
   readonly actions: AgentActionsStore;
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
+  readonly paperWallets?: Pick<PaperWalletStore, "list">;
   readonly simulation?: ArenaSimulationStatusReader;
   readonly testnetE2E?: TestnetE2ERunner;
 }
@@ -108,7 +112,7 @@ export class AdminService {
 
     const users = this.buildUsers(prices, agentOwners);
     const agentRows = await this.buildAgents(agents);
-    const wallets = this.buildWallets(agents);
+    const wallets = await this.buildWallets(agents);
 
     return {
       totals: this.buildTotals(users, agents, wallets),
@@ -176,16 +180,34 @@ export class AdminService {
     );
   }
 
-  private buildWallets(agents: readonly Agent[]): AdminWalletRow[] {
+  private async buildWallets(agents: readonly Agent[]): Promise<AdminWalletRow[]> {
     const wallets: AdminWalletRow[] = agents
       .filter((a) => a.hasLiveAccount)
-      .map((a) => ({ address: null, kind: "agent" as const, agentId: a.id, live: true }));
+      .map((a) => ({
+        address: null,
+        kind: "agent" as const,
+        agentId: a.id,
+        userId: a.userId,
+        live: true,
+        status: null,
+      }));
+    const paperWallets = await this.deps.paperWallets?.list() ?? [];
+    wallets.push(...paperWallets.map((wallet) => ({
+      address: wallet.address,
+      kind: "paper" as const,
+      agentId: null,
+      userId: wallet.userId,
+      live: false,
+      status: wallet.status,
+    })));
     if (this.deps.prizePoolAddress !== null) {
       wallets.push({
         address: this.deps.prizePoolAddress,
         kind: "prize_pool",
         agentId: null,
+        userId: null,
         live: true,
+        status: null,
       });
     }
     return wallets;

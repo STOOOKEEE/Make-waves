@@ -17,6 +17,21 @@ function fakeClient(overrides: Partial<TideClient> = {}): TideClient {
 }
 
 describe("useAuth", () => {
+  it("réutilise la même identité Paper après reconstruction de l'app", async () => {
+    const create = vi.fn().mockResolvedValue({
+      token: "jwt-paper",
+      userId: "paper:persistent-user",
+    });
+    const firstClient = fakeClient({ authPaper: create });
+    expect(await useAuth(firstClient).ensurePaperSession()).toBe("paper:persistent-user");
+
+    const unexpectedCreate = vi.fn();
+    const reloadedClient = fakeClient({ authPaper: unexpectedCreate });
+    expect(await useAuth(reloadedClient).ensurePaperSession()).toBe("paper:persistent-user");
+    expect(unexpectedCreate).not.toHaveBeenCalled();
+    expect(reloadedClient.setToken).toHaveBeenCalledWith("jwt-paper");
+  });
+
   it("loginXaman vérifie l'uuid, pose et persiste le token", async () => {
     const client = fakeClient();
     const auth = useAuth(client);

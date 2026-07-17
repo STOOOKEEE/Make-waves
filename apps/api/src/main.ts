@@ -312,6 +312,7 @@ async function main(): Promise<void> {
       : undefined;
   const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
   const firstTradeImageUri = env.readFirstTradeImageUri();
+  const paperWalletStore = new SqlitePaperWalletStore(db);
   const paperRewardRuntime =
     paperWalletRuntime === undefined
       ? undefined
@@ -327,7 +328,7 @@ async function main(): Promise<void> {
             sourceTag: paperWalletRuntime.sourceTag,
           });
           const wallets = new PaperWalletService({
-            store: new SqlitePaperWalletStore(db),
+            store: paperWalletStore,
             gateway,
             masterKeyHex: paperWalletRuntime.masterKeyHex,
             masterKeyId: paperWalletRuntime.masterKeyId,
@@ -498,6 +499,7 @@ async function main(): Promise<void> {
     firstTradeImageUri,
     adminToken: env.readAdminToken(),
     operatorUserIds: env.readOperatorUserIds(),
+    paperWalletStore,
     simulation: arenaSimulation,
     testnetE2E,
     agentStore,

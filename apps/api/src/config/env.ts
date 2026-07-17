@@ -423,13 +423,16 @@ export function readAdminToken(): string | undefined {
 }
 
 /**
- * Origines CORS autorisées (F6, CSV). Absent → `undefined` (le serveur reflète
- * toute origine — dev/démo). En prod, poser l'origine du front pour restreindre.
+ * Origines CORS autorisées (F6, CSV). En développement, l'absence conserve le
+ * mode permissif. En production, on tombe sur l'allowlist Tide plutôt que de
+ * refléter silencieusement n'importe quelle origine.
  */
 export function readCorsOrigin(): string[] | undefined {
   const raw = optional("TIDE_CORS_ORIGIN");
   if (raw === undefined) {
-    return undefined;
+    return process.env["NODE_ENV"] === "production"
+      ? ["https://tidetrade.xyz", "https://www.tidetrade.xyz"]
+      : undefined;
   }
   const origins = raw
     .split(",")

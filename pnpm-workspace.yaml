@@ -2,6 +2,10 @@ packages:
   - "packages/*"
   - "apps/*"
 
+# Force le correctif DoS WebSocket pour les consommateurs transitifs (viem).
+overrides:
+  ws: 8.21.0
+
 # Décision explicite des scripts de build (politique supply-chain). Seul esbuild
 # (utilisé par vitest) doit compiler. Les accélérateurs natifs de `ws` (tirés par
 # xrpl/xumm-sdk) sont optionnels — ws fonctionne en JS pur — donc on refuse leur

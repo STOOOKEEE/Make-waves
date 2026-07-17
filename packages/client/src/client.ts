@@ -314,9 +314,17 @@ export interface AdminAgentDto {
 
 export interface AdminWalletDto {
   readonly address: string | null;
-  readonly kind: "agent" | "prize_pool";
+  readonly kind: "agent" | "paper" | "prize_pool";
   readonly agentId: string | null;
+  readonly userId: string | null;
   readonly live: boolean;
+  readonly status:
+    | "pending_funding"
+    | "funding_in_progress"
+    | "funded"
+    | "funding_failed"
+    | "reclaimed"
+    | null;
 }
 
 export interface AdminOverviewDto {

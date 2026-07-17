@@ -31,6 +31,7 @@ import type { CompetitionStore } from "./store/competition-store";
 import type { AgentActionsStore } from "./store/agent-actions-store";
 import { AdminService } from "./services/admin-service";
 import type { AgentStore } from "./store/agent-store";
+import type { PaperWalletStore } from "./store/paper-wallet-store";
 import type { MandateStore } from "./store/mandate-store";
 import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
 import type { TestnetE2ERunner } from "./simulation/testnet-e2e-runner";
@@ -79,6 +80,8 @@ export interface AppConfig {
   readonly adminToken?: string;
   /** Comptes classés "operator" dans la console admin (défaut : aucun). */
   readonly operatorUserIds?: readonly string[];
+  /** Wallets Paper visibles dans la console locale, sans aucune seed. */
+  readonly paperWalletStore?: Pick<PaperWalletStore, "list">;
   /** Etat du banc de charge Paper, visible seulement dans la console admin. */
   readonly simulation?: ArenaSimulationStatusReader;
   /** Runner Testnet explicitement déclenché depuis la console admin. */
@@ -186,6 +189,7 @@ export function createApp(config: AppConfig): App {
             actions: config.agentActionsStore,
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
+            paperWallets: config.paperWalletStore,
             simulation: config.simulation,
             testnetE2E: config.testnetE2E,
           }),

@@ -158,6 +158,19 @@ describe("readCorsOrigin", () => {
     process.env["TIDE_CORS_ORIGIN"] = "https://tidetrade.xyz, https://www.tidetrade.xyz";
     expect(readCorsOrigin()).toEqual(["https://tidetrade.xyz", "https://www.tidetrade.xyz"]);
   });
+  it("utilise une allowlist fermée par défaut en production", () => {
+    const previous = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    try {
+      expect(readCorsOrigin()).toEqual([
+        "https://tidetrade.xyz",
+        "https://www.tidetrade.xyz",
+      ]);
+    } finally {
+      if (previous === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previous;
+    }
+  });
 });
 
 describe("readArenaSimulationConfig", () => {

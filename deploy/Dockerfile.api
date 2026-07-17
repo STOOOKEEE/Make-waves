@@ -16,6 +16,8 @@ RUN pnpm install --filter @tide/api...
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV TIDE_DB_PATH=/data/tide.db
+RUN mkdir -p /data && chown node:node /data && chmod 700 /data
+USER node
 WORKDIR /app/apps/api
 # Bind sur toutes les interfaces (main.ts écoute déjà host 0.0.0.0).
-CMD ["pnpm", "start"]
+CMD ["sh", "-c", "umask 077 && exec pnpm start"]

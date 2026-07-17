@@ -22,6 +22,13 @@ export class SqlitePaperWalletStore implements PaperWalletStore {
     return row === undefined ? null : rowToWallet(row);
   }
 
+  async list(): Promise<readonly PaperWallet[]> {
+    return this.db
+      .prepare("SELECT * FROM paper_wallets ORDER BY created_at DESC")
+      .all()
+      .map(rowToWallet);
+  }
+
   async create(wallet: PaperWallet): Promise<void> {
     this.db.prepare(
       `INSERT OR IGNORE INTO paper_wallets (
