@@ -1047,6 +1047,17 @@ function registerAuth(
   // restent protégées par le même garde de propriété que les comptes Live.
   app.post("/auth/paper", () => service.issuePaperSession());
 
+  // Rotation transparente du JWT Paper : accepte un ancien JWT signe (meme
+  // expire) et conserve son `sub`, donc le meme compte apres un refresh navigateur.
+  app.post("/auth/paper/refresh", (request, reply) => {
+    try {
+      return service.refreshPaperSession(request.headers.authorization);
+    } catch (err) {
+      reply.code(401);
+      return { error: err instanceof Error ? err.message : "session Paper invalide" };
+    }
+  });
+
   // Vérifie une preuve (Gem ou Xaman) et délivre un JWT de session.
   app.post("/auth/verify", async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import jwt from "jsonwebtoken";
 import { deriveKeypair, sign } from "ripple-keypairs";
 import { AuthError, AuthService, XamanNotConfiguredError } from "./auth-service";
 import { InMemoryChallengeStore } from "./challenge-store";
@@ -44,6 +45,23 @@ describe("AuthService — JWT", () => {
     });
     const token = other.issueToken(ROOT_ADDRESS);
     expect(makeService().verifyToken(`Bearer ${token}`)).toBeNull();
+  });
+
+  it("renouvelle un JWT Paper expire sans changer son identite", () => {
+    const svc = makeService();
+    const expired = jwt.sign({}, SECRET, { subject: "paper:legacy-user", expiresIn: -1 });
+
+    const refreshed = svc.refreshPaperSession(`Bearer ${expired}`);
+
+    expect(refreshed.userId).toBe("paper:legacy-user");
+    expect(svc.verifyToken(`Bearer ${refreshed.token}`)).toBe("paper:legacy-user");
+  });
+
+  it("refuse de renouveler un JWT de wallet Live", () => {
+    const svc = makeService();
+    expect(() => svc.refreshPaperSession(`Bearer ${svc.issueToken(ROOT_ADDRESS)}`)).toThrow(
+      AuthError,
+    );
   });
 });
 

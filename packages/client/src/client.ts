@@ -391,6 +391,11 @@ export class TideClient {
     return this.call({ path: "/auth/paper", method: "POST" }, 200);
   }
 
+  /** Renouvelle le JWT Paper signe sans changer l'identite anonyme. */
+  async authRefreshPaper(): Promise<PaperSessionDto> {
+    return this.call({ path: "/auth/paper/refresh", method: "POST" }, 200);
+  }
+
   /** Vérifie une preuve GemWallet et récupère un token de session. */
   async authVerifyGem(proof: GemProof): Promise<AuthTokenDto> {
     return this.call(

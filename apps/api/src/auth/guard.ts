@@ -57,6 +57,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/competitions/:id/participants" },
   { method: "POST", url: "/auth/challenge" },
   { method: "POST", url: "/auth/paper" },
+  { method: "POST", url: "/auth/paper/refresh" },
   { method: "POST", url: "/auth/verify" },
   { method: "POST", url: "/sign/connect" },
   { method: "GET", url: "/sign/status/:uuid" },

@@ -111,6 +111,23 @@ describe("POST /auth/paper", () => {
     expect(ensured.json().created).toBe(true);
     await app.close();
   });
+
+  it("renouvelle la session et conserve le meme compte Paper", async () => {
+    const { app, service } = buildAuthServer();
+    const token = service.issueToken("paper:persistent-user");
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/auth/paper/refresh",
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json().userId).toBe("paper:persistent-user");
+    expect(service.verifyToken(`Bearer ${String(refreshed.json().token)}`)).toBe(
+      "paper:persistent-user",
+    );
+    await app.close();
+  });
 });
 
 describe("POST /auth/challenge", () => {

@@ -62,6 +62,7 @@ export function usePaper(client: TideClient) {
       await refresh();
     } catch (e) {
       error.value = errorMessage(e);
+      throw e;
     }
   }
 

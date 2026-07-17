@@ -3,6 +3,7 @@ import type { GemProof, TideClient } from "@tide/client";
 const TOKEN_KEY = "tide.sessionToken";
 const PAPER_TOKEN_KEY = "tide.paperSessionToken";
 const PAPER_USER_KEY = "tide.paperUserId";
+const PAPER_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Signe un message avec le wallet et renvoie signature + clé publique (GemWallet). */
 export type GemSigner = (message: string) => Promise<{ signature: string; publicKey: string }>;
@@ -46,6 +47,10 @@ function safeRemove(key: string): void {
  * wallet (`useWallet`), qui fournit ici la preuve à vérifier côté serveur.
  */
 export function useAuth(client: TideClient) {
+  let paperRefreshInFlight: Promise<string> | null = null;
+  let paperValidatedAt = 0;
+  let paperValidatedUserId = "";
+
   function persist(token: string): void {
     safeSet(TOKEN_KEY, token);
     client.setToken(token);
@@ -75,12 +80,35 @@ export function useAuth(client: TideClient) {
     const token = safeGet(PAPER_TOKEN_KEY);
     if (userId !== null && userId.startsWith("paper:") && token !== null) {
       client.setToken(token);
-      return userId;
+      if (
+        paperValidatedUserId === userId &&
+        Date.now() - paperValidatedAt < PAPER_REFRESH_INTERVAL_MS
+      ) {
+        return userId;
+      }
+      paperRefreshInFlight ??= (async () => {
+        const refreshed = await client.authRefreshPaper();
+        if (refreshed.userId !== userId) {
+          throw new Error("la session Paper renouvelee ne correspond pas a l'identite locale");
+        }
+        safeSet(PAPER_TOKEN_KEY, refreshed.token);
+        client.setToken(refreshed.token);
+        paperValidatedAt = Date.now();
+        paperValidatedUserId = userId;
+        return userId;
+      })();
+      try {
+        return await paperRefreshInFlight;
+      } finally {
+        paperRefreshInFlight = null;
+      }
     }
     const created = await client.authPaper();
     safeSet(PAPER_USER_KEY, created.userId);
     safeSet(PAPER_TOKEN_KEY, created.token);
     client.setToken(created.token);
+    paperValidatedAt = Date.now();
+    paperValidatedUserId = created.userId;
     return created.userId;
   }
 

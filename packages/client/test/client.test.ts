@@ -26,6 +26,21 @@ describe("TideClient", () => {
     expect(requests[0]).toEqual({ path: "/auth/paper", method: "POST" });
   });
 
+  it("authRefreshPaper -> POST /auth/paper/refresh avec le JWT courant", async () => {
+    const { client, requests } = stub(() => ({
+      status: 200,
+      body: { token: "jwt-next", userId: "paper:u1" },
+    }));
+    client.setToken("jwt-old");
+
+    expect(await client.authRefreshPaper()).toEqual({ token: "jwt-next", userId: "paper:u1" });
+    expect(requests[0]).toEqual({
+      path: "/auth/paper/refresh",
+      method: "POST",
+      headers: { authorization: "Bearer jwt-old" },
+    });
+  });
+
   it("openAccount -> POST /accounts (201)", async () => {
     const { client, requests } = stub(() => ({ status: 201, body: { userId: "a" } }));
     expect(await client.openAccount("a")).toEqual({ userId: "a" });

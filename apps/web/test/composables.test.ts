@@ -118,6 +118,60 @@ describe("usePaper", () => {
     expect(paper.balances.value).toEqual({ RLUSD: 9950, XRP: 100 });
   });
 
+  it("propage un ordre refuse au lieu d'afficher un faux succes", async () => {
+    const paper = usePaper(
+      clientWith({
+        "POST /accounts/ensure": {
+          status: 200,
+          body: { userId: XRP_ACCOUNT, created: true },
+        },
+        [`GET /accounts/${XRP_ACCOUNT}/balances`]: { status: 200, body: { RLUSD: 10_000 } },
+        [`GET /accounts/${XRP_ACCOUNT}/orders`]: { status: 200, body: [] },
+        [`POST /accounts/${XRP_ACCOUNT}/orders`]: {
+          status: 500,
+          body: { error: "ordre non persiste" },
+        },
+      }),
+    );
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
+    await paper.connect();
+
+    await expect(
+      paper.placeOrder({
+        pair: { base: "XRP", quote: "RLUSD" },
+        side: "buy",
+        amount: 100,
+        price: 0.5,
+      }),
+    ).rejects.toThrow("ordre non persiste");
+    expect(paper.orders.value).toHaveLength(0);
+    expect(paper.error.value).toBe("ordre non persiste");
+  });
+
+  it("renouvelle la session Paper persistante sans changer de userId", async () => {
+    const userId = "paper:persistent-user";
+    localStorage.setItem("tide.paperUserId", userId);
+    localStorage.setItem("tide.paperSessionToken", "jwt-old");
+    const paper = usePaper(clientWith({
+      "POST /auth/paper/refresh": {
+        status: 200,
+        body: { token: "jwt-next", userId },
+      },
+      "POST /accounts/ensure": { status: 200, body: { userId, created: false } },
+      [`GET /accounts/${encodeURIComponent(userId)}/balances`]: {
+        status: 200,
+        body: { RLUSD: 9_000, XRP: 10 },
+      },
+      [`GET /accounts/${encodeURIComponent(userId)}/orders`]: { status: 200, body: [FILL] },
+    }));
+
+    await paper.connect();
+
+    expect(paper.userId.value).toBe(userId);
+    expect(localStorage.getItem("tide.paperSessionToken")).toBe("jwt-next");
+    expect(paper.orders.value).toEqual([FILL]);
+  });
+
   it("expose le message d'erreur serveur", async () => {
     const paper = usePaper(
       clientWith({

@@ -41,6 +41,7 @@ export interface GemVerifyInput {
 }
 
 const BEARER_PREFIX = "Bearer ";
+const PAPER_REFRESH_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
 
 /**
  * Message signé par le wallet pour prouver le contrôle de l'adresse. Lie
@@ -77,6 +78,46 @@ export class AuthService {
     }
     const userId = `paper:${id}`;
     return { token: this.issueToken(userId), userId };
+  }
+
+  /**
+   * Renouvelle une session Paper en conservant exactement le meme `sub`.
+   *
+   * Le JWT peut etre expire (c'est precisement le cas a recuperer apres un
+   * retour sur l'app), mais sa signature doit rester valide, son sujet doit
+   * etre une identite Paper et son emission dater de moins de 90 jours. Cela
+   * evite de remplacer silencieusement le portefeuille virtuel par une nouvelle
+   * identite lorsque le token court de 24 h expire.
+   */
+  refreshPaperSession(header: string | undefined): { token: string; userId: string } {
+    if (header === undefined || !header.startsWith(BEARER_PREFIX)) {
+      throw new AuthError("session Paper manquante");
+    }
+    try {
+      const payload: string | JwtPayload = jwt.verify(
+        header.slice(BEARER_PREFIX.length),
+        this.deps.secret,
+        { ignoreExpiration: true },
+      );
+      if (
+        typeof payload !== "object" ||
+        typeof payload.sub !== "string" ||
+        !payload.sub.startsWith("paper:") ||
+        typeof payload.iat !== "number"
+      ) {
+        throw new AuthError("session Paper invalide");
+      }
+      const ageSeconds = Math.floor(Date.now() / 1000) - payload.iat;
+      if (ageSeconds < -60 || ageSeconds > PAPER_REFRESH_MAX_AGE_SECONDS) {
+        throw new AuthError("session Paper trop ancienne");
+      }
+      return { token: this.issueToken(payload.sub), userId: payload.sub };
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError("session Paper invalide");
+    }
   }
 
   /** Émet un challenge pour l'adresse (GemWallet). Renvoie le nonce + le message à signer. */

@@ -26,10 +26,15 @@ describe("useAuth", () => {
     expect(await useAuth(firstClient).ensurePaperSession()).toBe("paper:persistent-user");
 
     const unexpectedCreate = vi.fn();
-    const reloadedClient = fakeClient({ authPaper: unexpectedCreate });
+    const refresh = vi.fn().mockResolvedValue({
+      token: "jwt-paper-next",
+      userId: "paper:persistent-user",
+    });
+    const reloadedClient = fakeClient({ authPaper: unexpectedCreate, authRefreshPaper: refresh });
     expect(await useAuth(reloadedClient).ensurePaperSession()).toBe("paper:persistent-user");
     expect(unexpectedCreate).not.toHaveBeenCalled();
-    expect(reloadedClient.setToken).toHaveBeenCalledWith("jwt-paper");
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(reloadedClient.setToken).toHaveBeenCalledWith("jwt-paper-next");
   });
 
   it("loginXaman vérifie l'uuid, pose et persiste le token", async () => {
