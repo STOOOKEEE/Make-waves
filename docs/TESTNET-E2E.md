@@ -80,7 +80,9 @@ le serveur échoue au boot plutôt que de dégrader silencieusement le parcours.
 
 ## Lancer et contrôler un run
 
-1. Ouvrir `#/admin` et saisir le token admin.
+1. Lancer le front local avec `pnpm --filter @tide/web dev`, ouvrir
+   `http://localhost:5173/#/admin` et saisir le token admin. La console et ses
+   routes sont volontairement absentes des builds et runtimes de production.
 2. Vérifier que la carte **Parcours E2E Testnet** indique `idle` et le nombre
    de profils configurés.
 3. Cliquer sur **Lancer le parcours Testnet**.

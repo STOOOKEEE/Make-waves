@@ -532,22 +532,6 @@ export class TideClient {
     return this.call({ path: "/metrics", method: "GET" }, 200);
   }
 
-  // --- Admin (console opérateur) ---
-
-  async adminOverview(token: string): Promise<AdminOverviewDto> {
-    return this.call(
-      { path: "/admin/overview", method: "GET", headers: { "x-admin-token": token } },
-      200,
-    );
-  }
-
-  async runTestnetE2E(token: string): Promise<AdminOverviewDto["testnetE2E"]> {
-    return this.call(
-      { path: "/admin/testnet-e2e/run", method: "POST", headers: { "x-admin-token": token } },
-      200,
-    );
-  }
-
   // --- Signature non-custodiale (Xaman) ---
   // Le sourceTag (attribution) et la destination du prize pool sont ajoutés CÔTÉ
   // SERVEUR : le client ne les fournit jamais.

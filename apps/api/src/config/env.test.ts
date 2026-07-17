@@ -37,6 +37,20 @@ describe("readAdminToken", () => {
     process.env["TIDE_ADMIN_TOKEN"] = "secret";
     expect(readAdminToken()).toBe("secret");
   });
+  it("reste désactivé en production même si un token est configuré", () => {
+    const previousNodeEnv = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    process.env["TIDE_ADMIN_TOKEN"] = "ancien-secret";
+    try {
+      expect(readAdminToken()).toBeUndefined();
+    } finally {
+      if (previousNodeEnv === undefined) {
+        delete process.env["NODE_ENV"];
+      } else {
+        process.env["NODE_ENV"] = previousNodeEnv;
+      }
+    }
+  });
 });
 
 describe("readOperatorUserIds", () => {

@@ -2207,3 +2207,21 @@ Constat d'Armand, juste : aujourd'hui l'agent est **réactif** (il faut le promp
 **Vérifié.** **921 tests** (dont F2 6, filtre SSE 4 + route 2, garde F4, rate-limiter 3 + route 2, env CORS 2), **typecheck 8/8**, **lint 0**. Runtime : F8 (image = base configurée, Host `evil` ignoré), F6 (origine autorisée reflétée / interdite bloquée), F7 (429 après la borne). Committé après F1.
 
 **Reste.** Signature Xaman **réelle du mandat** (créer le payload avec le hash des params — le front active encore en Paper via signature simulée) ; MCP externe token ; per-route strict aussi sur claim/création si besoin (aujourd'hui : global + strict /auth/*).
+
+## 2026-07-17 — Console admin strictement locale
+
+**Quoi.** Retrait de la console admin de toute surface publique. Le front ne
+reconnaît `/admin` qu'en mode Vite `DEV` et charge `AdminView` ainsi que son
+client HTTP par import dynamique local. Le build de production ne contient ni
+UI, ni token de session admin, ni chemins `/admin/*`. Côté API,
+`readAdminToken()` renvoie toujours `undefined` avec `NODE_ENV=production`, même
+si un ancien `TIDE_ADMIN_TOKEN` subsiste dans l'environnement : les routes admin
+ne sont donc pas montées et répondent 404.
+
+**Pourquoi.** Une URL cachée et un token côté navigateur ne suffisent pas pour
+une console opérateur. L'outil doit rester sur la machine de développement ; le
+site et l'API publics ne doivent exposer aucune surface de découverte admin.
+
+**Vérifié.** 32 tests ciblés verts, typecheck client/API/web, lint 0, build web
+production réussi et scan du `dist` sans `AdminView`, libellés/token admin ni
+chemins `/admin/*`.

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { onMounted } from "vue";
-import type { TideClient } from "@tide/client";
 import { useAdmin } from "../composables/useAdmin";
+import { createLocalAdminClient } from "../lib/admin-client";
 
-const props = defineProps<{ client: TideClient }>();
-const { token, overview, error, loading, load, runTestnetE2E, logout } = useAdmin(props.client);
+const { token, overview, error, loading, load, runTestnetE2E, logout } = useAdmin(
+  createLocalAdminClient(),
+);
 
 const SEGMENT_LABEL: Record<string, string> = {
   operator: "À moi",

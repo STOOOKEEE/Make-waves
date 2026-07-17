@@ -351,8 +351,15 @@ export function readLlmBaseUrl(): string | undefined {
   return raw;
 }
 
-/** Token d'authentification pour la console admin. `undefined` si non déclaré. */
+/**
+ * Token d'authentification pour la console admin locale.
+ * La console reste systématiquement désactivée avec `NODE_ENV=production`,
+ * même si une ancienne configuration serveur contient encore le secret.
+ */
 export function readAdminToken(): string | undefined {
+  if (process.env["NODE_ENV"] === "production") {
+    return undefined;
+  }
   return optional("TIDE_ADMIN_TOKEN");
 }
 

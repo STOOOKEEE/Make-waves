@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { TideClient, type AdminOverviewDto, type ApiResponse, type ApiTransport } from "@tide/client";
-import { useAdmin } from "../src/composables/useAdmin";
+import { TideApiError, type AdminOverviewDto, type ApiResponse } from "@tide/client";
+import { useAdmin, type AdminClient } from "../src/composables/useAdmin";
 
 const EMPTY: AdminOverviewDto = {
   totals: {
@@ -35,10 +35,29 @@ const EMPTY: AdminOverviewDto = {
 };
 
 /** Client dont `/admin/overview` répond selon le token reçu en en-tête. */
-function clientWithToken(expectedToken: string, ok: ApiResponse, unauthorized: ApiResponse): TideClient {
-  const transport: ApiTransport = (request) =>
-    Promise.resolve(request.headers?.["x-admin-token"] === expectedToken ? ok : unauthorized);
-  return new TideClient(transport);
+function clientWithToken(
+  expectedToken: string,
+  ok: ApiResponse,
+  unauthorized: ApiResponse,
+): AdminClient {
+  const responseFor = (token: string): ApiResponse =>
+    token === expectedToken ? ok : unauthorized;
+  return {
+    adminOverview: (token) => {
+      const response = responseFor(token);
+      if (response.status !== 200) {
+        throw new TideApiError(response.status, "invalide");
+      }
+      return Promise.resolve(response.body as AdminOverviewDto);
+    },
+    runTestnetE2E: (token) => {
+      const response = responseFor(token);
+      if (response.status !== 200) {
+        throw new TideApiError(response.status, "invalide");
+      }
+      return Promise.resolve(response.body as AdminOverviewDto["testnetE2E"]);
+    },
+  };
 }
 
 beforeEach(() => {

@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, readonly, ref } from "vue";
 
 /** Chemins du site (landing + les écrans app). */
-export const ROUTES = [
+const PUBLIC_ROUTES = [
   "/",
   "/dashboard",
   "/portfolio",
@@ -11,9 +11,13 @@ export const ROUTES = [
   "/arena",
   "/agent",
   "/learn",
-  "/admin",
 ] as const;
-export type RoutePath = (typeof ROUTES)[number];
+
+/** `/admin` n'existe que dans le serveur de développement local. */
+export type RoutePath = (typeof PUBLIC_ROUTES)[number] | "/admin";
+export const ROUTES: readonly RoutePath[] = import.meta.env.DEV
+  ? [...PUBLIC_ROUTES, "/admin"]
+  : PUBLIC_ROUTES;
 
 const DEFAULT_ROUTE: RoutePath = "/";
 

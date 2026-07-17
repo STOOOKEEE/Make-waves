@@ -1,12 +1,18 @@
 import { ref } from "vue";
-import type { AdminOverviewDto, TideClient } from "@tide/client";
+import type { AdminOverviewDto } from "@tide/client";
 import { TideApiError } from "@tide/client";
 import { errorMessage } from "./messages";
 
 const TOKEN_KEY = "tide.adminToken";
 
+/** Contrat du client admin, implémenté dans un chunk réservé au dev local. */
+export interface AdminClient {
+  adminOverview(token: string): Promise<AdminOverviewDto>;
+  runTestnetE2E(token: string): Promise<AdminOverviewDto["testnetE2E"]>;
+}
+
 /** État de la console admin : token (persisté en sessionStorage), overview, chargement. */
-export function useAdmin(client: TideClient) {
+export function useAdmin(client: AdminClient) {
   const token = ref(sessionStorage.getItem(TOKEN_KEY) ?? "");
   const overview = ref<AdminOverviewDto | null>(null);
   const error = ref("");

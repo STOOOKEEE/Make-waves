@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { defineAsyncComponent } from "vue";
 import { createClient } from "./lib/client";
 import { useRoute } from "./composables/useRoute";
 import { useAuth } from "./composables/useAuth";
@@ -14,7 +15,12 @@ import ArenaView from "./views/ArenaView.vue";
 import AgentView from "./views/AgentView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
-import AdminView from "./views/AdminView.vue";
+
+// La console d'administration est un outil local : cet import conditionnel est
+// éliminé du build Vite de production, donc son code n'est jamais publié.
+const LocalAdminView = import.meta.env.DEV
+  ? defineAsyncComponent(() => import("./views/AdminView.vue"))
+  : null;
 
 const client = createClient();
 // Réinjecte un éventuel token de session persisté dès le démarrage (avant tout appel API).
@@ -50,7 +56,10 @@ const { current, competitionId, routeId, navigate } = useRoute();
       :slug="routeId"
       @navigate="navigate"
     />
-    <AdminView v-else-if="current === '/admin'" :client="client" />
+    <component
+      :is="LocalAdminView"
+      v-else-if="current === '/admin' && LocalAdminView !== null"
+    />
   </main>
 
   <SignModal :client="client" />
