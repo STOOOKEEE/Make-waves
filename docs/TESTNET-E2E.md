@@ -88,6 +88,23 @@ le serveur échoue au boot plutôt que de dégrader silencieusement le parcours.
 3. Cliquer sur **Lancer le parcours Testnet**.
 4. Attendre l'état `succeeded` et `N / N profils terminés`.
 
+## Custody locale des wallets
+
+La même console locale permet ensuite :
+
+- de choisir un wallet financé et de lui distribuer individuellement un badge
+  du catalogue ;
+- de supprimer un wallet précis après confirmation de son `userId` ;
+- de lancer une récupération globale après saisie exacte de
+  `DELETE ALL TESTNET WALLETS`.
+
+La récupération est asynchrone. Pour chaque wallet, Tide brûle d'abord les NFT
+détenus, attend automatiquement le délai XRPL de 256 ledgers, vérifie qu'aucun
+objet ne bloque la suppression, puis soumet `AccountDelete` avec `fail_hard`.
+Le coût spécial courant est l'owner reserve (0,2 XRP) ; le reste est envoyé à
+l'adresse dérivée de `TIDE_PAPER_WALLET_ISSUER_SEED`. La console affiche la
+progression et n'expose jamais les seeds déchiffrées.
+
 L'endpoint équivalent, utile pour l'automatisation d'un environnement de test,
 est :
 

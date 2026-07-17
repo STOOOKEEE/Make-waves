@@ -327,6 +327,40 @@ export interface AdminWalletDto {
     | null;
 }
 
+export interface AdminReclaimResultDto {
+  readonly userId: string;
+  readonly address: string;
+  readonly state: "queued" | "burning" | "waiting" | "deleting" | "succeeded" | "failed";
+  readonly burnedNfts: number;
+  readonly deleteTxHash: string | null;
+  readonly recoveredXrpEstimate: number;
+  readonly error: string | null;
+}
+
+export interface AdminReclaimJobDto {
+  readonly enabled: boolean;
+  readonly id: string | null;
+  readonly state: "idle" | "running" | "succeeded" | "failed";
+  readonly total: number;
+  readonly completed: number;
+  readonly failed: number;
+  readonly destination: string | null;
+  readonly startedAt: number | null;
+  readonly finishedAt: number | null;
+  readonly results: readonly AdminReclaimResultDto[];
+}
+
+export interface AdminNftGrantDto {
+  readonly userId: string;
+  readonly walletAddress: string;
+  readonly badgeCode: string;
+  readonly nftTokenId: string;
+  readonly sellOfferId: string;
+  readonly mintHash: string;
+  readonly offerHash: string;
+  readonly claimHash: string;
+}
+
 export interface AdminOverviewDto {
   readonly totals: {
     readonly users: number;

@@ -29,6 +29,10 @@ import { PaperService } from "./services/paper-service";
 import { PaperWalletService } from "./services/paper-wallet-service";
 import { WeeklyRewardService } from "./services/weekly-reward-service";
 import { FirstTradeRewardService } from "./services/first-trade-reward-service";
+import {
+  PaperWalletAdminService,
+  XrplPaperWalletAdminGateway,
+} from "./services/paper-wallet-admin-service";
 import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
 import { SqliteBadgeStore } from "./store/sqlite-badge-store";
@@ -335,6 +339,7 @@ async function main(): Promise<void> {
           });
           return { gateway, issuer, wallets };
         })();
+  const paperBadgeRewardStore = new SqlitePaperBadgeRewardStore(db);
   const weeklyRewards =
     paperRewardRuntime === undefined
       ? undefined
@@ -349,10 +354,25 @@ async function main(): Promise<void> {
     paperRewardRuntime === undefined
       ? undefined
       : new FirstTradeRewardService({
-          store: new SqlitePaperBadgeRewardStore(db),
+          store: paperBadgeRewardStore,
           wallets: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
+          metadataBaseUrl: env.readPublicBaseUrl(),
+        });
+  const paperWalletAdmin =
+    paperWalletRuntime === undefined || paperRewardRuntime === undefined
+      ? undefined
+      : new PaperWalletAdminService({
+          store: paperWalletStore,
+          rewards: paperBadgeRewardStore,
+          wallets: paperRewardRuntime.wallets,
+          issuer: paperRewardRuntime.issuer,
+          issuerAddress: paperRewardRuntime.issuer.issuerAddress,
+          gateway: new XrplPaperWalletAdminGateway(
+            paperWalletRuntime.serverUrl,
+            paperWalletRuntime.sourceTag,
+          ),
           metadataBaseUrl: env.readPublicBaseUrl(),
         });
 
@@ -502,6 +522,7 @@ async function main(): Promise<void> {
     paperWalletStore,
     simulation: arenaSimulation,
     testnetE2E,
+    paperWalletAdmin,
     agentStore,
     mandateStore,
     prizePoolAddress: env.readPrizePoolAddress(),

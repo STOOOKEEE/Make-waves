@@ -2,6 +2,8 @@ import {
   extractErrorMessage,
   TideApiError,
   type AdminOverviewDto,
+  type AdminNftGrantDto,
+  type AdminReclaimJobDto,
   type ApiRequest,
   type ApiTransport,
 } from "@tide/client";
@@ -44,6 +46,45 @@ export function createLocalAdminClient(
           headers: { "x-admin-token": token },
         },
         200,
+      ),
+    walletOpsStatus: (token) =>
+      expectBody<AdminReclaimJobDto>(
+        transport,
+        { path: "/admin/wallet-ops/status", method: "GET", headers: { "x-admin-token": token } },
+        200,
+      ),
+    grantWalletNft: (token, userId, badgeCode) =>
+      expectBody<AdminNftGrantDto>(
+        transport,
+        {
+          path: `/admin/wallets/${encodeURIComponent(userId)}/nfts`,
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { badgeCode },
+        },
+        200,
+      ),
+    reclaimWallet: (token, userId) =>
+      expectBody<AdminReclaimJobDto>(
+        transport,
+        {
+          path: `/admin/wallets/${encodeURIComponent(userId)}/reclaim`,
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { confirmation: userId },
+        },
+        202,
+      ),
+    reclaimAllWallets: (token, confirmation) =>
+      expectBody<AdminReclaimJobDto>(
+        transport,
+        {
+          path: "/admin/wallets/reclaim-all",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { confirmation },
+        },
+        202,
       ),
   };
 }

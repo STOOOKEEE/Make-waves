@@ -31,4 +31,24 @@ describe("client admin local", () => {
       headers: { "x-admin-token": "secret" },
     });
   });
+
+  it("confirme un sweep global dans le body et garde le token en header", async () => {
+    let seen: ApiRequest | undefined;
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen = request;
+      return { status: 202, body: { state: "running" } };
+    };
+
+    await createLocalAdminClient(transport).reclaimAllWallets(
+      "secret",
+      "DELETE ALL TESTNET WALLETS",
+    );
+
+    expect(seen).toEqual({
+      path: "/admin/wallets/reclaim-all",
+      method: "POST",
+      headers: { "x-admin-token": "secret" },
+      body: { confirmation: "DELETE ALL TESTNET WALLETS" },
+    });
+  });
 });

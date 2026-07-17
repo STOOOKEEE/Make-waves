@@ -35,6 +35,7 @@ import type { PaperWalletStore } from "./store/paper-wallet-store";
 import type { MandateStore } from "./store/mandate-store";
 import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
 import type { TestnetE2ERunner } from "./simulation/testnet-e2e-runner";
+import type { PaperWalletAdminService } from "./services/paper-wallet-admin-service";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -86,6 +87,8 @@ export interface AppConfig {
   readonly simulation?: ArenaSimulationStatusReader;
   /** Runner Testnet explicitement déclenché depuis la console admin. */
   readonly testnetE2E?: TestnetE2ERunner;
+  /** Distribution NFT et récupération des wallets, uniquement dans la console locale Testnet. */
+  readonly paperWalletAdmin?: PaperWalletAdminService;
   /** Store des agents — requis avec `adminToken` pour activer la console admin. */
   readonly agentStore?: AgentStore;
   /** Store des mandats — requis avec `adminToken` pour activer la console admin. */
@@ -194,6 +197,9 @@ export function createApp(config: AppConfig): App {
             testnetE2E: config.testnetE2E,
           }),
           ...(config.testnetE2E !== undefined ? { testnetE2E: config.testnetE2E } : {}),
+          ...(config.paperWalletAdmin !== undefined
+            ? { walletAdmin: config.paperWalletAdmin }
+            : {}),
         }
       : undefined;
 

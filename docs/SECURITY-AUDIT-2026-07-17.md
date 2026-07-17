@@ -11,17 +11,18 @@
 - Le provisioning wallet/NFT est OFF en production : zéro wallet dans
   `paper_wallets` et aucune variable `TIDE_PAPER_WALLET_*` dans le conteneur.
 
-## Funder Testnet historique
+## Wallet Mainnet historique — ne pas utiliser comme funder Testnet
 
 Le funder du spike a été retrouvé hors repo dans
 `/Users/armandsechon/dev/hackathon/tide-fleet/.env`, variable
 `SPIKE_FUNDER_SEED`. Le fichier est en mode `0600` et ignoré par Git.
 
 - Adresse publique : `rN8yzASKPEfM4Wx3pGAAoJW1s6zbqi1p96`
-- Solde vérifié : 203,49997 Test XRP
+- Solde revérifié le 17 juillet : **203,49997 XRP Mainnet** ; le même compte
+  répond `actNotFound` sur Testnet.
 - La seed n'est ni copiée dans ce document, ni journalisée, ni envoyée au site.
-- À 1,25 XRP par wallet, ce solde ne couvre qu'environ 162 wallets avant frais ;
-  la cible de 300 nécessite au moins 375 Test XRP plus les frais/objets issuer.
+- Cette seed ne doit jamais être branchée au runtime wallet Paper. Un funder et
+  un issuer neufs, exclusivement Testnet, sont requis pour les tests.
 
 ## Stockage des wallets Paper
 
@@ -63,10 +64,14 @@ n'est donc réalisée.
 
 ## Console locale
 
-La console locale liste les comptes, agents, mandats et wallets. Elle inclut
-désormais les wallets Paper avec adresse publique, userId et statut de funding,
-mais jamais `encrypted_seed` ni la clé maître. Elle reste en lecture seule et ne
-permet ni export de seed, ni paiement, ni destruction.
+La console locale liste les comptes et wallets Paper avec adresse publique,
+userId et statut de funding, mais jamais `encrypted_seed` ni la clé maître. Elle
+permet, uniquement lorsque le runtime Paper Testnet est complet, de distribuer
+un badge NFT individuel et de lancer la récupération d'un ou de tous les
+wallets : burn des NFT détenus, attente de 256 ledgers, `AccountDelete` avec
+`fail_hard`, puis sweep vers l'issuer Testnet. Une confirmation textuelle forte
+est requise pour le traitement global et la progression est exposée wallet par
+wallet. Ces actions restent absentes du runtime de production.
 
 Limite assumée : cette console locale ne se connecte pas directement à la DB de
 production. Pour superviser la production, utiliser une copie DB en lecture

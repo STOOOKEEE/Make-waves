@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { timingSafeEqual } from "node:crypto";
 import cors from "@fastify/cors";
 import { createRateLimiter } from "./rate-limiter";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -53,6 +54,7 @@ import {
 import { badgeByCode } from "../badges/catalog";
 import { WEEKLY_TRADE_SVG } from "../badges/weekly-trade-svg";
 import { FIRST_TRADE_SVG } from "../badges/first-trade-svg";
+import { FIRST_COMPETITION_SVG, TEN_TRADES_SVG } from "../badges/catalog-badge-svg";
 import { authorize } from "../auth/guard";
 import type { AuthzResolvers } from "../auth/guard";
 import type { AuthService } from "../auth/auth-service";
@@ -61,6 +63,7 @@ import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
+import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -149,6 +152,7 @@ export interface ServerDeps {
     readonly token: string;
     readonly service: AdminService;
     readonly testnetE2E?: TestnetE2ERunner;
+    readonly walletAdmin?: PaperWalletAdminService;
   };
   /**
    * Authentification : garde global (Sign-In with XRPL) + routes /auth/*. Absente
@@ -918,6 +922,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     reply.type("image/svg+xml");
     return FIRST_TRADE_SVG;
   });
+  app.get("/badges/ten_trades.svg", (_request, reply) => {
+    reply.type("image/svg+xml");
+    return TEN_TRADES_SVG;
+  });
+  app.get("/badges/first_competition.svg", (_request, reply) => {
+    reply.type("image/svg+xml");
+    return FIRST_COMPETITION_SVG;
+  });
 
   // Badges + claim NFT — montés seulement si un issuer NFT est configuré.
   if (deps.badgeService !== undefined) {
@@ -974,8 +986,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   if (deps.admin !== undefined) {
     const admin = deps.admin;
     app.get("/admin/overview", async (request, reply) => {
-      const token = request.headers["x-admin-token"];
-      if (typeof token !== "string" || token !== admin.token) {
+      if (!hasAdminToken(request, admin.token)) {
         reply.code(401);
         return { error: "unauthorized" };
       }
@@ -984,17 +995,106 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     if (admin.testnetE2E !== undefined) {
       const testnetE2E = admin.testnetE2E;
       app.post("/admin/testnet-e2e/run", async (request, reply) => {
-        const token = request.headers["x-admin-token"];
-        if (typeof token !== "string" || token !== admin.token) {
+        if (!hasAdminToken(request, admin.token)) {
           reply.code(401);
           return { error: "unauthorized" };
         }
         return testnetE2E.run();
       });
     }
+    app.get("/admin/wallet-ops/status", (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      return admin.walletAdmin?.status() ?? {
+        enabled: false,
+        id: null,
+        state: "idle",
+        total: 0,
+        completed: 0,
+        failed: 0,
+        destination: null,
+        startedAt: null,
+        finishedAt: null,
+        results: [],
+      };
+    });
+    if (admin.walletAdmin !== undefined) {
+      const walletAdmin = admin.walletAdmin;
+      app.post<{ Params: { userId: string } }>(
+        "/admin/wallets/:userId/nfts",
+        async (request, reply) => {
+          if (!hasAdminToken(request, admin.token)) {
+            reply.code(401);
+            return { error: "unauthorized" };
+          }
+          const badgeCode = readStringField(request.body, "badgeCode");
+          try {
+            return await walletAdmin.grantBadge(request.params.userId, badgeCode);
+          } catch (error) {
+            reply.code(409);
+            return { error: error instanceof Error ? error.message : "distribution NFT refusée" };
+          }
+        },
+      );
+      app.post<{ Params: { userId: string } }>(
+        "/admin/wallets/:userId/reclaim",
+        async (request, reply) => {
+          if (!hasAdminToken(request, admin.token)) {
+            reply.code(401);
+            return { error: "unauthorized" };
+          }
+          try {
+            const status = await walletAdmin.startReclaimOne(
+              request.params.userId,
+              readStringField(request.body, "confirmation"),
+            );
+            reply.code(202);
+            return status;
+          } catch (error) {
+            reply.code(409);
+            return { error: error instanceof Error ? error.message : "récupération refusée" };
+          }
+        },
+      );
+      app.post("/admin/wallets/reclaim-all", async (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        try {
+          const status = await walletAdmin.startReclaimAll(
+            readStringField(request.body, "confirmation"),
+          );
+          reply.code(202);
+          return status;
+        } catch (error) {
+          reply.code(409);
+          return { error: error instanceof Error ? error.message : "récupération globale refusée" };
+        }
+      });
+    }
   }
 
   return app;
+}
+
+function hasAdminToken(request: FastifyRequest, expected: string): boolean {
+  const provided = request.headers["x-admin-token"];
+  if (typeof provided !== "string") return false;
+  const actualBuffer = Buffer.from(provided);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
+function readStringField(body: unknown, field: string): string {
+  if (typeof body !== "object" || body === null) return "";
+  const value = (body as Record<string, unknown>)[field];
+  return typeof value === "string" ? value : "";
 }
 
 /** Extrait `address` d'un corps `{address}` (chaîne, sinon vide → rejet en aval). */

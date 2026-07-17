@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { TideApiError, type AdminOverviewDto, type ApiResponse } from "@tide/client";
+import {
+  TideApiError,
+  type AdminOverviewDto,
+  type AdminReclaimJobDto,
+  type ApiResponse,
+} from "@tide/client";
 import { useAdmin, type AdminClient } from "../src/composables/useAdmin";
 
 const EMPTY: AdminOverviewDto = {
@@ -33,6 +38,18 @@ const EMPTY: AdminOverviewDto = {
     lastError: null,
   },
 };
+const IDLE_JOB: AdminReclaimJobDto = {
+  enabled: false,
+  id: null,
+  state: "idle",
+  total: 0,
+  completed: 0,
+  failed: 0,
+  destination: null,
+  startedAt: null,
+  finishedAt: null,
+  results: [],
+};
 
 /** Client dont `/admin/overview` répond selon le token reçu en en-tête. */
 function clientWithToken(
@@ -57,6 +74,19 @@ function clientWithToken(
       }
       return Promise.resolve(response.body as AdminOverviewDto["testnetE2E"]);
     },
+    walletOpsStatus: async () => IDLE_JOB,
+    grantWalletNft: async () => ({
+      userId: "paper:u1",
+      walletAddress: "rWallet",
+      badgeCode: "first_trade",
+      nftTokenId: "nft",
+      sellOfferId: "offer",
+      mintHash: "mint",
+      offerHash: "offer-hash",
+      claimHash: "claim",
+    }),
+    reclaimWallet: async () => IDLE_JOB,
+    reclaimAllWallets: async () => IDLE_JOB,
   };
 }
 

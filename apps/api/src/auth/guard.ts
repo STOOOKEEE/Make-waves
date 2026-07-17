@@ -44,8 +44,14 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/nft-metadata/weekly/:week" },
   { method: "GET", url: "/badges/weekly_trade.svg" },
   { method: "GET", url: "/badges/first_trade.svg" },
+  { method: "GET", url: "/badges/ten_trades.svg" },
+  { method: "GET", url: "/badges/first_competition.svg" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
+  { method: "GET", url: "/admin/wallet-ops/status" },
+  { method: "POST", url: "/admin/wallets/:userId/nfts" },
+  { method: "POST", url: "/admin/wallets/:userId/reclaim" },
+  { method: "POST", url: "/admin/wallets/reclaim-all" },
   // Le déclencheur E2E porte la même garde admin ; sans cette exception, le
   // garde JWT global renverrait 401 avant que le handler ne voie son token.
   { method: "POST", url: "/admin/testnet-e2e/run" },

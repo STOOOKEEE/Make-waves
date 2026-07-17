@@ -1,11 +1,35 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useAdmin } from "../composables/useAdmin";
 import { createLocalAdminClient } from "../lib/admin-client";
 
-const { token, overview, error, loading, load, runTestnetE2E, logout } = useAdmin(
-  createLocalAdminClient(),
+const {
+  token,
+  overview,
+  error,
+  loading,
+  walletJob,
+  load,
+  runTestnetE2E,
+  refreshWalletJob,
+  grantNft,
+  reclaimOne,
+  reclaimAll,
+  logout,
+} = useAdmin(createLocalAdminClient());
+
+const selectedBadge = ref<Record<string, string>>({});
+const bulkConfirmation = ref("");
+const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
+const BADGES = [
+  { code: "first_trade", label: "First Trade" },
+  { code: "ten_trades", label: "Ten Trades" },
+  { code: "first_competition", label: "First Competition" },
+] as const;
+const paperWallets = computed(() =>
+  overview.value?.wallets.filter((wallet) => wallet.kind === "paper") ?? [],
 );
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const SEGMENT_LABEL: Record<string, string> = {
   operator: "À moi",
@@ -19,15 +43,42 @@ function pct(part: number, total: number): string {
 }
 
 onMounted(() => {
-  if (token.value !== "") void load();
+  if (token.value !== "") {
+    void Promise.all([load(), refreshWalletJob()]);
+  }
+  pollTimer = setInterval(() => {
+    if (walletJob.value?.state === "running") void refreshWalletJob();
+  }, 2_000);
 });
+
+onUnmounted(() => {
+  if (pollTimer !== null) clearInterval(pollTimer);
+});
+
+function badgeFor(userId: string): string {
+  return selectedBadge.value[userId] ?? "first_trade";
+}
+
+function confirmReclaim(userId: string, address: string | null): void {
+  if (address === null) return;
+  if (window.confirm(`Brûler les NFT, supprimer ${address} et envoyer le solde à l'issuer ?`)) {
+    void reclaimOne(userId);
+  }
+}
+
+function confirmReclaimAll(): void {
+  if (bulkConfirmation.value !== DELETE_CONFIRMATION) return;
+  if (window.confirm(`Action irréversible sur ${String(paperWallets.value.length)} wallets Testnet. Continuer ?`)) {
+    void reclaimAll(bulkConfirmation.value);
+  }
+}
 </script>
 
 <template>
   <section class="admin">
     <header class="admin__head">
       <h1>Console admin</h1>
-      <p class="admin__sub">Supervision des comptes, lecture seule.</p>
+      <p class="admin__sub">Custody locale des wallets Paper Testnet.</p>
     </header>
 
     <form v-if="overview === null" class="admin__gate" @submit.prevent="load">
@@ -52,16 +103,6 @@ onMounted(() => {
             <li>À moi : {{ overview.totals.bySegment.operator }} ({{ pct(overview.totals.bySegment.operator, overview.totals.users) }})</li>
             <li>Via le front : {{ overview.totals.bySegment.frontend }} ({{ pct(overview.totals.bySegment.frontend, overview.totals.users) }})</li>
             <li>Agent IA : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <span class="card__label">Agents</span>
-          <strong class="card__value">{{ overview.totals.agents.total }}</strong>
-          <ul class="segments">
-            <li>Actifs : {{ overview.totals.agents.active }}</li>
-            <li>En pause : {{ overview.totals.agents.paused }}</li>
-            <li>Arrêtés : {{ overview.totals.agents.stopped }}</li>
           </ul>
         </div>
 
@@ -113,37 +154,47 @@ onMounted(() => {
         </tbody>
       </table>
 
-      <h2>Agents</h2>
-      <table class="admin__table">
-        <thead>
-          <tr><th>Nom</th><th>Type</th><th>Statut</th><th>Owner</th><th>Mandat</th><th>Dernière action</th><th>Live</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in overview.agents" :key="a.id">
-            <td>{{ a.name }}</td>
-            <td>{{ a.type }}</td>
-            <td>{{ a.status }}</td>
-            <td>{{ a.ownerUserId }}</td>
-            <td>{{ a.mandate ? `cap ${a.mandate.capitalMax} · x${a.mandate.maxLeverage}` : "—" }}</td>
-            <td>{{ a.lastAction ? a.lastAction.toolName : "—" }}</td>
-            <td>{{ a.hasLiveAccount ? "oui" : "non" }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="admin__danger">
+        <h2>Récupération globale</h2>
+        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé.</p>
+        <p>Brûle les NFT détenus, attend les 256 ledgers requis, supprime chaque compte avec <code>AccountDelete</code>, puis envoie le solde restant à l'issuer Testnet.</p>
+        <label for="bulk-confirm">Saisir <code>{{ DELETE_CONFIRMATION }}</code></label>
+        <div class="admin__bar">
+          <input id="bulk-confirm" v-model="bulkConfirmation" autocomplete="off" />
+          <button type="button" class="danger" :disabled="loading || walletJob?.enabled !== true || bulkConfirmation !== DELETE_CONFIRMATION || walletJob?.state === 'running'" @click="confirmReclaimAll">
+            Récupérer tous les fonds
+          </button>
+        </div>
+      </div>
 
-      <h2>Wallets</h2>
+      <section v-if="walletJob !== null && walletJob.state !== 'idle'" class="admin__job">
+        <h2>Récupération {{ walletJob.state }}</h2>
+        <p>{{ walletJob.completed }} / {{ walletJob.total }} terminés · {{ walletJob.failed }} échecs · destination {{ walletJob.destination }}</p>
+        <ul class="segments">
+          <li v-for="result in walletJob.results" :key="result.userId">
+            {{ result.address }} — {{ result.state }}<span v-if="result.recoveredXrpEstimate > 0"> · {{ result.recoveredXrpEstimate.toFixed(6) }} XRP récupérés</span><span v-if="result.error" class="admin__error"> · {{ result.error }}</span>
+          </li>
+        </ul>
+      </section>
+
+      <h2>Wallets Paper Testnet</h2>
       <table class="admin__table">
         <thead>
-          <tr><th>Adresse</th><th>Type</th><th>Utilisateur</th><th>Agent</th><th>Réseau</th><th>Statut</th></tr>
+          <tr><th>Adresse</th><th>Utilisateur</th><th>Réseau</th><th>Statut</th><th>NFT individuel</th><th>Récupération</th></tr>
         </thead>
         <tbody>
-          <tr v-for="(w, i) in overview.wallets" :key="i">
+          <tr v-for="(w, i) in paperWallets" :key="i">
             <td>{{ w.address ?? "—" }}</td>
-            <td>{{ w.kind }}</td>
             <td>{{ w.userId ?? "—" }}</td>
-            <td>{{ w.agentId ?? "—" }}</td>
-            <td>{{ w.live ? "Live" : "Testnet" }}</td>
+            <td>Testnet</td>
             <td>{{ w.status ?? "—" }}</td>
+            <td>
+              <select :value="badgeFor(w.userId ?? '')" :disabled="w.status !== 'funded' || loading" @change="selectedBadge[w.userId ?? ''] = ($event.target as HTMLSelectElement).value">
+                <option v-for="badge in BADGES" :key="badge.code" :value="badge.code">{{ badge.label }}</option>
+              </select>
+              <button type="button" :disabled="walletJob?.enabled !== true || w.status !== 'funded' || loading || w.userId === null" @click="w.userId !== null && grantNft(w.userId, badgeFor(w.userId))">Envoyer</button>
+            </td>
+            <td><button type="button" class="danger" :disabled="walletJob?.enabled !== true || w.status !== 'funded' || loading || walletJob?.state === 'running' || w.userId === null" @click="w.userId !== null && confirmReclaim(w.userId, w.address)">Supprimer + sweep</button></td>
           </tr>
         </tbody>
       </table>
@@ -166,4 +217,10 @@ onMounted(() => {
 .admin__table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; font-size: 0.9rem; }
 .admin__table th,
 .admin__table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
+.admin__danger { border: 1px solid #c0392b; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__danger h2, .admin__job h2 { margin-top: 0; }
+.admin__danger input { min-width: 300px; }
+.admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+button.danger { color: #fff; background: #a93226; }
+select { margin-right: 0.4rem; }
 </style>
