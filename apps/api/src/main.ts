@@ -33,6 +33,7 @@ import {
   PaperWalletAdminService,
   XrplPaperWalletAdminGateway,
 } from "./services/paper-wallet-admin-service";
+import { CompetitionPaymentService } from "./services/competition-payment-service";
 import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
 import { SqliteBadgeStore } from "./store/sqlite-badge-store";
@@ -40,8 +41,6 @@ import { SqlitePaperWalletStore } from "./store/sqlite-paper-wallet-store";
 import { SqliteWeeklyRewardStore } from "./store/sqlite-weekly-reward-store";
 import { SqlitePaperBadgeRewardStore } from "./store/sqlite-paper-badge-reward-store";
 import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
-import { seedDemoAccounts } from "./seed/accounts";
-import { seedCompetitions } from "./seed/competitions";
 import { SqliteAccountStore } from "./store/sqlite-account-store";
 import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
@@ -49,6 +48,7 @@ import { openDatabase } from "./store/sqlite";
 import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
 import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
 import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-paper-wallet-rewards";
+import { removeLegacyDemoAccounts } from "./store/migrations/2026-07-18-remove-demo-data";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
 import { TestnetE2EFlowRunner } from "./simulation/testnet-e2e-runner";
@@ -376,15 +376,23 @@ async function main(): Promise<void> {
           metadataBaseUrl: env.readPublicBaseUrl(),
         });
 
-  // Compétitions de démo (idempotent) : le front fusionne leur état live avec
-  // son catalogue de présentation. Sans seed, la liste serait vide au premier boot.
+  // Aucune compétition injectée : une base neuve reste vide jusqu'à la création
+  // explicite d'une compétition réelle depuis la console locale.
   const competitionStore = new SqliteCompetitionStore(db);
-  seedCompetitions(competitionStore);
+  const prizePoolAddress = env.readPrizePoolAddress();
+  const competitionPayments =
+    wsUrl !== undefined && sourceTag !== undefined && prizePoolAddress !== undefined
+      ? new CompetitionPaymentService({
+          serverUrl: wsUrl,
+          sourceTag,
+          prizePoolAddress,
+        })
+      : undefined;
 
-  // Comptes de démo (idempotent) : peuplent le classement de vraies entrées
-  // variées dès le premier lancement (équités calculées au prix réel du feed).
+  // Aucun faux compte : le leaderboard ne contient que les comptes réellement
+  // créés par des sessions utilisateur (profils de charge exclus à l'affichage).
   const accountStore = new SqliteAccountStore(db);
-  seedDemoAccounts(new PaperService(undefined, accountStore), accountStore);
+  removeLegacyDemoAccounts(db);
   const paper = new PaperService(undefined, accountStore);
   const arenaSimulation = new ArenaSimulationService(
     paper,
@@ -499,6 +507,7 @@ async function main(): Promise<void> {
     accountStore,
     paper,
     competitionStore,
+    competitionPayments,
     onchainPrices,
     getBookDepth: fetchBookDepth,
     getDexHistory: fetchDexHistory,
@@ -525,7 +534,7 @@ async function main(): Promise<void> {
     paperWalletAdmin,
     agentStore,
     mandateStore,
-    prizePoolAddress: env.readPrizePoolAddress(),
+    prizePoolAddress,
     auth: { service: authService, resolvers: authResolvers },
     corsOrigin: env.readCorsOrigin(),
     rateLimit: RATE_LIMIT,

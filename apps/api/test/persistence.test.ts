@@ -4,7 +4,8 @@ import { SqliteAccountStore } from "../src/store/sqlite-account-store";
 import { SqliteCompetitionStore } from "../src/store/sqlite-competition-store";
 import { createApp } from "../src/app";
 import type { CexFeedConfig, FetchJson } from "../src/feed/cex-price-feed";
-import type { Competition } from "@tide/core";
+import type { CompetitionDefinition } from "../src/store/competition-store";
+import { removeLegacyDemoAccounts } from "../src/store/migrations/2026-07-18-remove-demo-data";
 
 const FEED: CexFeedConfig = {
   baseUrl: "https://cex.test/v3",
@@ -23,11 +24,18 @@ describe("persistance partagée (connexion SQLite unique)", () => {
       expect(account2.getBalances("alice")).toEqual({ RLUSD: 1000 });
 
       const comp1 = new SqliteCompetitionStore(db);
-      const competition: Competition = {
+      const competition: CompetitionDefinition = {
         id: "c1",
-        buyIn: 10,
+        nameEn: "Cup",
+        nameFr: "Coupe",
+        descriptionEn: "Paid",
+        descriptionFr: "Payée",
+        mode: "paper",
+        buyIn: 0.01,
         rakeRatio: 0,
         payoutWeights: [1],
+        startsAt: 1_000,
+        endsAt: 2_000,
       };
       comp1.create(competition);
       const comp2 = new SqliteCompetitionStore(db);
@@ -67,6 +75,20 @@ describe("persistance partagée (connexion SQLite unique)", () => {
       });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ RLUSD: 10_000 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("retire uniquement les identités seedées et conserve les vraies sessions", () => {
+    const db = openDatabase(":memory:");
+    try {
+      const accounts = new SqliteAccountStore(db);
+      accounts.open("quant_viper", { RLUSD: 10_000 });
+      accounts.open("paper:real-session", { RLUSD: 10_000 });
+      removeLegacyDemoAccounts(db);
+      expect(accounts.getBalances("quant_viper")).toBeUndefined();
+      expect(accounts.getBalances("paper:real-session")).toEqual({ RLUSD: 10_000 });
     } finally {
       db.close();
     }

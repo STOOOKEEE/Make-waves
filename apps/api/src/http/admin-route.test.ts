@@ -10,6 +10,7 @@ import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import { InMemoryCompetitionStore } from "../store/competition-store";
 import { arenaSimulationUserId } from "../simulation/arena-ids";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
+import type { CompetitionDefinition } from "../store/competition-store";
 
 const ADMIN_TOKEN = "secret";
 
@@ -129,6 +130,104 @@ describe("admin wallet operations", () => {
     });
     expect(accepted.statusCode).toBe(202);
     expect(startReclaimAll).toHaveBeenCalledWith("DELETE ALL TESTNET WALLETS");
+    await app.close();
+  });
+});
+
+describe("admin competition operations", () => {
+  const DEFINITION: CompetitionDefinition = {
+    id: "real-cup",
+    nameEn: "Real cup",
+    nameFr: "Coupe réelle",
+    descriptionEn: "Verified XRP entries only",
+    descriptionFr: "Entrées XRP vérifiées uniquement",
+    mode: "paper",
+    buyIn: 0.01,
+    rakeRatio: 0,
+    payoutWeights: [1],
+    startsAt: 1_000,
+    endsAt: 2_000,
+  };
+
+  it("crée seulement avec le token admin et impose winner-takes-all", async () => {
+    const app = buildAdminServer();
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/admin/competitions",
+      payload: DEFINITION,
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/admin/competitions",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { ...DEFINITION, rakeRatio: 0.5, payoutWeights: [0.5, 0.5] },
+    });
+    expect(created.statusCode).toBe(201);
+    const detail = await app.inject({ method: "GET", url: "/competitions/real-cup" });
+    expect(detail.json()).toMatchObject({ rakeRatio: 0, payoutWeights: [1], pot: 0 });
+    await app.close();
+  });
+
+  it("reconstruit le même payout multisig après refresh sans recalculer le gagnant", async () => {
+    let now = 1_500;
+    const accounts = new InMemoryAccountStore();
+    const paper = new PaperService(undefined, accounts);
+    paper.openAccount("alice");
+    const competition = new CompetitionService(
+      new InMemoryCompetitionStore(),
+      () => now,
+      () => true,
+    );
+    competition.create(DEFINITION);
+    competition.join(DEFINITION.id, {
+      userId: "alice",
+      walletAddress: "rAlice",
+      paymentTxHash: "A".repeat(64),
+      entryEquity: 10_000,
+    });
+    now = 2_001;
+    const adminService = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions: new InMemoryAgentActionsStore(),
+      prizePoolAddress: "rPool",
+      operatorUserIds: new Set<string>(),
+    });
+    const winnerPayout = vi.fn(() => ({
+      TransactionType: "Payment" as const,
+      Account: "rPool",
+      Destination: "rAlice",
+      Amount: "10000",
+    }));
+    const app = buildServer({
+      paper,
+      competition,
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service: adminService },
+      competitionPayments: {
+        entryPayment: vi.fn(),
+        verifyEntry: vi.fn(),
+        winnerPayout,
+      },
+    });
+    const close = () => app.inject({
+      method: "POST",
+      url: "/admin/competitions/real-cup/close",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+    const first = await close();
+    const second = await close();
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({
+      pot: 0.01,
+      winner: { userId: "alice", walletAddress: "rAlice" },
+      payoutTx: { Destination: "rAlice", Amount: "10000" },
+    });
+    expect(winnerPayout).toHaveBeenCalledTimes(2);
     await app.close();
   });
 });

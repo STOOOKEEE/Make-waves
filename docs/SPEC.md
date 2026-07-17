@@ -1,6 +1,6 @@
 # Tide — Spec technique
 
-> Statut : validée · Plateforme : XRPL Mainnet (L1) · Contexte : hackathon Make Waves XRPL, fin 2026-09-21 · Mis à jour : 2026-06-29
+> Statut : validée · Plateforme : XRPL Mainnet (L1) · Contexte : hackathon Make Waves XRPL, fin 2026-09-21 · Mis à jour : 2026-07-18
 > Doc d'idée : note Obsidian `Hackathon/XRP/Make Waves XRPL — Tide` · Faisabilité : validée (voir §3 et `DEVLOG`)
 
 Spec de référence pour coder Tide. Ne liste que des briques vérifiées en mainnet ; tout ce qui reste à trancher est en §10.
@@ -15,7 +15,7 @@ Spec de référence pour coder Tide. Ne liste que des briques vérifiées en mai
 - **Le pari** : un seul produit, deux modes (Paper / Live) qui partagent le même feed de prix, la même UI et le même leaderboard. La seule différence est le settlement (virtuel vs vraie transaction XRPL taggée). Ça divise le scope par deux et transforme le funnel en un simple bouton « passer en Live ».
 - **Contexte** : hackathon 90 jours, app **live sur mainnet**, jugée sur de vrais users et du vrai volume mesurés on-chain via `SourceTag`. Pas de smart contract (inutile ici), donc tout tient sur des primitives natives + un backend off-chain.
 
-**Décisions structurantes** (détail en §3 et §7) : pas de perp, pas de smart contract, pas d'oracle on-chain, pas d'EVM sidechain pour ce hack. Monétisation par **buy-in de tournoi** (rake), pas par fee sur les swaps.
+**Décisions structurantes** (détail en §3 et §7) : pas de smart contract, pas d'oracle on-chain, pas d'EVM sidechain pour ce hack. Les compétitions payantes utilisent un **ticket XRP sans rake** : 100 % des tickets validés reviennent au rang #1. Aucun fee Tide sur les swaps.
 
 ---
 
@@ -48,7 +48,7 @@ Section clé : tout ce sur quoi Tide bâtit, avec son état réel en mainnet (ju
 | AMM — XLS-30 | Liquidité complémentaire au carnet pour la best execution | ✅ mainnet (amendment `AMM` enabled) | [Known amendments](https://xrpl.org/resources/known-amendments) |
 | `SourceTag` | Attribution on-chain : c'est le compteur du hackathon (volume + comptes actifs) | ✅ mainnet (champ natif des tx) | [Source & Destination Tags](https://xrpl.org/docs/concepts/transactions/source-and-destination-tags) |
 | `Memos` | Encoder l'inscription à un tournoi (id compétition) dans la tx de buy-in | ✅ mainnet (champ commun des tx) | [Transaction common fields](https://xrpl.org/docs/references/protocol/transactions/common-fields) |
-| `Payment` | Buy-in de tournoi (user → compte prize pool) **et** payout vers chaque gagnant, taggés | ✅ mainnet (core protocol) | [Payment](https://xrpl.org/docs/references/protocol/transactions/types/payment) |
+| `Payment` | Ticket de tournoi (user → compte prize pool) **et** payout winner-takes-all, taggés | ✅ mainnet (core protocol) | [Payment](https://xrpl.org/docs/references/protocol/transactions/types/payment) |
 | Compte opérateur **multisig** (`SignerListSet`) | Détenir les buy-ins d'un tournoi et payer les gagnants par `Payment` | ✅ mainnet (core protocol) | [Multi-signing](https://xrpl.org/docs/concepts/accounts/multi-signing) |
 | Xaman (XUMM SDK) | Signature non-custodial : payload = template de tx XRPL, l'user signe | ✅ prod (SDK accepte `SourceTag`/`Memos`) | [Xaman payloads](https://docs.xaman.dev/concepts/payloads-sign-requests) |
 | RLUSD | Paire liquide prioritaire pour le routing Live | ✅ mainnet (stablecoin émis) | [xrpl.to](https://xrpl.to/) |
@@ -92,7 +92,7 @@ Frontière nette : **le Paper et toute la logique applicative vivent off-chain (
 - `PaperWallet` — solde virtuel par user, devises, valeur de départ.
 - `PaperOrder` — ordre simulé : paire, sens, taille, prix d'exécution (snapshot du feed réel), timestamp.
 - `Competition` — tournoi : id, buy-in, règles, fenêtre, état (ouvert/en cours/clos), compte prize pool multisig associé.
-- `Entry` — inscription d'un user à un tournoi, hash de la tx de buy-in, `SourceTag`/`Memo` associés.
+- `Entry` — inscription d'un user à un tournoi, wallet, hash unique de la tx de ticket validée et snapshot d'equity à l'entrée.
 - `LeaderboardSnapshot` — classements calculés (PnL Paper, perf Live).
 - `MetricEvent` — chaque tx taggée observée on-chain (type, montant, user) pour suivre volume et comptes actifs distincts.
 
@@ -145,7 +145,7 @@ sequenceDiagram
 
 ### 6.3 Clôture et distribution du prize pool
 
-À la fin du tournoi : le backend calcule le classement (off-chain), puis l'**opérateur signe (multisig) un `Payment` taggé vers chaque gagnant**, moins le rake. La distribution est **semi-custodiale** : entre le buy-in et le payout, les fonds sont réellement détenus par le compte opérateur (pas d'Escrow possible vers plusieurs destinataires, et pas de logique conditionnelle on-chain sans smart contract). Le multisig borne le risque ; l'exposition est limitée au montant des cagnottes en cours.
+À la fin du tournoi : le backend classe les participants par rendement réel depuis leur snapshot d'equity à l'entrée, fige le rang #1, puis prépare **un unique `Payment` taggé de 100 % de la cagnotte** vers le wallet ayant payé son ticket. L'opérateur fait signer cette transaction par le quorum multisig et la soumet. La distribution est **semi-custodiale** : entre le ticket et le payout, les fonds sont réellement détenus par le compte opérateur. Le multisig borne le risque ; l'exposition est limitée au montant des cagnottes en cours.
 
 ---
 
@@ -153,7 +153,7 @@ sequenceDiagram
 
 - **Non-custodial sur les fonds de trading** : Tide ne détient jamais les clés ni les fonds de trading des users. Chaque action Live est un payload signé par l'user dans Xaman.
 - **Semi-custodial sur les prize pools uniquement** : les buy-ins sont détenus par un **compte opérateur multisig** (l'Escrow natif ne peut pas payer plusieurs gagnants, cf. §3). C'est une vraie custody, bornée au montant des cagnottes en cours. Mitigations : **multisig dès le MVP** (pas de clé unique), montants de buy-in faibles au début, clôture rapide des tournois. À cadrer côté UX (afficher que la cagnotte est custodiale le temps du tournoi).
-- **Validation stricte des tx** : montants, adresses, devises et `SourceTag` vérifiés côté backend avant de générer un payload ; jamais de montant ou de destination non validés (cf. conventions Armand).
+- **Validation stricte des tx** : le serveur construit le ticket exact, puis n'enregistre l'entrée qu'après lecture d'un ledger validé avec `tesSUCCESS` et vérification de `Account`, `Destination`, `Amount`, `SourceTag` et `Memo`. Un hash ne peut servir qu'une fois.
 - **Anti-sybil** : 300 comptes actifs doivent être de vraies personnes (réseau étudiant), pas des wallets créés en masse. Le buy-in (coût réel) est un filtre anti-sybil naturel.
 - **Pas de secret en clair** : clés d'API CEX, clé opérateur et secrets Xaman hors du repo (`.env`, jamais commit).
 - **Honnêteté du track record Paper** : pas de slippage ni de psychologie de l'argent réel → cadré comme « engagement + apprentissage », la valeur sérieuse vient du Live vérifiable. À refléter dans l'UI (ne pas survendre la perf Paper).

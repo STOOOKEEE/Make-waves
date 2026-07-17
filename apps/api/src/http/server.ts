@@ -13,6 +13,7 @@ import type { Candle } from "../feed/klines";
 import type { MarketRow } from "../feed/coingecko-markets";
 import type { PaperService } from "../services/paper-service";
 import type { CompetitionService } from "../services/competition-service";
+import type { CompetitionPaymentService } from "../services/competition-payment-service";
 import type { AgentService } from "../services/agent-service";
 import type { MandateService } from "../services/mandate-service";
 import type { AgentXrplAccountService } from "../services/agent-xrpl-account-service";
@@ -21,7 +22,6 @@ import type { XamanPayloadApi } from "../xaman/sign-request";
 import type { AgentChatService } from "../services/agent-chat-service";
 import type { Agent, McpContext } from "@tide/mcp";
 import {
-  createBuyInSignRequest,
   createConnectSignRequest,
   createSignRequest,
   getPayloadStatus,
@@ -34,6 +34,7 @@ import {
   parseBuyInRequest,
   parseClaimBadge,
   parseCompetition,
+  parseCompetitionJoin,
   parseConfirmBadge,
   parseCreateAgent,
   parseCreateMandate,
@@ -64,6 +65,10 @@ import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/ar
 import type { TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
+import {
+  CompetitionPaymentUnavailableError,
+  CompetitionScoringUnavailableError,
+} from "../services/errors";
 
 /**
  * Signature non-custodiale via Xaman. Le `sourceTag` (attribution Tide) et le
@@ -106,6 +111,13 @@ export interface MetricsDeps {
 export interface ServerDeps {
   readonly paper: PaperService;
   readonly competition: CompetitionService;
+  /** Tickets XRP réels : construction serveur + vérification ledger validé. */
+  readonly competitionPayments?: Pick<
+    CompetitionPaymentService,
+    "entryPayment" | "verifyEntry" | "winnerPayout"
+  >;
+  /** Equity Live réelle, absente tant que l'indexation PnL wallet n'est pas prête. */
+  readonly getLiveCompetitionEquity?: (userId: string) => number;
   /** Carte de prix courante (sera câblée au feed de prix off-chain). */
   readonly getPrices: () => PriceMap;
   /** Lignes de marché pour la watchlist (top N coins). Absent → /markets non monté. */
@@ -520,35 +532,85 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     (request) => deps.competition.get(request.params.id),
   );
 
-  app.post("/competitions", (request, reply) => {
-    const competition = parseCompetition(request.body);
-    deps.competition.create(competition);
-    reply.code(201);
-    return { id: competition.id };
-  });
+  const competitionEquity = (competitionId: string) => {
+    const competition = deps.competition.get(competitionId);
+    if (competition.mode === "paper") {
+      const prices = deps.getPrices();
+      return (userId: string) => deps.paper.equityOf(userId, prices);
+    }
+    if (deps.getLiveCompetitionEquity === undefined) {
+      throw new CompetitionScoringUnavailableError("live");
+    }
+    return deps.getLiveCompetitionEquity;
+  };
+
+  app.get<{ Params: { id: string } }>(
+    "/competitions/:id/leaderboard",
+    (request) =>
+      deps.competition.leaderboard(
+        request.params.id,
+        competitionEquity(request.params.id),
+      ),
+  );
+
+  // GemWallet : transaction exacte à signer. Montant, pool, tag et memo sont
+  // dérivés côté serveur depuis la compétition persistée.
+  app.post<{ Params: { id: string } }>(
+    "/competitions/:id/entry/tx",
+    (request) => {
+      const payments = deps.competitionPayments;
+      if (payments === undefined) throw new CompetitionPaymentUnavailableError();
+      const { account } = parseBuyInRequest(request.body);
+      const competition = deps.competition.get(request.params.id);
+      if (competition.mode === "paper") deps.paper.ensureAccount(account);
+      return payments.entryPayment(account, competition);
+    },
+  );
+
+  // Xaman : même Payment serveur, présenté dans la modale non-custodiale.
+  app.post<{ Params: { id: string } }>(
+    "/competitions/:id/entry/xaman",
+    async (request, reply) => {
+      const payments = deps.competitionPayments;
+      if (payments === undefined || deps.sign === undefined) {
+        throw new CompetitionPaymentUnavailableError();
+      }
+      const { account } = parseBuyInRequest(request.body);
+      const competition = deps.competition.get(request.params.id);
+      if (competition.mode === "paper") deps.paper.ensureAccount(account);
+      const signRequest = await createSignRequest(
+        deps.sign.api,
+        payments.entryPayment(account, competition),
+      );
+      reply.code(201);
+      return signRequest;
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     "/competitions/:id/join",
-    (request) => {
-      const { userId } = parseUserId(request.body, "join");
-      deps.competition.join(request.params.id, userId);
-      return { competitionId: request.params.id, userId };
+    async (request) => {
+      const payments = deps.competitionPayments;
+      if (payments === undefined) throw new CompetitionPaymentUnavailableError();
+      const { userId, txHash } = parseCompetitionJoin(request.body);
+      const competition = deps.competition.get(request.params.id);
+      // L'identité authentifiée est aussi le compte signataire : une session
+      // Paper anonyme ne peut pas attribuer le Payment d'un tiers.
+      await payments.verifyEntry(txHash, userId, competition);
+      const equity = competitionEquity(request.params.id)(userId);
+      deps.competition.join(request.params.id, {
+        userId,
+        walletAddress: userId,
+        paymentTxHash: txHash.toUpperCase(),
+        entryEquity: equity,
+      });
+      return { competitionId: request.params.id, userId, txHash: txHash.toUpperCase() };
     },
   );
 
   app.get<{ Params: { id: string } }>(
     "/competitions/:id/participants",
     (request) => deps.competition.participants(request.params.id),
-  );
-
-  app.post<{ Params: { id: string } }>(
-    "/competitions/:id/close",
-    (request) => {
-      const prices = deps.getPrices();
-      return deps.competition.close(request.params.id, (userId) =>
-        deps.paper.equityOf(userId, prices),
-      );
-    },
   );
 
   if (deps.sign !== undefined) {
@@ -981,7 +1043,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     },
   );
 
-  // Console admin (lecture seule) : montée uniquement si un token est configuré
+  // Console opérateur locale : montée uniquement si un token est configuré
   // (TIDE_ADMIN_TOKEN). Absente → 404, rien n'est exposé en prod par défaut.
   if (deps.admin !== undefined) {
     const admin = deps.admin;
@@ -992,6 +1054,43 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       }
       return admin.service.overview(deps.getPrices());
     });
+    app.post("/admin/competitions", (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      const competition = parseCompetition(request.body);
+      deps.competition.create(competition);
+      reply.code(201);
+      return { id: competition.id.trim() };
+    });
+    app.post<{ Params: { id: string } }>(
+      "/admin/competitions/:id/close",
+      (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        const result = deps.competition.isClosed(request.params.id)
+          ? deps.competition.settlement(request.params.id)
+          : deps.competition.close(
+              request.params.id,
+              competitionEquity(request.params.id),
+            );
+        const payments = deps.competitionPayments;
+        const payoutTx =
+          payments !== undefined && result.winner !== null && result.pot > 0
+            ? payments.winnerPayout(
+                request.params.id,
+                result.winner.walletAddress,
+                result.pot,
+              )
+            : null;
+        // Le compte pool est multisig : on prépare la transaction exacte, mais
+        // le quorum opérateur doit encore la signer avant soumission.
+        return { ...result, payoutTx };
+      },
+    );
     if (admin.testnetE2E !== undefined) {
       const testnetE2E = admin.testnetE2E;
       app.post("/admin/testnet-e2e/run", async (request, reply) => {
@@ -1194,13 +1293,12 @@ function registerAuth(
 }
 
 /**
- * Routes de signature non-custodiale. Le corps client ne porte que ses propres
- * paramètres (compte, montants) ; le serveur injecte le `sourceTag` et la
- * destination du prize pool. Une entrée malformée lève `BadRequestError` (400)
- * avant tout appel réseau ; un refus de Xaman lève `XamanError` (502).
+ * Routes de connexion/signature non-custodiale partagées. Les tickets de
+ * compétition sont montés près des routes compétition afin que leur montant
+ * soit toujours dérivé de la définition persistée.
  */
 function registerSignRoutes(app: FastifyInstance, sign: SignDeps): void {
-  const { api, sourceTag, prizePoolAddress } = sign;
+  const { api } = sign;
 
   // Connexion de wallet (SignIn) : renvoie un payload à signer ; l'adresse est
   // récupérée ensuite via /sign/status/:uuid une fois l'utilisateur résolu.
@@ -1214,19 +1312,6 @@ function registerSignRoutes(app: FastifyInstance, sign: SignDeps): void {
   app.get<{ Params: { uuid: string } }>("/sign/status/:uuid", (request) =>
     getPayloadStatus(api, request.params.uuid),
   );
-
-  app.post("/sign/buy-in", async (request, reply) => {
-    const { account, amount, competitionId } = parseBuyInRequest(request.body);
-    const signRequest = await createBuyInSignRequest(api, {
-      account,
-      destination: prizePoolAddress,
-      amount,
-      sourceTag,
-      competitionId,
-    });
-    reply.code(201);
-    return signRequest;
-  });
 }
 
 /**

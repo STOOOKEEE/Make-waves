@@ -217,11 +217,18 @@ describe("httpCompetitionBackend adapter", () => {
   });
 
   it("join returns { txJson } shape (per CompetitionBackend interface)", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ txJson: { TransactionType: "Payment" } }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ TransactionType: "Payment" }));
     const api = new TideApiHttp({ baseUrl: "https://x", userId: "u1", agentId: "a" });
     const comp = httpCompetitionBackend(api);
     const result = await comp.join("u42", "comp-1");
     expect(result.txJson).toEqual({ TransactionType: "Payment" });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://x/competitions/comp-1/entry/tx",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ account: "u1" }),
+      }),
+    );
   });
 });
 

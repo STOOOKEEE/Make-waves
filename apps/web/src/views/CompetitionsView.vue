@@ -1,526 +1,144 @@
 <script setup lang="ts">
-/*
- * CompetitionsView — écran des compétitions. Carte vedette (saison 04) +
- * grille filtrable. Porté depuis design_site/competitions.html.
- */
 import { computed, onMounted, ref } from "vue";
-import type { TideClient } from "@tide/client";
-import { localizedCompetitions, getComp } from "../data/competitions";
-import type { CompetitionMock, CompetitionStatus } from "../data/competitions";
-import { useCountdown } from "../composables/useCountdown";
-import { useCompetitionsLive } from "../composables/useCompetitionsLive";
-import { useI18n } from "../i18n/useI18n";
+import type { CompetitionStatus, TideClient } from "@tide/client";
 import StatusBadge from "../components/StatusBadge.vue";
 import SegControl from "../components/SegControl.vue";
+import { useCompetitions } from "../composables/useCompetitions";
+import { useI18n } from "../i18n/useI18n";
 
 const props = defineProps<{ client: TideClient }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
-
-// État live (participants, pot, clôture) fusionné dans le catalogue de présentation.
-const liveComps = useCompetitionsLive(props.client);
-onMounted(liveComps.load);
+const competitions = useCompetitions(props.client);
+const filter = ref<"all" | CompetitionStatus>("all");
 
 const { t, locale } = useI18n({
   en: {
-    pageTitle: "Competitions",
-    pageSubtitle:
-      "Seasons, flash tournaments and sponsored challenges. Pick your arena.",
-    featBadge: "Live · featured",
-    featTitle1: "Season 04 —",
-    featTitle2: "Grand Championship",
-    featDesc:
-      "TIDE's flagship competition. 6 weeks, $100,000 in virtual capital, the best return takes the pot. Open to all, no entry fee.",
-    featPlayersLabel: "Players",
-    featFormatLabel: "Format",
-    featRankLabel: "Your rank",
-    featFormatValue: "Net return",
-    ctaKeepTrading: "Keep trading →",
-    ctaViewDetails: "View details",
-    potLabel: "Prize pool",
-    cdDays: "Days",
-    cdHours: "Hours",
-    cdMins: "Min",
-    cdSecs: "Sec",
-    cardEntryLabel: "Entry",
-    registered: "{n} registered",
-    countOne: "{n} competition",
-    countMany: "{n} competitions",
-    ctaDetails: "Details",
-    filterAll: "All",
-    filterLive: "Live",
-    filterSoon: "Soon",
-    filterEnded: "Ended",
+    title: "Trading competitions",
+    subtitle: "Only persisted competitions and verified paid entries are shown.",
+    all: "All",
+    live: "Live",
+    upcoming: "Upcoming",
+    ended: "Ended",
+    empty: "No real competition is open yet.",
+    emptyHint: "An operator must create one from the local console.",
+    ticket: "Entry ticket",
+    pot: "Verified pool",
+    players: "Paid entries",
+    winner: "Winner takes 100%",
+    details: "View competition",
+    paper: "Paper trading",
+    liveMode: "Live trading",
   },
   fr: {
-    pageTitle: "Compétitions",
-    pageSubtitle:
-      "Saisons, tournois éclair et défis sponsorisés. Choisis ton arène.",
-    featBadge: "En cours · vedette",
-    featTitle1: "Saison 04 —",
-    featTitle2: "Grand Championnat",
-    featDesc:
-      "La compétition phare de TIDE. 6 semaines, $100 000 de capital virtuel, le meilleur rendement rafle la cagnotte. Ouvert à tous, sans frais d'entrée.",
-    featPlayersLabel: "Participants",
-    featFormatLabel: "Format",
-    featRankLabel: "Ton rang",
-    featFormatValue: "Rendement net",
-    ctaKeepTrading: "Continuer à trader →",
-    ctaViewDetails: "Voir les détails",
-    potLabel: "Cagnotte",
-    cdDays: "Jours",
-    cdHours: "Heures",
-    cdMins: "Min",
-    cdSecs: "Sec",
-    cardEntryLabel: "Entrée",
-    registered: "{n} inscrits",
-    countOne: "{n} compétition",
-    countMany: "{n} compétitions",
-    ctaDetails: "Détails",
-    filterAll: "Toutes",
-    filterLive: "En cours",
-    filterSoon: "À venir",
-    filterEnded: "Terminées",
+    title: "Compétitions de trading",
+    subtitle: "Seules les compétitions persistées et les entrées payées vérifiées sont affichées.",
+    all: "Toutes",
+    live: "En cours",
+    upcoming: "À venir",
+    ended: "Terminées",
+    empty: "Aucune vraie compétition n'est encore ouverte.",
+    emptyHint: "Un opérateur doit en créer une depuis la console locale.",
+    ticket: "Ticket d'entrée",
+    pot: "Pool vérifiée",
+    players: "Entrées payées",
+    winner: "Le gagnant reçoit 100 %",
+    details: "Voir la compétition",
+    paper: "Paper trading",
+    liveMode: "Trading Live",
   },
 });
 
-// Compétition vedette + reste de la grille (hors vedette) — réactif à la langue
-// et à l'état live (pot/participants/statut réels écrasent le décor mock).
-const featured = computed(() =>
-  liveComps.merge(getComp("season-04", locale.value)),
-);
-const grid = computed(() =>
-  localizedCompetitions(locale.value)
-    .filter((c) => !c.featured)
-    .map(liveComps.merge),
-);
+onMounted(() => void competitions.load());
 
-// Compte à rebours de la cagnotte vedette.
-const { dd, hh, mm, ss } = useCountdown({
-  days: 4,
-  hours: 11,
-  mins: 38,
-  secs: 52,
-});
-
-// Filtre segmenté → statut. Valeurs stables ; libellés traduits.
-const FILTERS = computed(() => [
-  { value: "all", label: t("filterAll") },
-  { value: "live", label: t("filterLive") },
-  { value: "soon", label: t("filterSoon") },
-  { value: "ended", label: t("filterEnded") },
+const filters = computed(() => [
+  { value: "all", label: t("all") },
+  { value: "live", label: t("live") },
+  { value: "upcoming", label: t("upcoming") },
+  { value: "ended", label: t("ended") },
 ]);
-const filter = ref("all");
 
-const filtered = computed<CompetitionMock[]>(() => {
-  const g = grid.value;
-  return filter.value === "all"
-    ? g
-    : g.filter((c) => c.status === filter.value);
-});
-
-const countLabel = computed(() => {
-  const n = filtered.value.length;
-  return t(n > 1 ? "countMany" : "countOne", { n });
-});
-
-// CTA des cartes : elles ouvrent le détail, l'inscription réelle est sur la page détail.
-const CTA = computed<Record<CompetitionStatus, { c: string; l: string }>>(
-  () => ({
-    live: { c: "join", l: t("ctaDetails") },
-    soon: { c: "soon", l: t("ctaDetails") },
-    ended: { c: "ended", l: t("ctaDetails") },
-  }),
+const visible = computed(() =>
+  filter.value === "all"
+    ? competitions.items.value
+    : competitions.items.value.filter((competition) => competition.status === filter.value),
 );
 
-function openComp(id: string): void {
-  emit("navigate", `/competition/${id}`);
+function nameOf(competition: (typeof competitions.items.value)[number]): string {
+  return locale.value === "fr" ? competition.nameFr : competition.nameEn;
+}
+
+function descriptionOf(competition: (typeof competitions.items.value)[number]): string {
+  return locale.value === "fr" ? competition.descriptionFr : competition.descriptionEn;
+}
+
+function xrp(value: number): string {
+  return `${value.toLocaleString(locale.value, { maximumFractionDigits: 6 })} XRP`;
 }
 </script>
 
 <template>
-  <div class="page">
-    <div class="page-head">
+  <div class="page competitions-page">
+    <header class="page-head">
       <div>
-        <h1>{{ t("pageTitle") }}</h1>
-        <p>{{ t("pageSubtitle") }}</p>
+        <h1>{{ t("title") }}</h1>
+        <p>{{ t("subtitle") }}</p>
       </div>
-    </div>
+      <SegControl v-model="filter" :options="filters" />
+    </header>
 
-    <!-- vedette -->
-    <div
-      v-reveal
-      class="card feat"
-      @click="openComp(featured.id)"
-    >
-      <div class="glow"></div>
-      <div>
-        <div class="badge"><i></i> {{ t("featBadge") }}</div>
-        <h2>{{ t("featTitle1") }}<br />{{ t("featTitle2") }}</h2>
-        <p>{{ t("featDesc") }}</p>
-        <div class="row">
-          <div>
-            <div class="l">{{ t("featPlayersLabel") }}</div>
-            <div class="v">{{ featured.players }}</div>
-          </div>
-          <div>
-            <div class="l">{{ t("featFormatLabel") }}</div>
-            <div class="v">{{ t("featFormatValue") }}</div>
-          </div>
-          <div>
-            <div class="l">{{ t("featRankLabel") }}</div>
-            <div class="v up">—</div>
-          </div>
-        </div>
-        <div class="acts">
-          <button
-            class="btn btn-white"
-            @click.stop="emit('navigate', '/dashboard')"
-          >
-            {{ t("ctaKeepTrading") }}
-          </button>
-          <button class="btn btn-line" @click.stop="openComp(featured.id)">
-            {{ t("ctaViewDetails") }}
-          </button>
-        </div>
-      </div>
-      <div class="feat-side">
-        <div class="potbox">
-          <div class="l">{{ t("potLabel") }}</div>
-          <div class="pot">{{ featured.pot }}</div>
-          <div class="cd">
-            <div><div class="v">{{ dd }}</div><div class="l2">{{ t("cdDays") }}</div></div>
-            <div><div class="v">{{ hh }}</div><div class="l2">{{ t("cdHours") }}</div></div>
-            <div><div class="v">{{ mm }}</div><div class="l2">{{ t("cdMins") }}</div></div>
-            <div><div class="v">{{ ss }}</div><div class="l2">{{ t("cdSecs") }}</div></div>
-          </div>
-          <div class="lab">RLUSD + NFT · top 50</div>
-        </div>
-      </div>
+    <div v-if="competitions.loading.value" class="card state">Loading…</div>
+    <div v-else-if="competitions.error.value" class="card state error">
+      {{ competitions.error.value }}
     </div>
-
-    <div class="controls">
-      <SegControl v-model="filter" :options="FILTERS" />
-      <div class="lab">{{ countLabel }}</div>
+    <div v-else-if="visible.length === 0" class="card state empty">
+      <strong>{{ t("empty") }}</strong>
+      <span>{{ t("emptyHint") }}</span>
     </div>
-
-    <div class="cgrid">
-      <div
-        v-for="(c, i) in filtered"
-        :key="c.id"
-        v-reveal="(i % 6) * 40"
-        class="card comp"
-        @click="openComp(c.id)"
+    <div v-else class="competition-grid">
+      <article
+        v-for="competition in visible"
+        :key="competition.id"
+        class="card competition-card"
+        @click="emit('navigate', `/competition/${competition.id}`)"
       >
-        <div class="top">
-          <span class="ico">{{ c.ico }}</span>
-          <StatusBadge :status="c.status" />
+        <div class="card-top">
+          <StatusBadge :status="competition.status" />
+          <span class="mode">{{ t(competition.mode === "paper" ? "paper" : "liveMode") }}</span>
         </div>
-        <h3>{{ c.name }}</h3>
-        <div class="desc">{{ c.desc }}</div>
-        <div class="meta">
-          <div>
-            <div class="l">{{ t("potLabel") }}</div>
-            <div class="v gold">{{ c.pot }}</div>
-          </div>
-          <div>
-            <div class="l">{{ t("cardEntryLabel") }}</div>
-            <div class="v" style="font-size: 14px">{{ c.fee }}</div>
-          </div>
+        <h2>{{ nameOf(competition) }}</h2>
+        <p>{{ descriptionOf(competition) }}</p>
+        <div class="economy">
+          <div><span>{{ t("ticket") }}</span><b>{{ xrp(competition.buyIn) }}</b></div>
+          <div><span>{{ t("pot") }}</span><b class="pool">{{ xrp(competition.pot) }}</b></div>
+          <div><span>{{ t("players") }}</span><b>{{ competition.participants }}</b></div>
         </div>
-        <template v-if="c.cap">
-          <div class="bar"><i :style="{ width: c.pct + '%' }"></i></div>
-          <div class="barl">
-            <span>{{ t("registered", { n: c.players }) }}</span>
-            <span>{{ c.pct }}% · {{ c.cap }} max</span>
-          </div>
-        </template>
-        <div v-else class="barl" style="margin-top: 4px">
-          <span>{{ c.players }}</span>
-          <span></span>
-        </div>
-        <button class="cta" :class="CTA[c.status].c" @click.stop="openComp(c.id)">
-          {{ CTA[c.status].l }}
+        <div class="winner">{{ t("winner") }}</div>
+        <button @click.stop="emit('navigate', `/competition/${competition.id}`)">
+          {{ t("details") }} →
         </button>
-      </div>
+      </article>
     </div>
   </div>
 </template>
 
 <style scoped>
-.feat {
-  position: relative;
-  overflow: hidden;
-  padding: 40px;
-  display: grid;
-  grid-template-columns: 1.3fr 1fr;
-  gap: 40px;
-  align-items: center;
-  margin-bottom: 14px;
-  background: linear-gradient(135deg, #1d1d24, #16161b);
-}
-@media (max-width: 900px) {
-  .feat {
-    grid-template-columns: 1fr;
-    padding: 28px;
-  }
-}
-.feat .glow {
-  position: absolute;
-  top: -30%;
-  right: -10%;
-  width: 480px;
-  height: 480px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(79, 106, 255, 0.4), transparent 60%);
-  pointer-events: none;
-}
-.feat .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  background: var(--up);
-  color: #06231a;
-  font-weight: 700;
-  border-radius: 100px;
-  padding: 7px 14px;
-  margin-bottom: 20px;
-}
-.feat .badge i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #06231a;
-  animation: bl 1.4s infinite;
-}
-@keyframes bl {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-.feat h2 {
-  font-weight: 900;
-  text-transform: uppercase;
-  font-size: clamp(34px, 4.6vw, 58px);
-  letter-spacing: -0.035em;
-  line-height: 0.92;
-  position: relative;
-}
-.feat p {
-  color: var(--soft);
-  font-size: 15.5px;
-  margin: 16px 0 26px;
-  max-width: 440px;
-  position: relative;
-  line-height: 1.55;
-}
-.feat .row {
-  display: flex;
-  gap: 30px;
-  margin-bottom: 28px;
-  position: relative;
-  flex-wrap: wrap;
-}
-.feat .row .l {
-  font-size: 11px;
-  color: var(--soft);
-  margin-bottom: 5px;
-}
-.feat .row .v {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 20px;
-}
-.feat .acts {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  position: relative;
-}
-.feat-side {
-  position: relative;
-}
-.feat .potbox {
-  border: 1px solid var(--line2);
-  border-radius: 16px;
-  padding: 26px;
-  text-align: center;
-  background: rgba(255, 255, 255, 0.03);
-}
-.feat .potbox .l {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--soft);
-}
-.feat .potbox .pot {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: clamp(44px, 6vw, 68px);
-  letter-spacing: -0.04em;
-  line-height: 0.95;
-  margin: 10px 0;
-  color: var(--up);
-}
-.cd {
-  display: flex;
-  gap: 8px;
-  margin: 18px 0 22px;
-}
-.cd div {
-  flex: 1;
-  text-align: center;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 11px 4px;
-}
-.cd .v {
-  font-family: var(--mono);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1;
-}
-.cd .l2 {
-  font-family: var(--mono);
-  font-size: 8.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--soft);
-  margin-top: 5px;
-}
-
-.controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 14px;
-  flex-wrap: wrap;
-}
-.cgrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-}
-@media (max-width: 1000px) {
-  .cgrid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-@media (max-width: 640px) {
-  .cgrid {
-    grid-template-columns: 1fr;
-  }
-}
-.comp {
-  padding: 22px;
-  display: flex;
-  flex-direction: column;
-  transition:
-    transform 0.3s var(--ease),
-    background 0.2s;
-  cursor: pointer;
-}
-.comp:hover {
-  transform: translateY(-4px);
-  background: var(--panel2);
-}
-.comp .top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 18px;
-}
-.comp .ico {
-  font-size: 24px;
-}
-.comp h3 {
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-  margin-bottom: 6px;
-}
-.comp .desc {
-  font-size: 13px;
-  color: var(--soft);
-  line-height: 1.5;
-  margin-bottom: 20px;
-  flex: 1;
-}
-.comp .meta {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-.comp .meta .l {
-  font-size: 10.5px;
-  color: var(--soft);
-  margin-bottom: 4px;
-}
-.comp .meta .v {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 16px;
-}
-.comp .meta .v.gold {
-  color: var(--gold);
-}
-.comp .bar {
-  height: 6px;
-  background: var(--panel2);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-bottom: 8px;
-}
-.comp:hover .bar {
-  background: #111;
-}
-.comp .bar i {
-  display: block;
-  height: 100%;
-  background: var(--blue);
-  border-radius: 3px;
-}
-.comp .barl {
-  display: flex;
-  justify-content: space-between;
-  font-family: var(--mono);
-  font-size: 10.5px;
-  color: var(--soft);
-  margin-bottom: 18px;
-}
-.comp .cta {
-  width: 100%;
-  text-align: center;
-  font-weight: 700;
-  font-size: 14px;
-  border-radius: 10px;
-  padding: 13px;
-  border: none;
-  cursor: pointer;
-}
-.comp .cta.join {
-  background: #fff;
-  color: var(--blue);
-}
-.comp .cta.soon {
-  background: none;
-  border: 1px solid var(--line2);
-  color: #fff;
-}
-.comp .cta.ended {
-  background: none;
-  border: 1px solid var(--line);
-  color: var(--mut2);
-}
+.competitions-page { padding-top: 30px; }
+.page-head { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:22px; }
+.page-head h1 { font-size:clamp(34px,5vw,58px); text-transform:uppercase; letter-spacing:-.045em; }
+.page-head p { color:var(--soft); margin-top:8px; }
+.competition-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
+.competition-card { padding:24px; cursor:pointer; display:flex; flex-direction:column; min-height:360px; }
+.card-top { display:flex; align-items:center; justify-content:space-between; }
+.mode,.economy span { color:var(--soft); font:10px var(--mono); text-transform:uppercase; letter-spacing:.09em; }
+h2 { margin:25px 0 10px; font-size:25px; text-transform:uppercase; }
+.competition-card>p { color:var(--soft); line-height:1.6; min-height:52px; }
+.economy { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:24px 0 14px; }
+.economy div { border:1px solid var(--line); border-radius:10px; padding:12px; display:flex; flex-direction:column; gap:7px; }
+.economy b { font:700 14px var(--mono); }
+.economy .pool { color:var(--up); }
+.winner { color:var(--up); font:700 11px var(--mono); margin-bottom:18px; }
+button { margin-top:auto; border:1px solid var(--line2); background:transparent; color:#fff; padding:13px; border-radius:10px; font-weight:750; }
+.state { padding:50px; display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--soft); }
+.state strong { color:#fff; font-size:19px; }.error { color:var(--down); }
+@media(max-width:720px){.page-head{align-items:flex-start;flex-direction:column}.economy{grid-template-columns:1fr}}
 </style>

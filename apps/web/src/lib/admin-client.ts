@@ -4,6 +4,7 @@ import {
   type AdminOverviewDto,
   type AdminNftGrantDto,
   type AdminReclaimJobDto,
+  type AdminCompetitionCloseDto,
   type ApiRequest,
   type ApiTransport,
 } from "@tide/client";
@@ -85,6 +86,27 @@ export function createLocalAdminClient(
           body: { confirmation },
         },
         202,
+      ),
+    createCompetition: (token, input) =>
+      expectBody<{ id: string }>(
+        transport,
+        {
+          path: "/admin/competitions",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: input,
+        },
+        201,
+      ),
+    closeCompetition: (token, id) =>
+      expectBody<AdminCompetitionCloseDto>(
+        transport,
+        {
+          path: `/admin/competitions/${encodeURIComponent(id)}/close`,
+          method: "POST",
+          headers: { "x-admin-token": token },
+        },
+        200,
       ),
   };
 }

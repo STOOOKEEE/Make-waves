@@ -1,162 +1,113 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { InvalidCompetitionError } from "@tide/core";
 import { CompetitionService } from "../src/services/competition-service";
+import type { CompetitionDefinition } from "../src/store/competition-store";
 import {
   AlreadyJoinedError,
   CompetitionClosedError,
   CompetitionExistsError,
-  CompetitionNotFoundError,
-  InvalidUserError,
+  CompetitionPaymentInvalidError,
 } from "../src/services/errors";
-import { InvalidCompetitionError, type Competition } from "@tide/core";
 
-const COMP: Competition = {
+const COMP: CompetitionDefinition = {
   id: "comp-1",
-  buyIn: 10,
+  nameEn: "Real cup",
+  nameFr: "Coupe réelle",
+  descriptionEn: "Verified paid competition",
+  descriptionFr: "Compétition payée vérifiée",
+  mode: "paper",
+  buyIn: 0.01,
   rakeRatio: 0,
-  payoutWeights: [0.5, 0.3, 0.2],
+  payoutWeights: [1],
+  startsAt: 1_000,
+  endsAt: 2_000,
 };
 
-describe("CompetitionService — création", () => {
+function paid(userId: string, entryEquity = 100) {
+  return {
+    userId,
+    walletAddress: `wallet-${userId}`,
+    paymentTxHash: userId.padEnd(64, "A"),
+    entryEquity,
+  };
+}
+
+describe("CompetitionService — données réelles et winner-takes-all", () => {
+  let now: number;
   let service: CompetitionService;
+
   beforeEach(() => {
-    service = new CompetitionService();
-  });
-
-  it("crée une compétition", () => {
+    now = 1_200;
+    service = new CompetitionService(undefined, () => now, () => true);
     service.create(COMP);
-    expect(service.isClosed("comp-1")).toBe(false);
   });
 
-  it("rejette un id vide", () => {
-    expect(() => service.create({ ...COMP, id: " " })).toThrow(
+  it("expose uniquement l'état calculé depuis les entrées persistées", () => {
+    expect(service.get(COMP.id)).toMatchObject({ participants: 0, pot: 0, status: "live" });
+    service.join(COMP.id, paid("alice"));
+    expect(service.get(COMP.id)).toMatchObject({ participants: 1, pot: 0.01 });
+  });
+
+  it("classe par rendement depuis l'equity d'entrée", () => {
+    service.join(COMP.id, paid("alice", 100));
+    service.join(COMP.id, paid("bob", 200));
+    const equities: Record<string, number> = { alice: 110, bob: 250 };
+    const board = service.leaderboard(COMP.id, (id) => equities[id] ?? 0);
+    expect(board.map((row) => row.userId)).toEqual(["bob", "alice"]);
+    expect(board.map((row) => row.returnPct)).toEqual([25, 10]);
+  });
+
+  it("verse conceptuellement 100 % des tickets à un gagnant unique", () => {
+    service.join(COMP.id, paid("alice"));
+    service.join(COMP.id, paid("bob"));
+    now = 2_001;
+    const result = service.close(COMP.id, (id) => (id === "bob" ? 120 : 110));
+    expect(result.winner?.userId).toBe("bob");
+    expect(result.pot).toBeCloseTo(0.02);
+    expect(service.get(COMP.id).winnerUserId).toBe("bob");
+    expect(service.settlement(COMP.id)).toMatchObject({
+      winner: { userId: "bob", walletAddress: "wallet-bob" },
+      pot: 0.02,
+    });
+  });
+
+  it("départage un rendement identique par ordre d'inscription", () => {
+    service.join(COMP.id, paid("alice"));
+    now += 1;
+    service.join(COMP.id, paid("bob"));
+    expect(service.leaderboard(COMP.id, () => 100)[0]?.userId).toBe("alice");
+  });
+
+  it("rejette rake, partage du pot et buy-in non représentable en drops", () => {
+    expect(() => service.create({ ...COMP, id: "rake", rakeRatio: 0.1 })).toThrow(
+      InvalidCompetitionError,
+    );
+    expect(() => service.create({ ...COMP, id: "split", payoutWeights: [0.5, 0.5] })).toThrow(
+      InvalidCompetitionError,
+    );
+    expect(() => service.create({ ...COMP, id: "fraction", buyIn: 0.0000001 })).toThrow(
+      InvalidCompetitionError,
+    );
+    expect(() => service.create({ ...COMP, id: "bad/id" })).toThrow(
       InvalidCompetitionError,
     );
   });
 
-  it("rejette un doublon", () => {
-    service.create(COMP);
+  it("rejette une compétition, une entrée ou un ticket en double", () => {
     expect(() => service.create(COMP)).toThrow(CompetitionExistsError);
-  });
-
-  it("rejette des paramètres invalides (poids incohérents)", () => {
+    service.join(COMP.id, paid("alice"));
+    expect(() => service.join(COMP.id, paid("alice"))).toThrow(AlreadyJoinedError);
     expect(() =>
-      service.create({ ...COMP, id: "bad", payoutWeights: [0.5, 0.3] }),
-    ).toThrow(InvalidCompetitionError);
-  });
-});
-
-describe("CompetitionService — inscription", () => {
-  let service: CompetitionService;
-  beforeEach(() => {
-    service = new CompetitionService();
-    service.create(COMP);
+      service.join(COMP.id, { ...paid("bob"), paymentTxHash: paid("alice").paymentTxHash }),
+    ).toThrow(CompetitionPaymentInvalidError);
   });
 
-  it("inscrit des joueurs distincts", () => {
-    service.join("comp-1", "alice");
-    service.join("comp-1", "bob");
-    expect(service.participants("comp-1").sort()).toEqual(["alice", "bob"]);
-  });
-
-  it("rejette une double inscription", () => {
-    service.join("comp-1", "alice");
-    expect(() => service.join("comp-1", "alice")).toThrow(AlreadyJoinedError);
-  });
-
-  it("rejette un userId vide", () => {
-    expect(() => service.join("comp-1", "  ")).toThrow(InvalidUserError);
-  });
-
-  it("rejette une compétition inconnue", () => {
-    expect(() => service.join("nope", "alice")).toThrow(
-      CompetitionNotFoundError,
-    );
-  });
-});
-
-describe("CompetitionService — clôture", () => {
-  let service: CompetitionService;
-  beforeEach(() => {
-    service = new CompetitionService();
-    service.create(COMP);
-  });
-
-  it("classe par equity et calcule les gains", () => {
-    service.join("comp-1", "alice");
-    service.join("comp-1", "bob");
-    service.join("comp-1", "carol");
-    const equities: Record<string, number> = { alice: 100, bob: 300, carol: 200 };
-    const { payouts, undistributed } = service.close(
-      "comp-1",
-      (u) => equities[u] ?? 0,
-    );
-    // pool = 10 * 3 = 30, rake 0 -> 30 distribué
-    expect(payouts.map((p) => p.userId)).toEqual(["bob", "carol", "alice"]);
-    expect(payouts.reduce((s, p) => s + p.amount, 0)).toBeCloseTo(30);
-    expect(undistributed).toBeCloseTo(0);
-    expect(service.isClosed("comp-1")).toBe(true);
-  });
-
-  it("expose le reliquat quand sous-rempli", () => {
-    service.join("comp-1", "alice");
-    const { payouts, undistributed } = service.close("comp-1", () => 100);
-    // 1 joueur, pool 10, il touche 50% -> reliquat 5
-    expect(payouts).toHaveLength(1);
-    expect(undistributed).toBeCloseTo(5);
-  });
-
-  it("interdit une double clôture (anti double paiement)", () => {
-    service.join("comp-1", "alice");
-    service.close("comp-1", () => 100);
-    expect(() => service.close("comp-1", () => 100)).toThrow(
-      CompetitionClosedError,
-    );
-  });
-
-  it("interdit de rejoindre une compétition clôturée", () => {
-    service.close("comp-1", () => 0);
-    expect(() => service.join("comp-1", "late")).toThrow(CompetitionClosedError);
-  });
-
-  it("clôture une compétition vide sans gain ni reliquat", () => {
-    const { payouts, undistributed } = service.close("comp-1", () => 0);
-    expect(payouts).toEqual([]);
-    expect(undistributed).toBe(0);
-    expect(service.isClosed("comp-1")).toBe(true);
-  });
-});
-
-describe("CompetitionService — garanties d'état (paiement)", () => {
-  let service: CompetitionService;
-  beforeEach(() => {
-    service = new CompetitionService();
-    service.create(COMP);
-    service.join("comp-1", "alice");
-  });
-
-  it("un provider NaN lève et laisse la compétition OUVERTE (réessayable)", () => {
-    expect(() => service.close("comp-1", () => Number.NaN)).toThrow(
-      InvalidCompetitionError,
-    );
-    expect(service.isClosed("comp-1")).toBe(false);
-    // Réessai avec un provider sain : réussit.
-    const { payouts } = service.close("comp-1", () => 100);
-    expect(payouts).toHaveLength(1);
-    expect(service.isClosed("comp-1")).toBe(true);
-  });
-
-  it("si equityOf lève, l'état reste réessayable (anti double paiement)", () => {
-    const boom = (): number => {
-      throw new Error("feed indisponible");
-    };
-    expect(() => service.close("comp-1", boom)).toThrow("feed indisponible");
-    expect(service.isClosed("comp-1")).toBe(false);
-    expect(service.close("comp-1", () => 100).payouts).toHaveLength(1);
-  });
-
-  it("participants() ne fuit pas la référence interne", () => {
-    const list = service.participants("comp-1");
-    list.push("intrus");
-    expect(service.participants("comp-1")).toEqual(["alice"]);
+  it("reste réessayable si le scoring échoue et interdit une double clôture", () => {
+    service.join(COMP.id, paid("alice"));
+    now = 2_001;
+    expect(() => service.close(COMP.id, () => Number.NaN)).toThrow(InvalidCompetitionError);
+    expect(service.isClosed(COMP.id)).toBe(false);
+    service.close(COMP.id, () => 100);
+    expect(() => service.close(COMP.id, () => 100)).toThrow(CompetitionClosedError);
   });
 });

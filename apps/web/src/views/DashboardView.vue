@@ -252,7 +252,7 @@ function walletKind(): string {
 // Devise de référence du moteur paper (les comptes sont fondés en RLUSD).
 const REFERENCE_QUOTE = "RLUSD";
 
-// Watchlist réactive : part du catalogue mock, enrichie des prix réels du backend.
+// État non tradable au boot, remplacé uniquement par le feed réel du backend.
 const markets = ref<Market[]>([...MARKETS]);
 const [FIRST_MARKET] = MARKETS;
 if (!FIRST_MARKET) {
@@ -1682,8 +1682,8 @@ async function loadMarkets(): Promise<void> {
     if (rows.length === 0) {
       return;
     }
-    // Watchlist dynamique : symbole, nom, prix et %24h réels. hi/lo dérivés du
-    // prix (le chart/échelle a besoin de bornes ; l'amplitude exacte est décor).
+    // Watchlist dynamique : symbole, nom, prix et %24h réels. Les bornes
+    // restent au spot jusqu'à la réponse du feed 24 h dédié.
     markets.value = rows.map((r) => ({
       id: r.id,
       s: r.symbol,
@@ -1691,8 +1691,8 @@ async function loadMarkets(): Promise<void> {
       pair: `${r.symbol} / ${REFERENCE_QUOTE}`,
       p: r.price,
       c: r.change24h,
-      hi: r.price * 1.04,
-      lo: r.price * 0.96,
+      hi: r.price,
+      lo: r.price,
     }));
     // Prix par symbole : gating des ordres Paper + valorisation (tous cotés).
     livePrices.value = Object.fromEntries(rows.map((r) => [r.symbol, r.price]));
@@ -1705,7 +1705,7 @@ async function loadMarkets(): Promise<void> {
     cur.value = (marketsLoaded ? keep ?? xrp : xrp ?? keep) ?? first ?? cur.value;
     marketsLoaded = true;
   } catch {
-    // Feed indisponible : on conserve la watchlist mock (dégradation propre).
+    // Feed indisponible : XRP reste à 0 et le ticket demeure non tradable.
   }
 }
 

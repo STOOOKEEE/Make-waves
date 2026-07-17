@@ -66,7 +66,7 @@ export function useWallet(client: TideClient) {
 
   async function poll(
     uuid: string,
-    onSigned: (account: string | null, uuid: string) => void,
+    onSigned: (account: string | null, uuid: string, txid: string | null) => void,
   ): Promise<void> {
     pollCount += 1;
     if (pollCount > POLL_MAX) {
@@ -81,7 +81,7 @@ export function useWallet(client: TideClient) {
       stopPolling();
       if (status.signed) {
         phase.value = "signed";
-        onSigned(status.account, uuid);
+        onSigned(status.account, uuid, status.txid);
       } else {
         phase.value = "rejected";
       }
@@ -95,7 +95,7 @@ export function useWallet(client: TideClient) {
   async function startXaman(
     titleText: string,
     create: () => Promise<SignRequest>,
-    onSigned: (account: string | null, uuid: string) => void,
+    onSigned: (account: string | null, uuid: string, txid: string | null) => void,
   ): Promise<void> {
     title.value = titleText;
     error.value = "";
@@ -231,6 +231,70 @@ export function useWallet(client: TideClient) {
     );
   }
 
+  // ---- Ticket de compétition ----
+
+  async function competitionEntryGem(
+    competitionId: string,
+    account: string,
+  ): Promise<void> {
+    title.value = "Competition entry";
+    error.value = "";
+    signRequest.value = null;
+    phase.value = "pending";
+    open.value = true;
+    try {
+      const payment = await client.competitionEntryPayment(competitionId, account);
+      const result = await submitTransaction({
+        transaction: payment as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
+      });
+      const hash = result.result?.hash;
+      if (hash === undefined) {
+        phase.value = "rejected";
+        return;
+      }
+      await client.joinCompetition(competitionId, account, hash);
+      phase.value = "signed";
+    } catch (e) {
+      phase.value = "error";
+      error.value = errorMessage(e);
+    }
+  }
+
+  /** Paie le ticket exact, puis confirme l'inscription après validation XRPL. */
+  async function signCompetitionEntry(competitionId: string): Promise<void> {
+    const account = session.liveAddress.value;
+    if (account === "") {
+      connect();
+      return;
+    }
+    if (session.walletType.value === "gem") {
+      await competitionEntryGem(competitionId, account);
+      return;
+    }
+    await startXaman(
+      "Competition entry",
+      () => client.signCompetitionEntry(competitionId, account),
+      (signedAccount, _uuid, txid) => {
+        if (signedAccount !== account || txid === null) {
+          phase.value = "error";
+          error.value = "Le ticket signé ne correspond pas au wallet connecté.";
+          return;
+        }
+        // Le nœud peut mettre quelques secondes à rendre la transaction via
+        // `tx`; l'erreur reste visible et un refresh permet de réessayer.
+        void client
+          .joinCompetition(competitionId, account, txid)
+          .then(() => {
+            phase.value = "signed";
+          })
+          .catch((e: unknown) => {
+            phase.value = "error";
+            error.value = errorMessage(e);
+          });
+      },
+    );
+  }
+
   // ---- Claim de badge NFT ----
   // Le serveur a minté le badge + créé une sell-offer à 0 vers le wallet du user.
   // Ici le user signe l'`NFTokenAcceptOffer` pour recevoir le NFT (preuve humaine).
@@ -286,6 +350,7 @@ export function useWallet(client: TideClient) {
     chooseXaman,
     chooseGem,
     signLiveOffer,
+    signCompetitionEntry,
     signBadgeAccept,
     close,
   };

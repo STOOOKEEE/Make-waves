@@ -1,10 +1,5 @@
-import type {
-  Competition,
-  MarketOrderInput,
-  OpenPositionInput,
-  Side,
-} from "@tide/core";
-import type { Amount } from "@tide/xrpl";
+import type { MarketOrderInput, OpenPositionInput, Side } from "@tide/core";
+import type { CompetitionDefinition } from "../store/competition-store";
 import type { LiveOfferIntent } from "../exec/plan-live";
 
 /** Corps de requête HTTP malformé (validation au bord, avant le domaine). */
@@ -96,43 +91,25 @@ export function parseOrder(body: unknown): MarketOrderInput {
 }
 
 /**
- * Parse un montant XRPL au bord : string non vide (drops XRP) ou objet
- * `{ currency, issuer, value }` (token émis). On ne valide ici que la FORME ;
- * la sémantique (drops entiers, value décimale stricte) est vérifiée par le
- * builder via `assertValidAmount`, source unique de vérité sur les montants.
- */
-function parseAmount(value: unknown, ctx: string): Amount {
-  if (typeof value === "string") {
-    if (value.trim() === "") {
-      throw new BadRequestError(`${ctx}: montant string vide`);
-    }
-    return value;
-  }
-  const obj = asRecord(value, ctx);
-  return {
-    currency: str(obj, "currency", ctx),
-    issuer: str(obj, "issuer", ctx),
-    value: str(obj, "value", ctx),
-  };
-}
-
-/**
- * Corps d'une demande de signature de buy-in. Le `sourceTag` (attribution) et la
- * destination (prize pool) ne viennent PAS du client : ils sont fixés côté serveur
- * (sécurité — le client ne choisit ni l'attribution ni où va son argent).
+ * Corps d'une demande de ticket. Le montant, le SourceTag et la destination ne
+ * viennent jamais du client : ils sont relus depuis la compétition et la config.
  */
 export interface BuyInRequest {
   readonly account: string;
-  readonly amount: Amount;
-  readonly competitionId: string;
 }
 
 export function parseBuyInRequest(body: unknown): BuyInRequest {
   const obj = asRecord(body, "buyIn");
+  return { account: str(obj, "account", "buyIn") };
+}
+
+export function parseCompetitionJoin(
+  body: unknown,
+): { userId: string; txHash: string } {
+  const obj = asRecord(body, "competitionJoin");
   return {
-    account: str(obj, "account", "buyIn"),
-    amount: parseAmount(obj["amount"], "buyIn.amount"),
-    competitionId: str(obj, "competitionId", "buyIn"),
+    userId: str(obj, "userId", "competitionJoin"),
+    txHash: str(obj, "txHash", "competitionJoin"),
   };
 }
 
@@ -185,27 +162,24 @@ export function parseOpenPosition(body: unknown): OpenPositionInput {
   };
 }
 
-export function parseCompetition(body: unknown): Competition {
+export function parseCompetition(body: unknown): CompetitionDefinition {
   const obj = asRecord(body, "competition");
-  const weightsRaw = obj["payoutWeights"];
-  if (!Array.isArray(weightsRaw) || weightsRaw.length === 0) {
-    throw new BadRequestError(
-      "competition: champ \"payoutWeights\" (number[] non vide) requis",
-    );
+  const mode = str(obj, "mode", "competition");
+  if (mode !== "paper" && mode !== "live") {
+    throw new BadRequestError('competition: "mode" doit valoir "paper" ou "live"');
   }
-  const payoutWeights = weightsRaw.map((weight, index) => {
-    if (typeof weight !== "number" || !Number.isFinite(weight)) {
-      throw new BadRequestError(
-        `competition: payoutWeights[${String(index)}] doit être un number`,
-      );
-    }
-    return weight;
-  });
   return {
     id: str(obj, "id", "competition"),
+    nameEn: str(obj, "nameEn", "competition"),
+    nameFr: str(obj, "nameFr", "competition"),
+    descriptionEn: str(obj, "descriptionEn", "competition"),
+    descriptionFr: str(obj, "descriptionFr", "competition"),
+    mode,
     buyIn: num(obj, "buyIn", "competition"),
-    rakeRatio: num(obj, "rakeRatio", "competition"),
-    payoutWeights,
+    rakeRatio: 0,
+    payoutWeights: [1],
+    startsAt: num(obj, "startsAt", "competition"),
+    endsAt: num(obj, "endsAt", "competition"),
   };
 }
 

@@ -1,167 +1,285 @@
 import {
   assertValidBuyIn,
-  assertValidPayoutWeights,
-  assertValidRakeRatio,
-  computePayouts,
+  assertValidEquity,
   InvalidCompetitionError,
-  rankByEquity,
-  undistributedAmount,
 } from "@tide/core";
-import type { Competition, Payout } from "@tide/core";
 import {
   AlreadyJoinedError,
   CompetitionClosedError,
   CompetitionExistsError,
   CompetitionNotFoundError,
+  CompetitionRegistrationClosedError,
+  CompetitionPaymentInvalidError,
   InvalidUserError,
 } from "./errors";
 import { InMemoryCompetitionStore } from "../store/competition-store";
-import type { CompetitionStore } from "../store/competition-store";
+import type {
+  CompetitionDefinition,
+  CompetitionStore,
+} from "../store/competition-store";
 
-/** Résultat de clôture d'une compétition. */
-export interface CompetitionResult {
-  readonly payouts: Payout[];
-  /** Reliquat non distribué (tournoi sous-rempli) à récupérer en trésorerie. */
-  readonly undistributed: number;
-}
+export type CompetitionStatus = "upcoming" | "live" | "ended";
 
-/**
- * Vue publique d'une compétition : ses paramètres économiques + son état LIVE
- * (nombre de participants réels, pot courant, clôturée ou non). C'est ce que le
- * front fusionne avec son catalogue de présentation (nom, visuel, descriptif).
- */
-export interface CompetitionSummary {
-  readonly id: string;
-  readonly buyIn: number;
-  readonly rakeRatio: number;
-  readonly payoutWeights: readonly number[];
-  /** Nombre de participants réellement inscrits. */
+/** Vue publique : aucune valeur d'affichage n'est inventée côté front. */
+export interface CompetitionSummary extends CompetitionDefinition {
   readonly participants: number;
-  /** Pot courant = buy-in × participants (devise de référence). */
   readonly pot: number;
   readonly closed: boolean;
+  readonly status: CompetitionStatus;
+  readonly winnerUserId: string | null;
+  readonly entryPaymentEnabled: boolean;
+}
+
+export interface CompetitionLeaderboardEntry {
+  readonly rank: number;
+  readonly userId: string;
+  readonly walletAddress: string;
+  readonly equity: number;
+  readonly entryEquity: number;
+  readonly returnPct: number;
+  readonly joinedAt: number;
+}
+
+export interface CompetitionResult {
+  readonly winner: {
+    readonly userId: string;
+    readonly walletAddress: string;
+  } | null;
+  /** Pool winner-takes-all, exprimé en XRP. */
+  readonly pot: number;
+}
+
+export interface VerifiedCompetitionEntry {
+  readonly userId: string;
+  readonly walletAddress: string;
+  readonly paymentTxHash: string;
+  readonly entryEquity: number;
+}
+
+export type EquityProvider = (userId: string) => number;
+
+const MAX_TEXT = 2_000;
+const COMPETITION_ID_RE = /^[A-Z0-9_.-]{1,64}$/i;
+
+function requiredText(value: string, field: string): string {
+  const trimmed = value.trim();
+  if (trimmed === "" || trimmed.length > MAX_TEXT) {
+    throw new InvalidCompetitionError(`${field} invalide`);
+  }
+  return trimmed;
 }
 
 /**
- * Fournit l'equity courante d'un joueur. Découple la clôture de `PaperService`
- * (le caller câble typiquement `(u) => paperService.equityOf(u, prices)`).
- */
-export type EquityProvider = (userId: string) => number;
-
-/**
- * Cycle de vie des compétitions : créer, rejoindre, clôturer (classer par equity
- * puis calculer les gains via `@tide/core`). La persistance est déléguée à un
- * `CompetitionStore` injecté (en mémoire par défaut, SQLite en option).
+ * Cycle de vie des compétitions payantes. Une entrée n'est ajoutée qu'après
+ * validation on-chain du ticket par la couche HTTP. Le classement utilise le
+ * rendement depuis l'equity capturée à l'inscription et non un faux leaderboard.
  */
 export class CompetitionService {
-  private readonly store: CompetitionStore;
+  constructor(
+    private readonly store: CompetitionStore = new InMemoryCompetitionStore(),
+    private readonly now: () => number = () => Date.now(),
+    private readonly entryPaymentEnabled: () => boolean = () => false,
+  ) {}
 
-  constructor(store: CompetitionStore = new InMemoryCompetitionStore()) {
-    this.store = store;
-  }
-
-  /** Crée une compétition (valide ses paramètres via le domaine). */
-  create(competition: Competition): void {
-    if (competition.id.trim() === "") {
-      throw new InvalidCompetitionError("competition.id vide");
+  create(competition: CompetitionDefinition): void {
+    const id = competition.id.trim();
+    if (!COMPETITION_ID_RE.test(id)) {
+      throw new InvalidCompetitionError(
+        "competition.id doit contenir 1 à 64 caractères [A-Z0-9_.-]",
+      );
     }
-    if (this.store.has(competition.id)) {
-      throw new CompetitionExistsError(`Compétition déjà créée: ${competition.id}`);
+    if (this.store.has(id)) {
+      throw new CompetitionExistsError(`Compétition déjà créée: ${id}`);
+    }
+    requiredText(competition.nameEn, "nameEn");
+    requiredText(competition.nameFr, "nameFr");
+    requiredText(competition.descriptionEn, "descriptionEn");
+    requiredText(competition.descriptionFr, "descriptionFr");
+    if (competition.mode !== "paper" && competition.mode !== "live") {
+      throw new InvalidCompetitionError(`mode invalide: ${String(competition.mode)}`);
     }
     assertValidBuyIn(competition.buyIn);
-    assertValidRakeRatio(competition.rakeRatio);
-    assertValidPayoutWeights(competition.payoutWeights);
-
-    this.store.create(competition);
+    // Les tickets XRP ont au maximum 6 décimales. La comparaison en unités
+    // entières empêche un montant impossible à représenter en drops.
+    const drops = competition.buyIn * 1_000_000;
+    if (!Number.isSafeInteger(drops)) {
+      throw new InvalidCompetitionError("buyIn doit être représentable en drops XRP");
+    }
+    if (competition.rakeRatio !== 0) {
+      throw new InvalidCompetitionError("rakeRatio doit être 0 (aucun prélèvement)");
+    }
+    if (
+      competition.payoutWeights.length !== 1 ||
+      competition.payoutWeights[0] !== 1
+    ) {
+      throw new InvalidCompetitionError(
+        "payoutWeights doit être [1] (winner takes all)",
+      );
+    }
+    if (
+      !Number.isSafeInteger(competition.startsAt) ||
+      !Number.isSafeInteger(competition.endsAt) ||
+      competition.endsAt <= competition.startsAt
+    ) {
+      throw new InvalidCompetitionError("fenêtre startsAt/endsAt invalide");
+    }
+    this.store.create({
+      ...competition,
+      id,
+      nameEn: requiredText(competition.nameEn, "nameEn"),
+      nameFr: requiredText(competition.nameFr, "nameFr"),
+      descriptionEn: requiredText(competition.descriptionEn, "descriptionEn"),
+      descriptionFr: requiredText(competition.descriptionFr, "descriptionFr"),
+    });
   }
 
-  /** Liste publique de toutes les compétitions, enrichies de leur état live. */
   list(): CompetitionSummary[] {
     return this.store.list().map((competition) => this.toSummary(competition));
   }
 
-  /** Vue publique d'une compétition. Lève si elle est introuvable. */
   get(competitionId: string): CompetitionSummary {
-    const competition = this.store.getCompetition(competitionId);
-    if (competition === undefined) {
-      throw new CompetitionNotFoundError(
-        `Compétition introuvable: ${competitionId}`,
-      );
-    }
-    return this.toSummary(competition);
+    return this.toSummary(this.requireCompetition(competitionId));
   }
 
-  private toSummary(competition: Competition): CompetitionSummary {
-    const participants = this.store.participants(competition.id)?.length ?? 0;
+  private toSummary(competition: CompetitionDefinition): CompetitionSummary {
+    const participants = this.store.entries(competition.id)?.length ?? 0;
+    const closed = this.store.isClosed(competition.id) ?? false;
     return {
       ...competition,
       participants,
       pot: competition.buyIn * participants,
-      closed: this.store.isClosed(competition.id) ?? false,
+      closed,
+      status: this.statusOf(competition, closed),
+      winnerUserId: this.store.winner(competition.id) ?? null,
+      entryPaymentEnabled: this.entryPaymentEnabled(),
     };
   }
 
-  /** Inscrit un joueur (devient participant). */
-  join(competitionId: string, userId: string): void {
-    if (userId.trim() === "") {
-      throw new InvalidUserError("userId vide");
-    }
-    this.requireOpen(competitionId);
-    if (this.store.hasParticipant(competitionId, userId)) {
-      throw new AlreadyJoinedError(`Déjà inscrit: ${userId} -> ${competitionId}`);
-    }
-    this.store.addParticipant(competitionId, userId);
+  private statusOf(
+    competition: CompetitionDefinition,
+    closed: boolean,
+  ): CompetitionStatus {
+    const now = this.now();
+    if (closed || now >= competition.endsAt) return "ended";
+    if (now < competition.startsAt) return "upcoming";
+    return "live";
   }
 
-  /** Liste des participants. */
+  /** Enregistre une entrée dont le Payment XRPL a déjà été validé. */
+  join(competitionId: string, entry: VerifiedCompetitionEntry): void {
+    if (entry.userId.trim() === "") throw new InvalidUserError("userId vide");
+    const competition = this.requireOpen(competitionId);
+    if (this.now() >= competition.endsAt) {
+      throw new CompetitionRegistrationClosedError("Les inscriptions sont terminées");
+    }
+    if (this.store.hasParticipant(competitionId, entry.userId)) {
+      throw new AlreadyJoinedError(`Déjà inscrit: ${entry.userId} -> ${competitionId}`);
+    }
+    if (this.store.hasPaymentTx(entry.paymentTxHash)) {
+      throw new CompetitionPaymentInvalidError("Ce ticket XRPL a déjà été utilisé");
+    }
+    assertValidEquity(entry.entryEquity, entry.userId);
+    if (entry.entryEquity <= 0) {
+      throw new InvalidCompetitionError("entryEquity doit être positive");
+    }
+    this.store.addEntry({
+      competitionId,
+      ...entry,
+      joinedAt: this.now(),
+    });
+  }
+
   participants(competitionId: string): string[] {
-    const participants = this.store.participants(competitionId);
-    if (participants === undefined) {
-      throw new CompetitionNotFoundError(
-        `Compétition introuvable: ${competitionId}`,
+    const entries = this.store.entries(competitionId);
+    if (entries === undefined) {
+      throw new CompetitionNotFoundError(`Compétition introuvable: ${competitionId}`);
+    }
+    return entries.map((entry) => entry.userId);
+  }
+
+  leaderboard(
+    competitionId: string,
+    equityOf: EquityProvider,
+  ): CompetitionLeaderboardEntry[] {
+    const entries = this.store.entries(competitionId);
+    if (entries === undefined) {
+      throw new CompetitionNotFoundError(`Compétition introuvable: ${competitionId}`);
+    }
+    return entries
+      .map((entry) => {
+        const current = equityOf(entry.userId);
+        assertValidEquity(current, entry.userId);
+        return {
+          ...entry,
+          equity: current,
+          returnPct: ((current - entry.entryEquity) / entry.entryEquity) * 100,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.returnPct - a.returnPct ||
+          a.joinedAt - b.joinedAt ||
+          a.userId.localeCompare(b.userId),
+      )
+      .map((entry, index) => ({ ...entry, rank: index + 1 }));
+  }
+
+  /** Clôture winner-takes-all. Le Payment multisig est préparé à la frontière HTTP. */
+  close(competitionId: string, equityOf: EquityProvider): CompetitionResult {
+    const competition = this.requireOpen(competitionId);
+    if (this.now() < competition.endsAt) {
+      throw new CompetitionRegistrationClosedError(
+        "La compétition ne peut pas être clôturée avant endsAt",
       );
     }
-    return participants;
+    const winner = this.leaderboard(competitionId, equityOf)[0] ?? null;
+    const count = this.store.entries(competitionId)?.length ?? 0;
+    const pot = competition.buyIn * count;
+    this.store.markClosed(competitionId, winner?.userId ?? null);
+    return { winner, pot };
   }
 
-  /** Indique si la compétition est clôturée. */
+  /**
+   * Recharge le règlement persisté. Cela permet de régénérer exactement le
+   * Payment multisig après un refresh de la console sans recalculer le gagnant.
+   */
+  settlement(competitionId: string): CompetitionResult {
+    const competition = this.requireCompetition(competitionId);
+    if (this.store.isClosed(competitionId) !== true) {
+      throw new CompetitionRegistrationClosedError(
+        "La compétition n'est pas encore clôturée",
+      );
+    }
+    const entries = this.store.entries(competitionId) ?? [];
+    const winnerUserId = this.store.winner(competitionId) ?? null;
+    const winner =
+      winnerUserId === null
+        ? null
+        : entries.find((entry) => entry.userId === winnerUserId) ?? null;
+    if (winnerUserId !== null && winner === null) {
+      throw new InvalidCompetitionError("Gagnant persisté introuvable dans les entrées");
+    }
+    return { winner, pot: competition.buyIn * entries.length };
+  }
+
   isClosed(competitionId: string): boolean {
     const closed = this.store.isClosed(competitionId);
     if (closed === undefined) {
-      throw new CompetitionNotFoundError(
-        `Compétition introuvable: ${competitionId}`,
-      );
+      throw new CompetitionNotFoundError(`Compétition introuvable: ${competitionId}`);
     }
     return closed;
   }
 
-  /**
-   * Clôture : classe les participants par equity (via `equityOf`) et calcule
-   * les gains + le reliquat. `markClosed` n'est appelé qu'APRÈS le calcul : une
-   * exception (provider qui lève, equity NaN) laisse la compétition réessayable
-   * (anti double paiement).
-   */
-  close(competitionId: string, equityOf: EquityProvider): CompetitionResult {
-    const competition = this.requireOpen(competitionId);
-    const participants = this.store.participants(competitionId) ?? [];
-
-    const ranked = rankByEquity(
-      participants.map((userId) => ({ userId, equity: equityOf(userId) })),
-    );
-    const payouts = computePayouts(competition, ranked);
-    const undistributed = undistributedAmount(competition, ranked);
-
-    this.store.markClosed(competitionId);
-    return { payouts, undistributed };
-  }
-
-  private requireOpen(competitionId: string): Competition {
+  private requireCompetition(competitionId: string): CompetitionDefinition {
     const competition = this.store.getCompetition(competitionId);
     if (competition === undefined) {
-      throw new CompetitionNotFoundError(
-        `Compétition introuvable: ${competitionId}`,
-      );
+      throw new CompetitionNotFoundError(`Compétition introuvable: ${competitionId}`);
     }
+    return competition;
+  }
+
+  private requireOpen(competitionId: string): CompetitionDefinition {
+    const competition = this.requireCompetition(competitionId);
     if (this.store.isClosed(competitionId) === true) {
       throw new CompetitionClosedError(`Compétition clôturée: ${competitionId}`);
     }

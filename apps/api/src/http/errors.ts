@@ -23,6 +23,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   InvalidNftError: 400,
   BadgeNotEarnedError: 400,
   WeeklyRewardNotEligibleError: 400,
+  CompetitionPaymentInvalidError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
@@ -36,6 +37,7 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   AlreadyJoinedError: 409,
   CompetitionExistsError: 409,
   CompetitionClosedError: 409,
+  CompetitionRegistrationClosedError: 409,
   InsufficientBalanceError: 409,
   AgentAlreadyExistsError: 409,
   MandateAlreadyExistsError: 409,
@@ -46,6 +48,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   BadgeClaimUnavailableError: 503,
   WeeklyRewardUnavailableError: 503,
   PaperWalletFundingFailedError: 503,
+  CompetitionPaymentUnavailableError: 503,
+  CompetitionScoringUnavailableError: 503,
   // 502 — échec d'un service amont (feed de prix, Xaman)
   PriceFeedError: 502,
   XamanError: 502,

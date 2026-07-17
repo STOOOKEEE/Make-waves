@@ -3,6 +3,8 @@ import type {
   AdminNftGrantDto,
   AdminOverviewDto,
   AdminReclaimJobDto,
+  AdminCompetitionCloseDto,
+  AdminCompetitionInput,
 } from "@tide/client";
 import { TideApiError } from "@tide/client";
 import { errorMessage } from "./messages";
@@ -17,6 +19,8 @@ export interface AdminClient {
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
   reclaimWallet(token: string, userId: string): Promise<AdminReclaimJobDto>;
   reclaimAllWallets(token: string, confirmation: string): Promise<AdminReclaimJobDto>;
+  createCompetition(token: string, input: AdminCompetitionInput): Promise<{ id: string }>;
+  closeCompetition(token: string, id: string): Promise<AdminCompetitionCloseDto>;
 }
 
 /** État de la console admin : token (persisté en sessionStorage), overview, chargement. */
@@ -26,6 +30,7 @@ export function useAdmin(client: AdminClient) {
   const error = ref("");
   const loading = ref(false);
   const walletJob = ref<AdminReclaimJobDto | null>(null);
+  const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
 
   function logout(): void {
     token.value = "";
@@ -122,18 +127,49 @@ export function useAdmin(client: AdminClient) {
     }
   }
 
+  async function createCompetition(input: AdminCompetitionInput): Promise<boolean> {
+    if (token.value === "") return false;
+    loading.value = true;
+    error.value = "";
+    try {
+      await client.createCompetition(token.value, input);
+      return true;
+    } catch (err) {
+      error.value = errorMessage(err);
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function closeCompetition(id: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      competitionPayout.value = await client.closeCompetition(token.value, id);
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     token,
     overview,
     error,
     loading,
     walletJob,
+    competitionPayout,
     load,
     runTestnetE2E,
     refreshWalletJob,
     grantNft,
     reclaimOne,
     reclaimAll,
+    createCompetition,
+    closeCompetition,
     logout,
   };
 }

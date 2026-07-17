@@ -175,8 +175,8 @@ export const orderBookSpread: RawArticle = {
       variant: "info",
       title: { en: "Fees on Tide", fr: "Les frais sur Tide" },
       text: {
-        en: "Tide's paper terminal models this honestly: a **maker fee of 0.02%** and a **taker fee of 0.06%**, charged when a position opens. Small numbers — but over hundreds of trades, taking liquidity every time adds up. There is **no fee on Live swaps**; Tide only monetises via poker-style tournament rake.",
-        fr: "Le terminal paper de Tide modélise ça honnêtement : un **frais maker de 0,02 %** et un **frais taker de 0,06 %**, prélevés à l'ouverture d'une position. Des petits chiffres — mais sur des centaines de trades, prendre la liquidité à chaque fois, ça s'accumule. Il n'y a **aucun frais sur les swaps Live** ; Tide se rémunère uniquement via un rake de tournoi façon poker.",
+        en: "Tide's paper terminal models this honestly: a **maker fee of 0.02%** and a **taker fee of 0.06%**, charged against virtual capital when a position opens. Live swaps have no Tide fee, and current competition pools take no rake: rank #1 receives all verified XRP tickets.",
+        fr: "Le terminal paper de Tide modélise ça honnêtement : un **frais maker de 0,02 %** et un **frais taker de 0,06 %**, débité du capital virtuel à l'ouverture. Les swaps Live n'ont pas de frais Tide et les pools de compétition n'ont aucun rake : le rang #1 reçoit tous les tickets XRP vérifiés.",
       },
     },
     {

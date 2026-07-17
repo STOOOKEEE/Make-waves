@@ -136,13 +136,13 @@ export const howTideWorks: RawArticle = {
     },
     {
       type: "h",
-      text: { en: "Competitions & the rake", fr: "Compétitions & le rake" },
+      text: { en: "Competitions & the prize pool", fr: "Compétitions & cagnotte" },
     },
     {
       type: "p",
       text: {
-        en: "Paper isn't practice in a vacuum — you **compete**. Seasons and flash tournaments rank everyone on the same virtual capital, and top finishers share a prize pool. Some competitions are free; paid ones charge a buy-in, and Tide's cut is a **poker-style rake** taken from the pool — the same model that funds a poker room. That's how Tide makes money: rake on tournaments, never a fee on your trades.",
-        fr: "Le Paper n'est pas de l'entraînement dans le vide — tu es en **compétition**. Saisons et tournois éclair classent tout le monde sur le même capital virtuel, et les meilleurs se partagent une cagnotte. Certaines compétitions sont gratuites ; les payantes ont un buy-in, et la part de Tide est un **rake type poker** prélevé sur la cagnotte — le même modèle qui finance une salle de poker. C'est comme ça que Tide gagne de l'argent : rake sur les tournois, jamais de frais sur tes trades.",
+        en: "Paper isn't practice in a vacuum — you **compete**. A paid competition uses a server-built XRP entry ticket. Validated entries form the prize pool, and rank #1 receives **100% of it**: no rake, no fictional sponsor amount and no split payout. The Paper score is the real percentage return from your persisted equity snapshot at entry.",
+        fr: "Le Paper n'est pas de l'entraînement dans le vide — tu es en **compétition**. Une compétition payante utilise un ticket XRP construit côté serveur. Les entrées validées forment la cagnotte, et le rang #1 en reçoit **100 %** : aucun rake, aucun montant sponsor fictif et aucun partage. Le score Paper est le vrai rendement depuis ton snapshot d'equity persisté à l'inscription.",
       },
     },
     {

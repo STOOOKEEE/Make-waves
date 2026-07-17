@@ -1,52 +1,60 @@
 import { ref } from "vue";
-import type { CloseResult, TideClient } from "@tide/client";
-import type { Competition } from "@tide/core";
+import type {
+  CompetitionLeaderboardEntry,
+  CompetitionSummary,
+  TideClient,
+} from "@tide/client";
 import { errorMessage } from "./messages";
 
-/** Logique des compétitions : créer, rejoindre, participants, clôturer. */
+/** État des compétitions provenant exclusivement de l'API persistante. */
 export function useCompetitions(client: TideClient) {
+  const items = ref<CompetitionSummary[]>([]);
+  const current = ref<CompetitionSummary | null>(null);
   const participants = ref<string[]>([]);
-  const lastResult = ref<CloseResult | null>(null);
+  const leaderboard = ref<CompetitionLeaderboardEntry[]>([]);
+  const loading = ref(false);
   const error = ref("");
 
-  async function create(competition: Competition): Promise<boolean> {
+  async function load(): Promise<void> {
+    loading.value = true;
     error.value = "";
     try {
-      await client.createCompetition(competition);
-      return true;
-    } catch (e) {
-      error.value = errorMessage(e);
-      return false;
+      items.value = await client.competitions();
+    } catch (cause) {
+      error.value = errorMessage(cause);
+      items.value = [];
+    } finally {
+      loading.value = false;
     }
   }
 
-  async function join(competitionId: string, userId: string): Promise<void> {
+  async function loadOne(id: string): Promise<void> {
+    loading.value = true;
     error.value = "";
     try {
-      await client.joinCompetition(competitionId, userId);
-      participants.value = await client.participants(competitionId);
-    } catch (e) {
-      error.value = errorMessage(e);
+      const [competition, registered] = await Promise.all([
+        client.competition(id),
+        client.participants(id),
+      ]);
+      current.value = competition;
+      participants.value = registered;
+      try {
+        leaderboard.value = await client.competitionLeaderboard(id);
+      } catch (cause) {
+        // Une compétition Live sans indexeur PnL reste visible mais n'affiche
+        // jamais un classement Paper de substitution.
+        leaderboard.value = [];
+        error.value = errorMessage(cause);
+      }
+    } catch (cause) {
+      current.value = null;
+      participants.value = [];
+      leaderboard.value = [];
+      error.value = errorMessage(cause);
+    } finally {
+      loading.value = false;
     }
   }
 
-  async function loadParticipants(competitionId: string): Promise<void> {
-    error.value = "";
-    try {
-      participants.value = await client.participants(competitionId);
-    } catch (e) {
-      error.value = errorMessage(e);
-    }
-  }
-
-  async function close(competitionId: string): Promise<void> {
-    error.value = "";
-    try {
-      lastResult.value = await client.closeCompetition(competitionId);
-    } catch (e) {
-      error.value = errorMessage(e);
-    }
-  }
-
-  return { participants, lastResult, error, create, join, loadParticipants, close };
+  return { items, current, participants, leaderboard, loading, error, load, loadOne };
 }

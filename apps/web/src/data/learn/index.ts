@@ -1,7 +1,6 @@
 /* ===== TIDE School — agrégation + résolution de langue =====
  * Rassemble les articles bruts (un fichier par leçon) et expose la forme
- * résolue mono-langue à l'UI. Miroir de data/competitions.ts
- * (localizedCompetitions / getComp).
+ * résolue mono-langue à l'UI, sans dépendre du catalogue de compétitions runtime.
  */
 import type { Locale } from "../../i18n/locale";
 import type {

@@ -72,6 +72,38 @@ export class CompetitionClosedError extends Error {
   }
 }
 
+/** L'inscription n'est pas ouverte selon les dates de la compétition. */
+export class CompetitionRegistrationClosedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitionRegistrationClosedError";
+  }
+}
+
+/** Le ticket XRPL ne correspond pas exactement à l'inscription attendue. */
+export class CompetitionPaymentInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CompetitionPaymentInvalidError";
+  }
+}
+
+/** Le runtime XRPL nécessaire aux tickets réels n'est pas configuré. */
+export class CompetitionPaymentUnavailableError extends Error {
+  constructor() {
+    super("Paiement des tickets XRPL non configuré");
+    this.name = "CompetitionPaymentUnavailableError";
+  }
+}
+
+/** Le moteur de scoring réel du mode demandé n'est pas branché. */
+export class CompetitionScoringUnavailableError extends Error {
+  constructor(mode: string) {
+    super(`Scoring ${mode} non configuré`);
+    this.name = "CompetitionScoringUnavailableError";
+  }
+}
+
 /** Un agent avec cet identifiant existe déjà. */
 export class AgentAlreadyExistsError extends Error {
   constructor(id: string) {

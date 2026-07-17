@@ -171,8 +171,8 @@ export const whatIsAPerpetual: RawArticle = {
     {
       type: "p",
       text: {
-        en: "Every perp position on Tide charges a small fee at open, deducted from your virtual capital: **0.02% maker** if your order sits in the book and provides liquidity, **0.06% taker** if it crosses the spread and takes it. That gap is why patient limit orders beat impulsive market orders over hundreds of trades. Note that Tide never charges a fee on **Live** spot swaps — the platform makes money from tournament rake, not from your trades.",
-        fr: "Chaque position perp sur Tide prélève un petit frais à l'ouverture, débité de ton capital virtuel : **0,02 % maker** si ton ordre attend dans le carnet et fournit de la liquidité, **0,06 % taker** s'il traverse le spread et la prend. Cet écart explique pourquoi les ordres limit patients battent les ordres market impulsifs sur des centaines de trades. À noter : Tide ne prélève jamais de frais sur les swaps spot en **Live** — la plateforme se rémunère au rake des tournois, pas sur tes trades.",
+        en: "Every perp position on Tide charges a small fee at open, deducted from virtual capital: **0.02% maker** or **0.06% taker**. Tide does not charge a fee on **Live** spot swaps, and the current winner-takes-all competitions take no rake from their XRP ticket pool.",
+        fr: "Chaque position perp sur Tide prélève un petit frais à l'ouverture sur le capital virtuel : **0,02 % maker** ou **0,06 % taker**. Tide ne prélève pas de frais sur les swaps spot **Live**, et les compétitions winner-takes-all actuelles ne prélèvent aucun rake sur leur pool de tickets XRP.",
       },
     },
     {

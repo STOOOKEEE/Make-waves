@@ -2273,3 +2273,34 @@ détecter un changement de localStorage après refresh, et scope désormais son
 **Vérifié.** 954 tests, typecheck 8/8, lint 0, build production, `pnpm audit`
 sans vulnérabilité connue et Gitleaks sur 184 commits sans fuite. Rapport :
 `docs/SECURITY-AUDIT-2026-07-17.md`.
+
+## 2026-07-18 — Compétitions sans données fictives + tickets XRP vérifiés
+
+**Suppression des mocks.** Les neuf compétitions seedées, les faux participants et
+le catalogue de présentation du front ont été retirés. L'API/SQLite est désormais
+l'unique source de vérité. Une migration supprime l'ancien schéma d'entrées non
+vérifiables et les six comptes de démonstration historiques, sans toucher aux
+comptes Paper réels. Sans compétition créée par l'opérateur, l'UI montre un état
+vide au lieu d'inventer un tournoi, une pool ou un classement.
+
+**Flux réel.** La console locale crée les compétitions bilingues Paper/Live. Le
+serveur impose `rakeRatio=0` et `payoutWeights=[1]`, construit le ticket XRP exact
+(pool, montant en drops, `SourceTag`, memo compétition), puis GemWallet ou Xaman le
+fait signer. L'inscription n'est persistée qu'après lecture du hash sur XRPL :
+ledger validé, `tesSUCCESS`, signataire, destination, montant, tag et memo exacts.
+Le hash est globalement unique. La cagnotte vaut exclusivement `ticket × entrées
+vérifiées`.
+
+**Classement et règlement.** En Paper, le score est le rendement depuis l'equity
+persistée à l'entrée, avec départage déterministe. Le mode Live échoue explicitement
+tant qu'un indexeur de PnL réel n'est pas fourni ; aucune donnée Paper ne le remplace.
+Après `endsAt`, le rang #1 est figé et reçoit 100 % de la pool. L'API prépare un
+unique `Payment` multisig taggé, régénérable après refresh sans recalculer le
+gagnant. La signature et la soumission par le quorum restent une opération réelle à
+exécuter avant de considérer le payout payé.
+
+**Sécurité / compatibilité.** Les routes de ticket et de confirmation exigent le
+JWT du wallet signataire ; montant et destination fournis par le client sont
+ignorés. Les anciennes routes publiques de création/clôture et `/sign/buy-in` ont
+été supprimées. L'outil MCP `join_competition` prépare désormais le même Payment
+serveur et ne prétend plus inscrire sans hash confirmé.

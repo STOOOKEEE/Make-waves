@@ -3,7 +3,8 @@ import { createApp } from "../src/app";
 import { TideApiError, TideClient } from "@tide/client";
 import type { ApiTransport } from "@tide/client";
 import type { CexFeedConfig, FetchJson } from "../src/feed/cex-price-feed";
-import type { Competition } from "@tide/core";
+import { InMemoryCompetitionStore } from "../src/store/competition-store";
+import type { CompetitionDefinition } from "../src/store/competition-store";
 
 const FEED: CexFeedConfig = {
   baseUrl: "https://cex.test/v3",
@@ -14,7 +15,45 @@ const priceFetch: FetchJson = () => Promise.resolve({ ripple: { usd: 0.5 } });
 
 /** Branche le client sur le vrai serveur via inject() (aucun réseau, prix chargés). */
 async function makeClient(): Promise<TideClient> {
-  const built = createApp({ feed: FEED, symbols: ["XRP"], fetchJson: priceFetch });
+  const competitionStore = new InMemoryCompetitionStore();
+  const now = Date.now();
+  const competition: CompetitionDefinition = {
+    id: "c1",
+    nameEn: "Real cup",
+    nameFr: "Coupe réelle",
+    descriptionEn: "Paid entries",
+    descriptionFr: "Entrées payées",
+    mode: "paper",
+    buyIn: 0.01,
+    rakeRatio: 0,
+    payoutWeights: [1],
+    startsAt: now - 1_000,
+    endsAt: now + 60_000,
+  };
+  competitionStore.create(competition);
+  const built = createApp({
+    feed: FEED,
+    symbols: ["XRP"],
+    fetchJson: priceFetch,
+    competitionStore,
+    competitionPayments: {
+      entryPayment: (account, comp) => ({
+        TransactionType: "Payment",
+        Account: account,
+        Destination: "rPool",
+        Amount: String(comp.buyIn * 1_000_000),
+        SourceTag: 1,
+        Memos: [],
+      }),
+      verifyEntry: async () => undefined,
+      winnerPayout: () => ({
+        TransactionType: "Payment",
+        Account: "rPool",
+        Destination: "rWinner",
+        Amount: "10000",
+      }),
+    },
+  });
   await built.refreshPrices();
   const transport: ApiTransport = async (request) => {
     const response = await built.app.inject({
@@ -49,22 +88,12 @@ describe("TideClient ↔ serveur réel (contrat de bout en bout)", () => {
     expect(board[0]?.userId).toBe("alice");
   });
 
-  it("déroule le flux compétitions (create/join/participants/close)", async () => {
+  it("déroule le flux compétition avec ticket vérifié", async () => {
     const client = await makeClient();
-    const competition: Competition = {
-      id: "c1",
-      buyIn: 10,
-      rakeRatio: 0,
-      payoutWeights: [1],
-    };
-    expect(await client.createCompetition(competition)).toEqual({ id: "c1" });
-
     await client.openAccount("a");
-    await client.joinCompetition("c1", "a");
+    await client.joinCompetition("c1", "a", "A".repeat(64));
     expect(await client.participants("c1")).toEqual(["a"]);
-
-    const result = await client.closeCompetition("c1");
-    expect(result.payouts).toHaveLength(1);
+    expect(await client.competitionLeaderboard("c1")).toHaveLength(1);
   });
 
   it("expose le portefeuille agrégé (soldes valorisés + equity + pnl)", async () => {
@@ -91,19 +120,13 @@ describe("TideClient ↔ serveur réel (contrat de bout en bout)", () => {
 
   it("liste les compétitions avec leur état live (participants, pot)", async () => {
     const client = await makeClient();
-    await client.createCompetition({
-      id: "c1",
-      buyIn: 10,
-      rakeRatio: 0,
-      payoutWeights: [1],
-    });
     const before = await client.competition("c1");
     expect(before).toMatchObject({ participants: 0, pot: 0, closed: false });
 
     await client.openAccount("a");
-    await client.joinCompetition("c1", "a");
+    await client.joinCompetition("c1", "a", "A".repeat(64));
     const after = await client.competition("c1");
-    expect(after).toMatchObject({ participants: 1, pot: 10 });
+    expect(after).toMatchObject({ participants: 1, pot: 0.01 });
 
     expect((await client.competitions()).map((c) => c.id)).toEqual(["c1"]);
     await expect(client.competition("inconnu")).rejects.toMatchObject({

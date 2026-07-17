@@ -52,6 +52,8 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "POST", url: "/admin/wallets/:userId/nfts" },
   { method: "POST", url: "/admin/wallets/:userId/reclaim" },
   { method: "POST", url: "/admin/wallets/reclaim-all" },
+  { method: "POST", url: "/admin/competitions" },
+  { method: "POST", url: "/admin/competitions/:id/close" },
   // Le déclencheur E2E porte la même garde admin ; sans cette exception, le
   // garde JWT global renverrait 401 avant que le handler ne voie son token.
   { method: "POST", url: "/admin/testnet-e2e/run" },
@@ -61,6 +63,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/competitions" },
   { method: "GET", url: "/competitions/:id" },
   { method: "GET", url: "/competitions/:id/participants" },
+  { method: "GET", url: "/competitions/:id/leaderboard" },
   { method: "POST", url: "/auth/challenge" },
   { method: "POST", url: "/auth/paper" },
   { method: "POST", url: "/auth/paper/refresh" },
@@ -149,8 +152,14 @@ export async function authorize(
   if (routeUrl === "/competitions/:id/join") {
     return ensure(body.userId === me);
   }
+  if (
+    routeUrl === "/competitions/:id/entry/tx" ||
+    routeUrl === "/competitions/:id/entry/xaman"
+  ) {
+    return ensure(body.account === me);
+  }
   // Signature / exécution Live : le compte source du corps = soi.
-  if (routeUrl === "/sign/buy-in" || routeUrl === "/sign/live-offer" || routeUrl === "/exec/plan") {
+  if (routeUrl === "/sign/live-offer" || routeUrl === "/exec/plan") {
     return ensure(body.account === me);
   }
   // Claim de badge : mint UNIQUEMENT vers l'adresse authentifiée (F4) — userId ET

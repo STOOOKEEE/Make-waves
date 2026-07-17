@@ -168,8 +168,8 @@ export const takeProfitStopLoss: RawArticle = {
     {
       type: "p",
       text: {
-        en: "Every open costs a fee — **0.02% maker, 0.06% taker** — so factor it into thin targets. Leverage on a Paper perp goes up to **100x** on isolated margin, which amplifies both directions: at 100x a 1% move against you is your whole margin. And remember the floor — realized PnL is capped at **−margin** when you close, so a simulated position can't cost you more than the margin you put up. On Tide's monetization side, there's **no fee on swaps**; the house earns from poker-style tournament rake, not from your exits.",
-        fr: "Chaque ouverture coûte un frais — **0,02 % maker, 0,06 % taker** — intègre-le dans les cibles serrées. Le levier sur un perp Paper monte jusqu'à **100x** en marge isolée, ce qui amplifie dans les deux sens : à 100x, un mouvement de 1 % contre toi, c'est toute ta marge. Et souviens-toi du plancher — le PnL réalisé est plafonné à **−marge** à la fermeture, donc une position simulée ne peut pas te coûter plus que la marge engagée. Côté monétisation, Tide ne prend **aucun frais sur les swaps** ; la maison se rémunère au rake de tournoi façon poker, pas sur tes sorties.",
+        en: "Every open costs a fee against virtual capital — **0.02% maker, 0.06% taker**. Paper leverage goes up to **100x** on isolated margin, and realized PnL is capped at **−margin** when you close. Tide adds no fee to Live swaps, and current competition pools are winner-takes-all with no rake.",
+        fr: "Chaque ouverture coûte un frais sur le capital virtuel — **0,02 % maker, 0,06 % taker**. Le levier Paper monte jusqu'à **100x** en marge isolée, et le PnL réalisé est plafonné à **−marge** à la fermeture. Tide n'ajoute aucun frais aux swaps Live, et les pools de compétition actuelles sont winner-takes-all sans rake.",
       },
     },
     {

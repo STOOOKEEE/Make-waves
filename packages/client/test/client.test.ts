@@ -215,19 +215,10 @@ describe("TideClient", () => {
     });
   });
 
-  it("closeCompetition -> POST /competitions/:id/close (200)", async () => {
-    const { client, requests } = stub(() => ({
-      status: 200,
-      body: { payouts: [], undistributed: 0 },
-    }));
-    expect(await client.closeCompetition("c1")).toEqual({
-      payouts: [],
-      undistributed: 0,
-    });
-    expect(requests[0]).toEqual({
-      path: "/competitions/c1/close",
-      method: "POST",
-    });
+  it("competitionLeaderboard -> GET /competitions/:id/leaderboard", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: [] }));
+    expect(await client.competitionLeaderboard("c1")).toEqual([]);
+    expect(requests[0]).toEqual({ path: "/competitions/c1/leaderboard", method: "GET" });
   });
 
   it("metrics -> GET /metrics (200)", async () => {
@@ -237,18 +228,18 @@ describe("TideClient", () => {
     expect(requests[0]).toEqual({ path: "/metrics", method: "GET" });
   });
 
-  it("signBuyIn -> POST /sign/buy-in (201) sans sourceTag (ajouté côté serveur)", async () => {
+  it("signCompetitionEntry dérive le ticket côté serveur", async () => {
     const sign = {
       uuid: "u-1",
       signUrl: "https://xumm.app/sign/u-1",
       qrPng: "https://xumm.app/qr/u-1.png",
     };
     const { client, requests } = stub(() => ({ status: 201, body: sign }));
-    expect(await client.signBuyIn("rAcc", "10000000", "cup")).toEqual(sign);
+    expect(await client.signCompetitionEntry("cup", "rAcc")).toEqual(sign);
     expect(requests[0]).toEqual({
-      path: "/sign/buy-in",
+      path: "/competitions/cup/entry/xaman",
       method: "POST",
-      body: { account: "rAcc", amount: "10000000", competitionId: "cup" },
+      body: { account: "rAcc" },
     });
   });
 

@@ -1,36 +1,57 @@
 import type {
   Balances,
-  Competition,
   Fill,
   LeaderboardEntry,
   MarketOrderInput,
   OpenPositionInput,
-  Payout,
   Position,
   PriceMap,
 } from "@tide/core";
 import type { ApiRequest, ApiTransport } from "./transport";
 import { extractErrorMessage, TideApiError } from "./errors";
 
-/** Résultat de clôture d'une compétition côté API. */
-export interface CloseResult {
-  readonly payouts: Payout[];
-  readonly undistributed: number;
-}
+export type CompetitionMode = "paper" | "live";
+export type CompetitionStatus = "upcoming" | "live" | "ended";
 
-/**
- * Vue live d'une compétition (état dynamique exposé par l'API) : paramètres
- * économiques + participants réels, pot courant et clôture. Le front la fusionne
- * avec son catalogue de présentation par `id`.
- */
+/** Vue complète issue du backend persistant, sans catalogue mock côté front. */
 export interface CompetitionSummary {
   readonly id: string;
+  readonly nameEn: string;
+  readonly nameFr: string;
+  readonly descriptionEn: string;
+  readonly descriptionFr: string;
+  readonly mode: CompetitionMode;
   readonly buyIn: number;
   readonly rakeRatio: number;
   readonly payoutWeights: readonly number[];
+  readonly startsAt: number;
+  readonly endsAt: number;
   readonly participants: number;
   readonly pot: number;
   readonly closed: boolean;
+  readonly status: CompetitionStatus;
+  readonly winnerUserId: string | null;
+  readonly entryPaymentEnabled: boolean;
+}
+
+export interface CompetitionLeaderboardEntry {
+  readonly rank: number;
+  readonly userId: string;
+  readonly walletAddress: string;
+  readonly equity: number;
+  readonly entryEquity: number;
+  readonly returnPct: number;
+  readonly joinedAt: number;
+}
+
+/** Payment XRP construit côté serveur, prêt à signer via GemWallet. */
+export interface CompetitionEntryPayment {
+  readonly TransactionType: "Payment";
+  readonly Account: string;
+  readonly Destination: string;
+  readonly Amount: string;
+  readonly SourceTag: number;
+  readonly Memos: readonly unknown[];
 }
 
 /** Ligne de portefeuille valorisée en devise de référence. */
@@ -361,6 +382,30 @@ export interface AdminNftGrantDto {
   readonly claimHash: string;
 }
 
+export interface AdminCompetitionInput {
+  readonly id: string;
+  readonly nameEn: string;
+  readonly nameFr: string;
+  readonly descriptionEn: string;
+  readonly descriptionFr: string;
+  readonly mode: CompetitionMode;
+  readonly buyIn: number;
+  readonly startsAt: number;
+  readonly endsAt: number;
+}
+
+export interface AdminCompetitionWinnerDto {
+  readonly userId: string;
+  readonly walletAddress: string;
+}
+
+export interface AdminCompetitionCloseDto {
+  readonly winner: AdminCompetitionWinnerDto | null;
+  readonly pot: number;
+  /** Payment multisig exact à faire signer par le quorum opérateur. */
+  readonly payoutTx: CompetitionEntryPayment | null;
+}
+
 export interface AdminOverviewDto {
   readonly totals: {
     readonly users: number;
@@ -564,24 +609,55 @@ export class TideClient {
     return this.call({ path: path("competitions", competitionId), method: "GET" }, 200);
   }
 
-  async createCompetition(competition: Competition): Promise<{ id: string }> {
-    return this.call(
-      { path: "/competitions", method: "POST", body: competition },
-      201,
-    );
-  }
-
   async joinCompetition(
     competitionId: string,
     userId: string,
-  ): Promise<{ competitionId: string; userId: string }> {
+    txHash: string,
+  ): Promise<{ competitionId: string; userId: string; txHash: string }> {
     return this.call(
       {
         path: path("competitions", competitionId, "join"),
         method: "POST",
-        body: { userId },
+        body: { userId, txHash },
       },
       200,
+    );
+  }
+
+  async competitionLeaderboard(
+    competitionId: string,
+  ): Promise<CompetitionLeaderboardEntry[]> {
+    return this.call(
+      { path: path("competitions", competitionId, "leaderboard"), method: "GET" },
+      200,
+    );
+  }
+
+  async competitionEntryPayment(
+    competitionId: string,
+    account: string,
+  ): Promise<CompetitionEntryPayment> {
+    return this.call(
+      {
+        path: path("competitions", competitionId, "entry", "tx"),
+        method: "POST",
+        body: { account },
+      },
+      200,
+    );
+  }
+
+  async signCompetitionEntry(
+    competitionId: string,
+    account: string,
+  ): Promise<SignRequest> {
+    return this.call(
+      {
+        path: path("competitions", competitionId, "entry", "xaman"),
+        method: "POST",
+        body: { account },
+      },
+      201,
     );
   }
 
@@ -592,12 +668,6 @@ export class TideClient {
     );
   }
 
-  async closeCompetition(competitionId: string): Promise<CloseResult> {
-    return this.call(
-      { path: path("competitions", competitionId, "close"), method: "POST" },
-      200,
-    );
-  }
 
   // --- Métriques d'attribution (hackathon) ---
 
@@ -617,21 +687,6 @@ export class TideClient {
   /** État d'un payload Xaman (polling de signature/connexion). */
   async signStatus(uuid: string): Promise<PayloadStatus> {
     return this.call({ path: path("sign", "status", uuid), method: "GET" }, 200);
-  }
-
-  async signBuyIn(
-    account: string,
-    amount: ApiAmount,
-    competitionId: string,
-  ): Promise<SignRequest> {
-    return this.call(
-      {
-        path: "/sign/buy-in",
-        method: "POST",
-        body: { account, amount, competitionId },
-      },
-      201,
-    );
   }
 
   /**

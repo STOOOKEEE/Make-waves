@@ -207,46 +207,37 @@ describe("useLeaderboard", () => {
 });
 
 describe("useCompetitions", () => {
-  it("crée puis inscrit un joueur", async () => {
+  it("charge la liste réelle", async () => {
     const comp = useCompetitions(
       clientWith({
-        "POST /competitions": { status: 201, body: { id: "c1" } },
-        "POST /competitions/c1/join": {
-          status: 200,
-          body: { competitionId: "c1", userId: "a" },
-        },
+        "GET /competitions": { status: 200, body: [{ id: "c1" }] },
+      }),
+    );
+    await comp.load();
+    expect(comp.items.value).toEqual([{ id: "c1" }]);
+  });
+
+  it("charge le détail, les participants et le classement", async () => {
+    const comp = useCompetitions(
+      clientWith({
+        "GET /competitions/c1": { status: 200, body: { id: "c1" } },
         "GET /competitions/c1/participants": { status: 200, body: ["a"] },
+        "GET /competitions/c1/leaderboard": { status: 200, body: [{ userId: "a" }] },
       }),
     );
-    expect(
-      await comp.create({ id: "c1", buyIn: 10, rakeRatio: 0, payoutWeights: [1] }),
-    ).toBe(true);
-    await comp.join("c1", "a");
+    await comp.loadOne("c1");
+    expect(comp.current.value).toEqual({ id: "c1" });
     expect(comp.participants.value).toEqual(["a"]);
+    expect(comp.leaderboard.value).toEqual([{ userId: "a" }]);
   });
 
-  it("clôture et expose le résultat", async () => {
+  it("remonte l'erreur de chargement", async () => {
     const comp = useCompetitions(
       clientWith({
-        "POST /competitions/c1/close": {
-          status: 200,
-          body: { payouts: [], undistributed: 0 },
-        },
+        "GET /competitions": { status: 500, body: { error: "indisponible" } },
       }),
     );
-    await comp.close("c1");
-    expect(comp.lastResult.value).toEqual({ payouts: [], undistributed: 0 });
-  });
-
-  it("remonte l'erreur de création", async () => {
-    const comp = useCompetitions(
-      clientWith({
-        "POST /competitions": { status: 400, body: { error: "poids invalides" } },
-      }),
-    );
-    expect(
-      await comp.create({ id: "c1", buyIn: 10, rakeRatio: 0, payoutWeights: [0.5] }),
-    ).toBe(false);
-    expect(comp.error.value).toBe("poids invalides");
+    await comp.load();
+    expect(comp.error.value).toBe("indisponible");
   });
 });

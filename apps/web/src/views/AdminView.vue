@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import type { AdminCompetitionInput } from "@tide/client";
 import { useAdmin } from "../composables/useAdmin";
 import { createLocalAdminClient } from "../lib/admin-client";
 
@@ -9,17 +10,32 @@ const {
   error,
   loading,
   walletJob,
+  competitionPayout,
   load,
   runTestnetE2E,
   refreshWalletJob,
   grantNft,
   reclaimOne,
   reclaimAll,
+  createCompetition,
+  closeCompetition,
   logout,
 } = useAdmin(createLocalAdminClient());
 
 const selectedBadge = ref<Record<string, string>>({});
 const bulkConfirmation = ref("");
+const closeCompetitionId = ref("");
+const competitionForm = ref({
+  id: "",
+  nameEn: "",
+  nameFr: "",
+  descriptionEn: "",
+  descriptionFr: "",
+  mode: "paper" as "paper" | "live",
+  buyIn: 0.01,
+  startsAt: "",
+  endsAt: "",
+});
 const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
 const BADGES = [
   { code: "first_trade", label: "First Trade" },
@@ -70,6 +86,25 @@ function confirmReclaimAll(): void {
   if (bulkConfirmation.value !== DELETE_CONFIRMATION) return;
   if (window.confirm(`Action irréversible sur ${String(paperWallets.value.length)} wallets Testnet. Continuer ?`)) {
     void reclaimAll(bulkConfirmation.value);
+  }
+}
+
+async function submitCompetition(): Promise<void> {
+  const form = competitionForm.value;
+  const input: AdminCompetitionInput = {
+    id: form.id,
+    nameEn: form.nameEn,
+    nameFr: form.nameFr,
+    descriptionEn: form.descriptionEn,
+    descriptionFr: form.descriptionFr,
+    mode: form.mode,
+    buyIn: form.buyIn,
+    startsAt: new Date(form.startsAt).getTime(),
+    endsAt: new Date(form.endsAt).getTime(),
+  };
+  if (await createCompetition(input)) {
+    closeCompetitionId.value = input.id;
+    form.id = "";
   }
 }
 </script>
@@ -154,6 +189,34 @@ function confirmReclaimAll(): void {
         </tbody>
       </table>
 
+      <section class="admin__competitions">
+        <h2>Compétitions réelles</h2>
+        <p>Aucun seed ni chiffre décoratif. Le ticket est un Payment XRP vérifié et le gagnant reçoit 100 % de la pool.</p>
+        <form class="competition-form" @submit.prevent="submitCompetition">
+          <label>ID<input v-model="competitionForm.id" required /></label>
+          <label>Nom EN<input v-model="competitionForm.nameEn" required /></label>
+          <label>Nom FR<input v-model="competitionForm.nameFr" required /></label>
+          <label class="wide">Description EN<input v-model="competitionForm.descriptionEn" required /></label>
+          <label class="wide">Description FR<input v-model="competitionForm.descriptionFr" required /></label>
+          <label>Mode<select v-model="competitionForm.mode"><option value="paper">Paper</option><option value="live">Live</option></select></label>
+          <label>Ticket XRP<input v-model.number="competitionForm.buyIn" type="number" min="0.000001" step="0.000001" required /></label>
+          <label>Début<input v-model="competitionForm.startsAt" type="datetime-local" required /></label>
+          <label>Fin<input v-model="competitionForm.endsAt" type="datetime-local" required /></label>
+          <button type="submit" :disabled="loading">Créer la compétition</button>
+        </form>
+        <p class="admin__warning">Le mode Live n'affichera aucun classement tant que l'indexeur de PnL Live réel n'est pas configuré.</p>
+        <div class="admin__bar">
+          <input v-model="closeCompetitionId" placeholder="ID à clôturer" />
+          <button type="button" :disabled="loading || closeCompetitionId === ''" @click="closeCompetition(closeCompetitionId)">Clôturer et préparer le payout</button>
+        </div>
+        <div v-if="competitionPayout" class="payout">
+          <b>Pool : {{ competitionPayout.pot }} XRP</b>
+          <span>Gagnant : {{ competitionPayout.winner?.walletAddress ?? "aucun" }}</span>
+          <p v-if="competitionPayout.payoutTx">Transaction multisig préparée. Elle doit être signée par le quorum du prize pool avant soumission.</p>
+          <pre v-if="competitionPayout.payoutTx">{{ JSON.stringify(competitionPayout.payoutTx, null, 2) }}</pre>
+        </div>
+      </section>
+
       <div class="admin__danger">
         <h2>Récupération globale</h2>
         <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé.</p>
@@ -221,6 +284,12 @@ function confirmReclaimAll(): void {
 .admin__danger h2, .admin__job h2 { margin-top: 0; }
 .admin__danger input { min-width: 300px; }
 .admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__competitions { border: 1px solid rgba(79, 106, 255, .55); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.competition-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }
+.competition-form label { display:flex; flex-direction:column; gap:.3rem; font-size:.8rem; }
+.competition-form .wide,.competition-form button { grid-column:1/-1; }
+.competition-form input,.competition-form select { padding:.55rem; }
+.admin__warning { color:#c98800; }.payout { display:flex; flex-direction:column; gap:.4rem; }.payout pre { overflow:auto; max-height:260px; }
 button.danger { color: #fff; background: #a93226; }
 select { margin-right: 0.4rem; }
 </style>

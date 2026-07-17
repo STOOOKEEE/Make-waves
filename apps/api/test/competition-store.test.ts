@@ -1,20 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { CompetitionService } from "../src/services/competition-service";
 import { InMemoryCompetitionStore } from "../src/store/competition-store";
 import { SqliteCompetitionStore } from "../src/store/sqlite-competition-store";
-import type { CompetitionStore } from "../src/store/competition-store";
-import {
-  AlreadyJoinedError,
-  CompetitionClosedError,
-  CompetitionNotFoundError,
-} from "../src/services/errors";
-import { InvalidCompetitionError, type Competition } from "@tide/core";
+import type { CompetitionDefinition, CompetitionStore } from "../src/store/competition-store";
+import { openDatabase } from "../src/store/sqlite";
 
-const COMP: Competition = {
+const COMP: CompetitionDefinition = {
   id: "c1",
-  buyIn: 10,
+  nameEn: "Cup",
+  nameFr: "Coupe",
+  descriptionEn: "Paid",
+  descriptionFr: "Payée",
+  mode: "paper",
+  buyIn: 0.01,
   rakeRatio: 0,
-  payoutWeights: [0.5, 0.3, 0.2],
+  payoutWeights: [1],
+  startsAt: 1_000,
+  endsAt: 2_000,
 };
 
 const stores: ReadonlyArray<{ name: string; make: () => CompetitionStore }> = [
@@ -23,61 +25,48 @@ const stores: ReadonlyArray<{ name: string; make: () => CompetitionStore }> = [
 ];
 
 for (const { name, make } of stores) {
-  describe(`CompetitionService + ${name}CompetitionStore (comportement identique)`, () => {
-    it("crée, inscrit, liste et clôture avec gains", () => {
-      const service = new CompetitionService(make());
+  describe(`${name}CompetitionStore`, () => {
+    it("persiste la définition, la preuve du ticket et le gagnant", () => {
+      let now = 1_200;
+      const store = make();
+      const service = new CompetitionService(store, () => now, () => true);
       service.create(COMP);
-      service.join("c1", "a");
-      service.join("c1", "b");
-      service.join("c1", "c");
-      expect(service.participants("c1").sort()).toEqual(["a", "b", "c"]);
-
-      const equities: Record<string, number> = { a: 100, b: 300, c: 200 };
-      const { payouts } = service.close("c1", (u) => equities[u] ?? 0);
-      expect(payouts.map((p) => p.userId)).toEqual(["b", "c", "a"]);
-      expect(payouts.reduce((s, p) => s + p.amount, 0)).toBeCloseTo(30);
-      expect(service.isClosed("c1")).toBe(true);
-    });
-
-    it("rejette la double inscription", () => {
-      const service = new CompetitionService(make());
-      service.create(COMP);
-      service.join("c1", "a");
-      expect(() => service.join("c1", "a")).toThrow(AlreadyJoinedError);
-    });
-
-    it("rejette le doublon de compétition", () => {
-      const service = new CompetitionService(make());
-      service.create(COMP);
-      expect(() => service.create(COMP)).toThrow();
-    });
-
-    it("interdit la double clôture (anti double paiement)", () => {
-      const service = new CompetitionService(make());
-      service.create(COMP);
-      service.join("c1", "a");
-      service.close("c1", () => 100);
-      expect(() => service.close("c1", () => 100)).toThrow(
-        CompetitionClosedError,
-      );
-    });
-
-    it("un provider NaN laisse la compétition réessayable", () => {
-      const service = new CompetitionService(make());
-      service.create(COMP);
-      service.join("c1", "a");
-      expect(() => service.close("c1", () => Number.NaN)).toThrow(
-        InvalidCompetitionError,
-      );
-      expect(service.isClosed("c1")).toBe(false);
-      expect(service.close("c1", () => 100).payouts).toHaveLength(1);
-    });
-
-    it("lève sur une compétition inconnue", () => {
-      const service = new CompetitionService(make());
-      expect(() => service.participants("nope")).toThrow(
-        CompetitionNotFoundError,
-      );
+      service.join(COMP.id, {
+        userId: "alice",
+        walletAddress: "rAlice",
+        paymentTxHash: "A".repeat(64),
+        entryEquity: 100,
+      });
+      expect(service.participants(COMP.id)).toEqual(["alice"]);
+      expect(store.hasPaymentTx("A".repeat(64))).toBe(true);
+      now = 2_001;
+      expect(service.close(COMP.id, () => 110)).toMatchObject({ pot: 0.01 });
+      expect(store.winner(COMP.id)).toBe("alice");
     });
   });
 }
+
+describe("migration du catalogue de démonstration", () => {
+  it("supprime l'ancien schéma dont les entrées n'avaient aucune preuve XRPL", () => {
+    const db = openDatabase(":memory:");
+    try {
+      db.exec(`
+        CREATE TABLE competitions (
+          id TEXT PRIMARY KEY,
+          buy_in REAL NOT NULL,
+          rake_ratio REAL NOT NULL,
+          payout_weights TEXT NOT NULL,
+          closed INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE entries (competition_id TEXT NOT NULL, user_id TEXT NOT NULL);
+        INSERT INTO competitions VALUES ('demo', 10, 0.1, '[1]', 0);
+        INSERT INTO entries VALUES ('demo', 'quant_viper');
+      `);
+      const store = new SqliteCompetitionStore(db);
+      expect(store.list()).toEqual([]);
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'entries'").get()).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+});

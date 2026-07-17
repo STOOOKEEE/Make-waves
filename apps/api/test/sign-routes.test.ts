@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { AttributionMetrics } from "@tide/xrpl";
+import { buildBuyInPayment, type AttributionMetrics } from "@tide/xrpl";
 import { buildServer } from "../src/http/server";
 import type { MetricsReader, ServerDeps } from "../src/http/server";
 import { PaperService } from "../src/services/paper-service";
@@ -47,9 +47,24 @@ class FakeApi implements XamanPayloadApi {
 }
 
 function baseDeps(): ServerDeps {
+  const competition = new CompetitionService();
+  const now = Date.now();
+  competition.create({
+    id: "cup",
+    nameEn: "Cup",
+    nameFr: "Coupe",
+    descriptionEn: "Paid",
+    descriptionFr: "Payée",
+    mode: "paper",
+    buyIn: 10,
+    rakeRatio: 0,
+    payoutWeights: [1],
+    startsAt: now - 1_000,
+    endsAt: now + 60_000,
+  });
   return {
     paper: new PaperService(1000),
-    competition: new CompetitionService(),
+    competition,
     getPrices: () => ({}),
   };
 }
@@ -58,6 +73,24 @@ function withSign(api: XamanPayloadApi): FastifyInstance {
   return buildServer({
     ...baseDeps(),
     sign: { api, sourceTag: SOURCE_TAG, prizePoolAddress: POOL },
+    competitionPayments: {
+      entryPayment: (account, competition) =>
+        buildBuyInPayment({
+          account,
+          destination: POOL,
+          amount: String(competition.buyIn * 1_000_000),
+          sourceTag: SOURCE_TAG,
+          competitionId: competition.id,
+        }),
+      verifyEntry: async () => undefined,
+      winnerPayout: () => buildBuyInPayment({
+        account: ACCOUNT,
+        destination: POOL,
+        amount: "1",
+        sourceTag: SOURCE_TAG,
+        competitionId: "cup",
+      }),
+    },
   });
 }
 
@@ -88,8 +121,8 @@ describe("routes de signature Xaman", () => {
     const api = new FakeApi(PAYLOAD);
     const res = await withSign(api).inject({
       method: "POST",
-      url: "/sign/buy-in",
-      payload: { account: ACCOUNT, amount: "10000000", competitionId: "cup" },
+      url: "/competitions/cup/entry/xaman",
+      payload: { account: ACCOUNT },
     });
     expect(res.statusCode).toBe(201);
     expect(res.json()).toEqual({
@@ -130,28 +163,28 @@ describe("routes de signature Xaman", () => {
   it("buy-in: 400 si le corps est invalide (account manquant)", async () => {
     const res = await withSign(new FakeApi(PAYLOAD)).inject({
       method: "POST",
-      url: "/sign/buy-in",
-      payload: { amount: "10000000", competitionId: "cup" },
+      url: "/competitions/cup/entry/xaman",
+      payload: {},
     });
     expect(res.statusCode).toBe(400);
   });
 
-  it("buy-in: 400 si le montant en drops n'est pas entier (rejet du builder)", async () => {
+  it("buy-in: ignore tout montant fourni par le client", async () => {
     const api = new FakeApi(PAYLOAD);
     const res = await withSign(api).inject({
       method: "POST",
-      url: "/sign/buy-in",
-      payload: { account: ACCOUNT, amount: "1.5", competitionId: "cup" },
+      url: "/competitions/cup/entry/xaman",
+      payload: { account: ACCOUNT, amount: "1.5" },
     });
-    expect(res.statusCode).toBe(400);
-    expect(api.lastTxjson).toBeUndefined(); // rejeté avant l'appel réseau
+    expect(res.statusCode).toBe(201);
+    expect(api.lastTxjson?.["Amount"]).toBe("10000000");
   });
 
   it("buy-in: 502 si Xaman refuse de créer le payload (null)", async () => {
     const res = await withSign(new FakeApi(null)).inject({
       method: "POST",
-      url: "/sign/buy-in",
-      payload: { account: ACCOUNT, amount: "10000000", competitionId: "cup" },
+      url: "/competitions/cup/entry/xaman",
+      payload: { account: ACCOUNT },
     });
     expect(res.statusCode).toBe(502);
   });
@@ -165,8 +198,8 @@ describe("routes de signature Xaman", () => {
     } as XamanCreatedPayload;
     const res = await withSign(new FakeApi(partial)).inject({
       method: "POST",
-      url: "/sign/buy-in",
-      payload: { account: ACCOUNT, amount: "10000000", competitionId: "cup" },
+      url: "/competitions/cup/entry/xaman",
+      payload: { account: ACCOUNT },
     });
     expect(res.statusCode).toBe(502);
     // Le détail de l'erreur amont ne fuite pas au client.

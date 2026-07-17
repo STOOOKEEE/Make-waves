@@ -57,15 +57,15 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 **[BC] Backend Paper & on-chain**
 - [ ] Modèle de données (User, PaperWallet, PaperOrder, Competition, Entry, LeaderboardSnapshot, MetricEvent) — cf. SPEC §5.
 - [x] Moteur Paper : portefeuille virtuel, ordres simulés au prix réel, calcul PnL. *(cœur pur `packages/core/paper`)*
-- [~] Moteur de compétitions : créer/rejoindre un tournoi, fenêtre, état, règles. *(calcul pool/rake/classement/payouts livré `packages/core/competition` ; création/état tournoi = backend, à faire)*
-- [~] Ancrage on-chain : rejoindre = payload `Payment` buy-in taggé (`SourceTag` + `Memo` id tournoi) vers le compte prize pool multisig. *(builder `buildBuyInPayment` livré `packages/xrpl` ; déclenchement Xaman = backend/front)*
+- [x] Moteur de compétitions : création opérateur locale, catalogue SQLite, fenêtre, entrées payées, classement depuis l'equity d'entrée, pool réelle et winner-takes-all sans rake. *(18/07 : anciens seeds et catalogue front supprimés)*
+- [x] Ancrage on-chain : ticket `Payment` taggé (`SourceTag` + `Memo` id tournoi) vers le compte prize pool multisig, signé GemWallet/Xaman puis vérifié dans un ledger validé avant inscription.
 - [~] Indexeur de métriques : observer les tx taggées en mainnet → `MetricEvent` (volume, comptes actifs **distincts**). *(agrégation `aggregateAttribution` livrée `packages/xrpl/metrics` ; lecture ledger temps réel = backend)*
 - [x] Validation stricte des entrées (montants, adresses, devises, params tx) avant tout payload. *(dans tous les moteurs/builders)*
 
 **[FE] UI Paper & compétitions**
 - [ ] Terminal Paper jouable (passer un ordre, voir PnL, historique).
 - [~] Leaderboard (classement PnL Paper). *(calcul `buildLeaderboard` livré `packages/core/leaderboard` ; UI à faire)*
-- [ ] Liste / page compétitions : rejoindre → déclenche le payload Xaman du buy-in.
+- [x] Liste / page compétitions : données API uniquement, états vides honnêtes, ticket GemWallet/Xaman et leaderboard réel.
 - [ ] Onboarding zéro friction (Xaman only, pas de signup email).
 
 **[GROWTH]**
@@ -81,7 +81,7 @@ Tâches bloquantes ou incertaines — si l'une casse, le projet change de forme.
 **[BC] Live & best execution**
 - [ ] Mode Live : construire `OfferCreate` taggé, signé Xaman, non-custodial.
 - [ ] Best execution basique : router carnet d'ordres vs pool AMM (XLS-30) sur 2-3 paires (dont RLUSD).
-- [ ] Clôture de tournoi : calcul classement off-chain → payouts `Payment` taggés multisig vers les N gagnants, moins le rake.
+- [~] Clôture de tournoi : rang #1 figé en DB → unique `Payment` taggé de 100 % de la pool, régénérable depuis la console locale. *(reste : faire signer et soumettre un payout réel par le quorum multisig)*
 - [ ] Suivi du volume Live taggé dans l'indexeur (vers Most Volume).
 - [ ] Gestion d'erreurs tx (échec, partial, timeout) sans avaler l'erreur.
 

@@ -334,26 +334,23 @@ export class TideApiHttp {
   }
 
   async joinCompetition(competitionId: string): Promise<{ txJson: unknown }> {
-    return await this.request<{ txJson: unknown }>(
+    const txJson = await this.request<unknown>(
       "POST",
-      `/competitions/${encodeURIComponent(competitionId)}/join`,
-      { body: { userId: this.userId } },
+      `/competitions/${encodeURIComponent(competitionId)}/entry/tx`,
+      { body: { account: this.userId } },
     );
+    return { txJson };
   }
 
   async getCompetitionLeaderboard(
     competitionId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _limit: number,
+    limit: number,
   ): Promise<readonly unknown[]> {
-    // _limit : apps/api n'a pas d'endpoint leaderboard dédié, on renvoie la
-    // liste des participants ; le MCP server peut classer côté client si besoin.
-    // Pas d'endpoint apps/api dédié pour l'instant — on renvoie la liste des
-    // participants ; le MCP server calcule le classement côté client si besoin.
-    return await this.request<readonly unknown[]>(
+    const entries = await this.request<readonly unknown[]>(
       "GET",
-      `/competitions/${encodeURIComponent(competitionId)}/participants`,
+      `/competitions/${encodeURIComponent(competitionId)}/leaderboard`,
     );
+    return entries.slice(0, limit);
   }
 
   // ---------- MandateBackend (HTTP — utilisé par loadContext) ----------
@@ -509,7 +506,8 @@ export function httpCompetitionBackend(api: TideApiHttp): CompetitionBackend {
     get: (id) => api.getCompetition(id),
     join: async (userId, competitionId) => {
       const r = await api.joinCompetition(competitionId);
-      return { txJson: r.txJson, userId };
+      void userId;
+      return { txJson: r.txJson };
     },
     getLeaderboard: (competitionId, limit) => api.getCompetitionLeaderboard(competitionId, limit),
   };

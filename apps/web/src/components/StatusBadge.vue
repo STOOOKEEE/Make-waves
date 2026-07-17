@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CompetitionStatus } from "../data/competitions";
+import type { CompetitionStatus } from "@tide/client";
 import { useI18n } from "../i18n/useI18n";
 
 /* Badge d'état de compétition : live (menthe + point clignotant), soon (bleu),
@@ -8,8 +8,8 @@ import { useI18n } from "../i18n/useI18n";
 const props = defineProps<{ status: CompetitionStatus }>();
 
 const { t } = useI18n({
-  en: { live: "Live", soon: "Soon", ended: "Ended" },
-  fr: { live: "En cours", soon: "À venir", ended: "Terminée" },
+  en: { live: "Live", upcoming: "Upcoming", ended: "Ended" },
+  fr: { live: "En cours", upcoming: "À venir", ended: "Terminée" },
 });
 </script>
 
@@ -43,7 +43,7 @@ const { t } = useI18n({
   background: var(--up);
   animation: bl 1.4s infinite;
 }
-.status.soon {
+.status.upcoming {
   background: rgba(79, 106, 255, 0.2);
   color: #aab8ff;
 }

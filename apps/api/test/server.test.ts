@@ -274,79 +274,68 @@ describe("markets", () => {
 describe("compétitions", () => {
   const comp = {
     id: "c1",
-    buyIn: 10,
+    nameEn: "Cup",
+    nameFr: "Coupe",
+    descriptionEn: "Paid competition",
+    descriptionFr: "Compétition payée",
+    mode: "paper" as const,
+    buyIn: 0.01,
     rakeRatio: 0,
-    payoutWeights: [0.5, 0.3, 0.2],
+    payoutWeights: [1],
+    startsAt: Date.now() - 1_000,
+    endsAt: Date.now() + 60_000,
   };
 
-  it("crée une compétition (201), 400 si invalide, 409 si doublon", async () => {
-    const ok = await app.inject({ method: "POST", url: "/competitions", payload: comp });
-    expect(ok.statusCode).toBe(201);
-
-    const bad = await app.inject({
-      method: "POST",
-      url: "/competitions",
-      payload: { ...comp, id: "c2", payoutWeights: [0.5, 0.3] },
-    });
-    expect(bad.statusCode).toBe(400);
-
-    const dup = await app.inject({ method: "POST", url: "/competitions", payload: comp });
-    expect(dup.statusCode).toBe(409);
+  it("ne seed aucune compétition et n'expose plus la création publique", async () => {
+    expect((await app.inject({ method: "GET", url: "/competitions" })).json()).toEqual([]);
+    const create = await app.inject({ method: "POST", url: "/competitions", payload: comp });
+    expect(create.statusCode).toBe(404);
   });
 
-  it("inscrit un joueur, 404 si compétition inconnue", async () => {
-    await app.inject({ method: "POST", url: "/competitions", payload: comp });
-    const ok = await app.inject({
+  it("n'inscrit qu'après vérification du ticket", async () => {
+    competition.create(comp);
+    paper.openAccount("a");
+    const paidApp = buildServer({
+      paper,
+      competition,
+      getPrices: () => prices,
+      competitionPayments: {
+        entryPayment: (account) => ({
+          TransactionType: "Payment",
+          Account: account,
+          Destination: "rPool",
+          Amount: "10000",
+          SourceTag: 1,
+          Memos: [],
+        }),
+        verifyEntry: async () => undefined,
+        winnerPayout: () => ({
+          TransactionType: "Payment",
+          Account: "rPool",
+          Destination: "rWinner",
+          Amount: "10000",
+        }),
+      },
+    });
+    const ok = await paidApp.inject({
       method: "POST",
       url: "/competitions/c1/join",
-      payload: { userId: "a" },
+      payload: { userId: "a", txHash: "A".repeat(64) },
     });
     expect(ok.statusCode).toBe(200);
-
-    const missing = await app.inject({
-      method: "POST",
-      url: "/competitions/zzz/join",
-      payload: { userId: "a" },
-    });
-    expect(missing.statusCode).toBe(404);
+    expect((await paidApp.inject({ method: "GET", url: "/competitions/c1" })).json())
+      .toMatchObject({ participants: 1, pot: 0.01 });
   });
 
-  it("clôture et calcule les gains (200)", async () => {
-    await app.inject({ method: "POST", url: "/competitions", payload: comp });
-    for (const u of ["a", "b"]) {
-      await app.inject({ method: "POST", url: "/accounts", payload: { userId: u } });
-      await app.inject({
-        method: "POST",
-        url: `/competitions/c1/join`,
-        payload: { userId: u },
-      });
-    }
-    // b se constitue plus d'equity
-    await app.inject({
-      method: "POST",
-      url: "/accounts/b/orders",
-      payload: order(100, 0.5),
-    });
-    prices = { XRP: 1 }; // b: 900 RLUSD + 100 XRP@1 = 1000 ; a: 1000
-    const res = await app.inject({ method: "POST", url: "/competitions/c1/close" });
-    expect(res.statusCode).toBe(200);
-    const body = res.json();
-    // 2 participants, 3 tiers : seuls tiers 1+2 versés (0.5+0.3)*20 = 16 ; reliquat 4.
-    expect(body.payouts.length).toBe(2);
-    const total = body.payouts.reduce(
-      (s: number, p: { amount: number }) => s + p.amount,
-      0,
-    );
-    expect(total).toBeCloseTo(16);
-    expect(body.undistributed).toBeCloseTo(4);
-  });
-
-  it("clôture d'une compétition inconnue -> 404", async () => {
+  it("refuse l'inscription si le runtime XRPL est absent", async () => {
+    competition.create(comp);
+    paper.openAccount("a");
     const res = await app.inject({
       method: "POST",
-      url: "/competitions/zzz/close",
+      url: "/competitions/c1/join",
+      payload: { userId: "a", txHash: "A".repeat(64) },
     });
-    expect(res.statusCode).toBe(404);
+    expect(res.statusCode).toBe(503);
   });
 });
 

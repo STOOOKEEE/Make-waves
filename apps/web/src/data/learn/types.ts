@@ -1,6 +1,6 @@
 /* ===== TIDE School — modèle de contenu éducatif =====
  * Articles/tutos bilingues, stockés en blocs typés (pas de markdown/HTML).
- * Même patron que data/competitions.ts : champs textuels en `Localized`
+ * Les champs textuels sont stockés en `Localized`
  * ({ en, fr }), résolus pour une langue via les helpers d'index.ts.
  * Les vues consomment la forme résolue `Article` (tout en `string`).
  */

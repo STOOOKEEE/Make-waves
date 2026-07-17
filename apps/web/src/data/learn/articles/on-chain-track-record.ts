@@ -143,8 +143,8 @@ export const onChainTrackRecord: RawArticle = {
       variant: "warn",
       title: { en: "How it works on Tide", fr: "Comment ça marche sur Tide" },
       text: {
-        en: "Your on-chain record comes from **Live** only, and Live is a real **spot** swap — **XRP against RLUSD**, nothing else. It's non-custodial: Tide never holds or moves your money, it prepares a bounded order (price and slippage limits included) and you sign or reject it in your own wallet. Live is **not** perp and has **no leverage** — that lives in Paper. There is **no fee on swaps**; Tide earns from poker-style tournament rake, not from your trades.",
-        fr: "Ton historique on-chain vient uniquement du **Live**, et le Live est un vrai swap **spot** — **XRP contre RLUSD**, rien d'autre. C'est non-custodial : Tide ne détient ni ne déplace jamais ton argent, il prépare un ordre borné (limites de prix et de slippage incluses) et tu le signes ou le refuses dans ton propre wallet. Le Live n'est **pas** du perp et n'a **aucun levier** — ça, c'est dans Paper. Il n'y a **aucune fee sur les swaps** ; Tide se rémunère sur le rake des tournois type poker, pas sur tes trades.",
+        en: "Your on-chain record comes from **Live** only, and Live is a real **spot** swap — **XRP against RLUSD**. Tide prepares a bounded order and you sign or reject it. Competition tickets are separate signed XRP Payments to a multisig prize pool; the current format gives the entire verified pool to rank #1 with no rake.",
+        fr: "Ton historique on-chain vient uniquement du **Live**, et le Live est un vrai swap **spot** — **XRP contre RLUSD**. Tide prépare un ordre borné que tu signes ou refuses. Les tickets de compétition sont des Payments XRP signés séparément vers un prize pool multisig ; le format actuel donne toute la pool vérifiée au rang #1, sans rake.",
       },
     },
     {

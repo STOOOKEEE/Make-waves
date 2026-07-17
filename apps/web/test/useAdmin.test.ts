@@ -87,6 +87,8 @@ function clientWithToken(
     }),
     reclaimWallet: async () => IDLE_JOB,
     reclaimAllWallets: async () => IDLE_JOB,
+    createCompetition: async (_token, input) => ({ id: input.id }),
+    closeCompetition: async () => ({ winner: null, pot: 0, payoutTx: null }),
   };
 }
 

@@ -59,6 +59,10 @@ export interface AppConfig {
   readonly accountStore?: AccountStore;
   /** Persistance des compétitions (in-memory par défaut, SQLite en prod). */
   readonly competitionStore?: CompetitionStore;
+  /** Construction et vérification on-chain des tickets de compétition. */
+  readonly competitionPayments?: import("./http/server").ServerDeps["competitionPayments"];
+  /** Scoring Live réel ; absent tant que l'indexeur PnL wallet n'est pas disponible. */
+  readonly getLiveCompetitionEquity?: (userId: string) => number;
   /** Source de prix on-chain optionnelle (compose avec le CEX si fournie). */
   readonly onchainPrices?: OnchainPriceProvider;
   /** Paramètres de composition CEX/on-chain (défaut si omis). */
@@ -161,7 +165,11 @@ export interface App {
  */
 export function createApp(config: AppConfig): App {
   const paper = config.paper ?? new PaperService(config.startingEquity, config.accountStore);
-  const competition = new CompetitionService(config.competitionStore);
+  const competition = new CompetitionService(
+    config.competitionStore,
+    () => Date.now(),
+    () => config.competitionPayments !== undefined,
+  );
   // Badges : montés dès qu'un store est fourni (affichage off-chain gratuit).
   // Le claim ON-CHAIN reste conditionné à l'issuer NFT (+ SourceTag) : sans eux,
   // `claim` renvoie 503, mais le statut/l'affichage marchent (mérite dérivé).
@@ -266,6 +274,12 @@ export function createApp(config: AppConfig): App {
   const app = buildServer({
     paper,
     competition,
+    ...(config.competitionPayments !== undefined
+      ? { competitionPayments: config.competitionPayments }
+      : {}),
+    ...(config.getLiveCompetitionEquity !== undefined
+      ? { getLiveCompetitionEquity: config.getLiveCompetitionEquity }
+      : {}),
     getPrices: () => cache.current(),
     getMarkets: config.markets !== undefined ? () => marketRows : undefined,
     getHistory,

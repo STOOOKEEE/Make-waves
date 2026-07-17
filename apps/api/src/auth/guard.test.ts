@@ -104,6 +104,13 @@ describe("authorize — propriété par body/query", () => {
     expect((await authorize(req({ method: "POST", routeUrl: "/exec/plan", body: { account: OTHER } }), resolvers)).ok).toBe(false);
   });
 
+  it("ticket de compétition : préparation et confirmation restent liées au wallet authentifié", async () => {
+    expect((await authorize(req({ method: "POST", routeUrl: "/competitions/:id/entry/tx", body: { account: ME } }), resolvers)).ok).toBe(true);
+    expect((await authorize(req({ method: "POST", routeUrl: "/competitions/:id/entry/xaman", body: { account: OTHER } }), resolvers)).ok).toBe(false);
+    expect((await authorize(req({ method: "POST", routeUrl: "/competitions/:id/join", body: { userId: ME, txHash: "A".repeat(64) } }), resolvers)).ok).toBe(true);
+    expect((await authorize(req({ method: "POST", routeUrl: "/competitions/:id/join", body: { userId: OTHER, txHash: "A".repeat(64) } }), resolvers)).ok).toBe(false);
+  });
+
   it("claim de badge : body.userId doit être soi", async () => {
     expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: OTHER } }), resolvers)).ok).toBe(false);
   });

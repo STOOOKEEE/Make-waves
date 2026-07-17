@@ -125,7 +125,7 @@ const A: Record<string, string[]> = {
     "     ┌──┐ ███ ┌──┐        ",
     "     │ 2│ ███ │ 3│        ",
     "    ─┴──┴─███─┴──┴─       ",
-    "   pool · rake · split    ",
+    " ticket · pool · winner  ",
   ],
   "on-chain-track-record": [
     "  ┌───┐    ┌───┐    ┌───┐ ",

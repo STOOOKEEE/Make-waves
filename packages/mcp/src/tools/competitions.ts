@@ -1,15 +1,15 @@
 // Outils compétitions — délégateurs vers ctx.competitions (impl dans @tide/api).
 // Tous auditent via recordAction (traçabilité LLM → quelle compétition a été
-// lue/rejoint). `join_competition` est l'unique outil d'écriture : il NE signe
-// PAS automatiquement (Xaman requis) — il renvoie le txJson du Payment de buy-in
-// que l'user signe de son côté.
+// lue/préparée). `join_competition` ne crée jamais une entrée directement : il
+// renvoie le Payment exact à signer. L'inscription n'existe qu'après signature
+// puis confirmation du hash via l'API Tide.
 import { McpError } from "../lib/errors";
 import { recordAction } from "../lib/audit";
 import { clampLimit } from "./market";
 import type { ToolDef } from "./index";
 
 // ID de compétition / compétition tolérant (lettres/chiffres/_/-/., 1..64 chars) —
-// les compétitions réelles sont des ids courts (`demo-1`, `season-01`), mais on
+// les compétitions réelles sont des ids courts (`cup-2026`, `season-01`), mais on
 // laisse une marge pour les slugs futurs.
 const ID_RE = /^[A-Z0-9_.-]{1,64}$/i;
 
@@ -70,7 +70,7 @@ export const getCompetitionTool: ToolDef = {
 export const joinCompetitionTool: ToolDef = {
   name: "join_competition",
   description:
-    "Join a competition. Returns the unsigned Payment txJson (buy-in) — the user MUST sign it via Xaman. The agent does NOT auto-sign.",
+    "Prepare a competition entry. Returns the exact unsigned XRP Payment; the user must sign it, and Tide only joins after the validated hash is confirmed.",
   inputSchema: {
     type: "object",
     properties: {
