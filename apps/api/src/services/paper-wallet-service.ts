@@ -8,8 +8,8 @@ import {
 import type { XrplCustodialWalletGateway } from "@tide/xrpl";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 
-/** Funding sûr : base reserve 1 XRP + première NFTokenPage 0.2 XRP + frais. */
-export const PAPER_WALLET_FUNDING_DROPS = "1250000";
+/** Funding minimal : base reserve 1 XRP + première NFTokenPage 0.2 XRP + 0.01 XRP de frais. */
+export const PAPER_WALLET_FUNDING_DROPS = "1210000";
 
 export class PaperWalletFundingFailedError extends Error {
   constructor() {

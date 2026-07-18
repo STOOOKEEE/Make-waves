@@ -49,6 +49,7 @@ const BADGES = [
   { code: "ten_trades", label: "Ten Trades" },
   { code: "first_competition", label: "First Competition" },
 ] as const;
+const PAPER_WALLET_FUNDING_XRP = 1.21;
 const paperWallets = computed<AdminWalletDto[]>(() => {
   if (overview.value === null) return [];
   const stored = overview.value.wallets.filter((wallet) => wallet.kind === "paper");
@@ -150,7 +151,7 @@ function statusLabel(status: AdminWalletDto["status"]): string {
     not_created: "Non créé",
     pending_funding: "Créé · non financé",
     funding_in_progress: "Funding en cours",
-    funded: "Financé · 1,25 XRP",
+    funded: "Financé · 1,21 XRP",
     funding_failed: "Funding à vérifier",
     reclaimed: "Supprimé · récupéré",
   };
@@ -188,7 +189,7 @@ async function createSelectedWallets(): Promise<void> {
 async function fundSelectedWallets(): Promise<void> {
   const ids = selectedFundableIds.value;
   if (ids.length === 0) return;
-  const amount = ids.length * 1.25;
+  const amount = ids.length * PAPER_WALLET_FUNDING_XRP;
   if (!window.confirm(`Financer ${String(ids.length)} wallets Mainnet pour ${amount.toFixed(2)} XRP maximum ?`)) return;
   await fundUserWallets(ids, `FUND ${String(ids.length)} MAINNET WALLETS`);
 }
@@ -306,7 +307,7 @@ async function submitCompetition(): Promise<void> {
             Créer {{ selectedMissingIds.length }} wallet(s) manquant(s)
           </button>
           <button type="button" class="fund" :disabled="loading || walletJob?.enabled !== true || selectedFundableIds.length === 0" @click="fundSelectedWallets">
-            Financer {{ selectedFundableIds.length }} éligible(s) · {{ (selectedFundableIds.length * 1.25).toFixed(2) }} XRP
+            Financer {{ selectedFundableIds.length }} éligible(s) · {{ (selectedFundableIds.length * PAPER_WALLET_FUNDING_XRP).toFixed(2) }} XRP
           </button>
         </div>
 
@@ -401,7 +402,7 @@ async function submitCompetition(): Promise<void> {
       <section class="admin__wallet-provision">
         <h2>Création manuelle de wallets techniques</h2>
         <p>Les utilisateurs de tidetrade.xyz obtiennent automatiquement leur wallet au premier trade Paper. Ce contrôle crée seulement des wallets techniques supplémentaires pour les tests opérateur.</p>
-        <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,25 XRP sur {{ walletNetwork }}.</p>
+        <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,21 XRP sur {{ walletNetwork }}.</p>
         <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper désactivé : configure les variables <code>TIDE_PAPER_WALLET_*</code>.</p>
         <div class="admin__bar">
           <label for="provision-count">Nombre</label>

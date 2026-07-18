@@ -3,7 +3,7 @@
 Ce runtime associe un wallet XRPL custodial à chaque compte Tide Paper :
 
 1. `POST /accounts/ensure` génère une adresse et chiffre sa seed AES-256-GCM dans la DB privée. Aucun XRP n'est envoyé à ce stade et le compte n'existe pas encore sur le ledger.
-2. Le premier fill Paper appelle le provisionnement idempotent. Le funder dédié envoie exactement 1,25 XRP.
+2. Le premier fill Paper appelle le provisionnement idempotent. Le funder dédié envoie exactement 1,21 XRP (1 XRP de réserve de base, 0,2 XRP pour la première page NFT et 0,01 XRP de marge de frais).
 3. L'issuer dédié mint le NFT XLS-20 `First Trade`, crée une offre à 0 XRP réservée au wallet, puis l'API l'accepte avec la seed déchiffrée uniquement en mémoire.
 4. La console admin privée permet de mint/mettre un NFT individuel, de brûler les NFT, puis d'exécuter `AccountDelete` vers une adresse de récupération séparée.
 

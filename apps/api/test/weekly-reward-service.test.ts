@@ -62,6 +62,7 @@ describe("PaperWalletService", () => {
   });
 
   it("crée, chiffre et finance une seule fois le wallet au minimum NFT sûr", async () => {
+    expect(PAPER_WALLET_FUNDING_DROPS).toBe("1210000");
     const store = new InMemoryPaperWalletStore();
     const gateway = new FakeGateway();
     const svc = new PaperWalletService({

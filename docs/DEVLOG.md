@@ -2351,3 +2351,21 @@ les routes restent derrière le token admin et le serveur privé.
 manquants), la sélection globale active correctement les opérations éligibles,
 et aucun appel financier n'a été exécuté pendant la vérification. Typecheck,
 lint, 971 tests, build web et audit des dépendances sont verts.
+
+## 2026-07-18 — Issuer NFT Mainnet dédié et funding minimal à 1,21 XRP
+
+**Issuer séparé.** Un nouveau compte NFT Mainnet a été généré hors ligne et sa
+seed est conservée dans le Trousseau macOS (`tide-mainnet-nft-issuer-v1`), jamais
+dans Git ni dans le transcript. Le compte a été activé avec 1,50 XRP depuis le
+funder Mainnet retrouvé, via un Payment validé portant le SourceTag officiel
+`2606210009` (tx `B74109F1777ECC1A839492B3119C48D811107D72937273C9B2388C92A71DEB52`).
+
+**Budget utilisateurs.** La réserve validée du ledger est de 1 XRP par compte
+et 0,2 XRP pour la première `NFTokenPage`. Le funding automatique passe donc de
+1,25 à 1,21 XRP : 1,20 XRP de réserve et 0,01 XRP de marge pour les frais. Avec
+environ 202 XRP restants dans le funder, cela permet au maximum environ 166
+wallets avant marge d'exploitation ; atteindre 300 comptes nécessite davantage
+de XRP.
+
+**Vérifié.** Transaction `tesSUCCESS` et validée, issuer à 1,50 XRP, funder à
+environ 202 XRP. Tests ciblés, typecheck API/web, lint et build web verts.
