@@ -88,7 +88,7 @@ const { t } = useI18n({
     liveXrpOnly: "Live: XRP only",
     liveNotConfigured: "Live not configured",
     virtualBalance: "Virtual balance",
-    testnetWallet: "Testnet wallet",
+    custodialWallet: "Custodial wallet",
     firstTradeNft: "First Trade NFT",
     paperSession: "Paper session",
     realBadge: "REAL FUNDS",
@@ -169,7 +169,7 @@ const { t } = useI18n({
     liveXrpOnly: "Live : XRP uniquement",
     liveNotConfigured: "Live non configuré",
     virtualBalance: "Solde virtuel",
-    testnetWallet: "Wallet Testnet",
+    custodialWallet: "Wallet custodial",
     firstTradeNft: "NFT First Trade",
     paperSession: "Session Paper",
     realBadge: "ARGENT RÉEL",
@@ -241,7 +241,8 @@ function paperIdentityLabel(): string {
     return id === "" ? "" : `${t("paperSession")} ${shorten(id)}`;
   }
   const nft = reward.rewardStatus === "claimed" ? "✓" : "…";
-  return `${t("testnetWallet")} ${shorten(reward.walletAddress)} · ${t("firstTradeNft")} ${nft}`;
+  const network = reward.network === null ? "XRPL" : reward.network;
+  return `${t("custodialWallet")} ${network} ${shorten(reward.walletAddress)} · ${t("firstTradeNft")} ${nft}`;
 }
 /** Nom lisible du wallet connecté. */
 function walletKind(): string {

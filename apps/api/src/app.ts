@@ -90,6 +90,8 @@ export interface AppConfig {
   readonly operatorUserIds?: readonly string[];
   /** Wallets Paper visibles dans la console locale, sans aucune seed. */
   readonly paperWalletStore?: Pick<PaperWalletStore, "list">;
+  /** Réseau des wallets custodiaux affichés dans la console. */
+  readonly paperWalletNetwork?: "testnet" | "mainnet";
   /** Etat du banc de charge Paper, visible seulement dans la console admin. */
   readonly simulation?: ArenaSimulationStatusReader;
   /** Runner Testnet explicitement déclenché depuis la console admin. */
@@ -123,6 +125,8 @@ export interface AppConfig {
   readonly weeklyRewards?: WeeklyRewardService;
   /** Wallet Testnet + badge automatique du premier trade. */
   readonly firstTradeRewards?: import("./services/first-trade-reward-service").FirstTradeRewardService;
+  /** Génère l'adresse custodiale à l'ouverture, sans la financer. */
+  readonly paperWallets?: Pick<import("./services/paper-wallet-service").PaperWalletService, "ensureCreated">;
   /** SourceTag d'attribution des mints. Requis avec `nftIssuer`. */
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées NFT. */
@@ -206,6 +210,7 @@ export function createApp(config: AppConfig): App {
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
             paperWallets: config.paperWalletStore,
+            paperWalletNetwork: config.paperWalletNetwork,
             simulation: config.simulation,
             testnetE2E: config.testnetE2E,
           }),
@@ -300,6 +305,7 @@ export function createApp(config: AppConfig): App {
     badgeService,
     weeklyRewards: config.weeklyRewards,
     firstTradeRewards: config.firstTradeRewards,
+    paperWallets: config.paperWallets,
     ...(admin !== undefined && config.exposeAdminOnPublicServer !== false ? { admin } : {}),
     auth: config.auth,
     corsOrigin: config.corsOrigin,

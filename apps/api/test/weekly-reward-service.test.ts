@@ -42,6 +42,25 @@ class FakeIssuer implements NftIssuer {
 }
 
 describe("PaperWalletService", () => {
+  it("crée le wallet chiffré sans le financer avant le premier trade", async () => {
+    const store = new InMemoryPaperWalletStore();
+    const gateway = new FakeGateway();
+    const svc = new PaperWalletService({
+      store,
+      gateway,
+      masterKeyHex: MASTER,
+      masterKeyId: "v1",
+      now: () => 100,
+    });
+
+    const wallet = await svc.ensureCreated("paper:arrival");
+
+    expect(wallet.status).toBe("pending_funding");
+    expect(wallet.fundingTxHash).toBeNull();
+    expect(wallet.fundedAt).toBeNull();
+    expect(gateway.funding).toEqual([]);
+  });
+
   it("crée, chiffre et finance une seule fois le wallet au minimum NFT sûr", async () => {
     const store = new InMemoryPaperWalletStore();
     const gateway = new FakeGateway();
@@ -62,7 +81,26 @@ describe("PaperWalletService", () => {
     expect(first.encryptedSeed).not.toContain('"s');
     expect(await svc.decryptSeed(first)).toMatch(/^s/);
     expect(second).toEqual(first);
+    expect(first.fundedAt).toBe(100);
     expect(gateway.funding).toEqual([{ address: first.address, drops: PAPER_WALLET_FUNDING_DROPS }]);
+  });
+
+  it("applique le plafond total avant tout nouveau Payment", async () => {
+    const store = new InMemoryPaperWalletStore();
+    const gateway = new FakeGateway();
+    const svc = new PaperWalletService({
+      store,
+      gateway,
+      masterKeyHex: MASTER,
+      masterKeyId: "v1",
+      network: "mainnet",
+      maxFundedWallets: 1,
+      maxFundedWalletsPerDay: 1,
+      now: () => Date.UTC(2026, 6, 18, 12),
+    });
+    await svc.ensureFunded("paper:first");
+    await expect(svc.ensureFunded("paper:second")).rejects.toThrow(/Plafond/);
+    expect(gateway.funding).toHaveLength(1);
   });
 });
 

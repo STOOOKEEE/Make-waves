@@ -35,6 +35,10 @@ const KEYS = [
   "TIDE_PAPER_WALLET_FUNDER_SEED",
   "TIDE_PAPER_WALLET_KEY_MASTER",
   "TIDE_PAPER_WALLET_KEY_ID",
+  "TIDE_PAPER_WALLET_MAINNET_ACK",
+  "TIDE_PAPER_WALLET_RECOVERY_ADDRESS",
+  "TIDE_PAPER_WALLET_MAX_WALLETS",
+  "TIDE_PAPER_WALLET_MAX_DAILY",
 ] as const;
 
 afterEach(() => {
@@ -127,14 +131,27 @@ describe("readPaperWalletRuntimeConfig", () => {
     process.env["TIDE_XRPL_NETWORK"] = "mainnet";
     expect(readPaperWalletRuntimeConfig()).toMatchObject({
       network: "testnet",
-      sourceTag: 123,
       serverUrl: "wss://s.altnet.rippletest.net:51233",
     });
   });
 
-  it("refuse Mainnet et toute configuration partielle", () => {
+  it("active Mainnet uniquement avec acknowledgement, récupération et plafonds", () => {
     configure("mainnet");
-    expect(() => readPaperWalletRuntimeConfig()).toThrow(/testnet/);
+    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://xrplcluster.com";
+    expect(() => readPaperWalletRuntimeConfig()).toThrow(/MAINNET_ACK/);
+    process.env["TIDE_PAPER_WALLET_MAINNET_ACK"] = "I_UNDERSTAND_THIS_SPENDS_REAL_XRP";
+    process.env["TIDE_PAPER_WALLET_RECOVERY_ADDRESS"] = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
+    process.env["TIDE_PAPER_WALLET_MAX_WALLETS"] = "300";
+    process.env["TIDE_PAPER_WALLET_MAX_DAILY"] = "25";
+    expect(readPaperWalletRuntimeConfig()).toMatchObject({
+      network: "mainnet",
+      maxFundedWallets: 300,
+      maxFundedWalletsPerDay: 25,
+      recoveryAddress: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
+    });
+  });
+
+  it("refuse toute configuration partielle", () => {
     for (const k of KEYS) delete process.env[k];
     process.env["TIDE_PAPER_WALLET_FUNDER_SEED"] = validSeed;
     expect(() => readPaperWalletRuntimeConfig()).toThrow(/incomplète/);

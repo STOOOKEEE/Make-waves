@@ -318,7 +318,10 @@ async function main(): Promise<void> {
       : undefined;
   const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
   const firstTradeImageUri = env.readFirstTradeImageUri();
-  const paperWalletStore = new SqlitePaperWalletStore(db);
+  const paperWalletStore = new SqlitePaperWalletStore(
+    db,
+    paperWalletRuntime?.network ?? "testnet",
+  );
   const paperRewardRuntime =
     paperWalletRuntime === undefined
       ? undefined
@@ -333,20 +336,41 @@ async function main(): Promise<void> {
             funderSeed: paperWalletRuntime.funderSeed,
             sourceTag: paperWalletRuntime.sourceTag,
           });
+          if (paperWalletRuntime.network === "mainnet") {
+            const recovery = paperWalletRuntime.recoveryAddress;
+            if (issuer.issuerAddress === gateway.funderAddress) {
+              throw new Error("Le funder et l'issuer Paper Mainnet doivent être deux comptes distincts");
+            }
+            if (
+              recovery === undefined ||
+              recovery === issuer.issuerAddress ||
+              recovery === gateway.funderAddress
+            ) {
+              throw new Error(
+                "L'adresse de récupération Mainnet doit être distincte du funder et de l'issuer",
+              );
+            }
+          }
           const wallets = new PaperWalletService({
             store: paperWalletStore,
             gateway,
             masterKeyHex: paperWalletRuntime.masterKeyHex,
             masterKeyId: paperWalletRuntime.masterKeyId,
+            network: paperWalletRuntime.network,
+            maxFundedWallets: paperWalletRuntime.maxFundedWallets,
+            maxFundedWalletsPerDay: paperWalletRuntime.maxFundedWalletsPerDay,
           });
           return { gateway, issuer, wallets };
         })();
-  const paperBadgeRewardStore = new SqlitePaperBadgeRewardStore(db);
+  const paperBadgeRewardStore = new SqlitePaperBadgeRewardStore(
+    db,
+    paperWalletRuntime?.network ?? "testnet",
+  );
   const weeklyRewards =
     paperRewardRuntime === undefined
       ? undefined
       : new WeeklyRewardService({
-          store: new SqliteWeeklyRewardStore(db),
+          store: new SqliteWeeklyRewardStore(db, paperWalletRuntime?.network ?? "testnet"),
           wallets: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
@@ -361,6 +385,7 @@ async function main(): Promise<void> {
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
           metadataBaseUrl: env.readPublicBaseUrl(),
+          network: paperWalletRuntime?.network ?? "testnet",
         });
   const paperWalletAdmin =
     paperWalletRuntime === undefined || paperRewardRuntime === undefined
@@ -371,7 +396,9 @@ async function main(): Promise<void> {
           wallets: paperRewardRuntime.wallets,
           provisioner: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
-          issuerAddress: paperRewardRuntime.issuer.issuerAddress,
+          recoveryAddress:
+            paperWalletRuntime.recoveryAddress ?? paperRewardRuntime.issuer.issuerAddress,
+          network: paperWalletRuntime.network,
           gateway: new XrplPaperWalletAdminGateway(
             paperWalletRuntime.serverUrl,
             paperWalletRuntime.sourceTag,
@@ -526,6 +553,7 @@ async function main(): Promise<void> {
     badgeStore,
     weeklyRewards,
     firstTradeRewards,
+    paperWallets: paperRewardRuntime?.wallets,
     sourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
     firstTradeImageUri,
@@ -535,6 +563,7 @@ async function main(): Promise<void> {
     exposeAdminOnPublicServer: publicAdminToken !== undefined,
     operatorUserIds: env.readOperatorUserIds(),
     paperWalletStore,
+    paperWalletNetwork: paperWalletRuntime?.network,
     simulation: arenaSimulation,
     testnetE2E,
     paperWalletAdmin,

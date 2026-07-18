@@ -40,6 +40,7 @@ const EMPTY: AdminOverviewDto = {
 };
 const IDLE_JOB: AdminReclaimJobDto = {
   enabled: false,
+  network: "testnet",
   id: null,
   state: "idle",
   total: 0,

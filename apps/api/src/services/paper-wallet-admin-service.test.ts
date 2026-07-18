@@ -19,6 +19,7 @@ const WALLET: PaperWallet = {
   masterKeyId: "v1",
   status: "funded",
   fundingTxHash: "funding",
+  fundedAt: 1,
   createdAt: 1,
 };
 
@@ -68,6 +69,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
         masterKeyId: "v1",
         status: "funded",
         fundingTxHash: `fund-${userId}`,
+        fundedAt: 2,
         createdAt: 2,
       };
       await store.create(wallet);
@@ -80,7 +82,8 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     wallets: { decryptSeed: vi.fn(async () => "sTestSeed") },
     provisioner,
     issuer,
-    issuerAddress: ISSUER_ADDRESS,
+    recoveryAddress: ISSUER_ADDRESS,
+    network: "testnet",
     gateway,
     metadataBaseUrl: "https://api.test",
     sleep: async () => undefined,

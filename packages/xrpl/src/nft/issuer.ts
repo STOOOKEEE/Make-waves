@@ -65,6 +65,8 @@ export class XrplNftIssuer implements NftIssuer {
   private readonly wallet: Wallet;
   private readonly sourceTag: number;
   private readonly clientFactory: () => IssuerLedgerClient;
+  /** Un compte XRPL n'a qu'une Sequence courante : les mints sont séquentiels. */
+  private issuanceTail: Promise<void> = Promise.resolve();
 
   constructor(deps: XrplNftIssuerDeps) {
     assertAttributionTag(deps.sourceTag);
@@ -80,6 +82,14 @@ export class XrplNftIssuer implements NftIssuer {
   }
 
   async issueBadge(params: {
+    uri: string;
+    taxon: number;
+    destination: string;
+  }): Promise<NftIssueResult> {
+    return this.withIssuanceLock(() => this.issueBadgeOnce(params));
+  }
+
+  private async issueBadgeOnce(params: {
     uri: string;
     taxon: number;
     destination: string;
@@ -113,6 +123,20 @@ export class XrplNftIssuer implements NftIssuer {
       };
     } finally {
       await client.disconnect();
+    }
+  }
+
+  private async withIssuanceLock<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.issuanceTail;
+    let release = (): void => undefined;
+    this.issuanceTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
     }
   }
 

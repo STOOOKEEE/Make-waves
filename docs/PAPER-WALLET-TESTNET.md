@@ -1,9 +1,9 @@
 # Wallet Paper + NFT First Trade — XRPL Testnet
 
-Ce parcours est un test end-to-end, **strictement Testnet**. Le serveur refuse
-de démarrer si le provisioning est configuré avec
-`TIDE_PAPER_WALLET_NETWORK=mainnet`.
-Il ne doit pas être présenté comme une population Mainnet réelle.
+Ce document décrit le profil de test end-to-end **strictement Testnet**. Le
+runtime produit possède désormais un profil Mainnet séparé et explicitement
+protégé, documenté dans [`PAPER-WALLET-MAINNET.md`](PAPER-WALLET-MAINNET.md).
+Les tables et secrets des deux réseaux ne sont jamais partagés.
 
 ## Parcours
 

@@ -49,6 +49,7 @@ export interface AdminWalletRow {
   readonly userId: string | null;
   readonly live: boolean;
   readonly status: PaperWallet["status"] | null;
+  readonly network: "testnet" | "mainnet" | null;
 }
 
 export interface AdminSegmentTotals {
@@ -91,6 +92,7 @@ export interface AdminServiceDeps {
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
   readonly paperWallets?: Pick<PaperWalletStore, "list">;
+  readonly paperWalletNetwork?: "testnet" | "mainnet";
   readonly simulation?: ArenaSimulationStatusReader;
   readonly testnetE2E?: TestnetE2ERunner;
 }
@@ -190,6 +192,7 @@ export class AdminService {
         userId: a.userId,
         live: true,
         status: null,
+        network: null,
       }));
     const paperWallets = await this.deps.paperWallets?.list() ?? [];
     wallets.push(...paperWallets.map((wallet) => ({
@@ -199,6 +202,7 @@ export class AdminService {
       userId: wallet.userId,
       live: false,
       status: wallet.status,
+      network: this.deps.paperWalletNetwork ?? "testnet",
     })));
     if (this.deps.prizePoolAddress !== null) {
       wallets.push({
@@ -208,6 +212,7 @@ export class AdminService {
         userId: null,
         live: true,
         status: null,
+        network: null,
       });
     }
     return wallets;

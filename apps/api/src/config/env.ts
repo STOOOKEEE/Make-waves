@@ -298,14 +298,19 @@ export function readAgentKeyMaster(): string | undefined {
 
 /** Configuration volontairement complète du wallet Paper financé. */
 export interface PaperWalletRuntimeConfig {
-  readonly network: "testnet";
+  readonly network: XrplNetwork;
   readonly serverUrl: string;
   readonly sourceTag: number;
   readonly issuerSeed: string;
   readonly funderSeed: string;
   readonly masterKeyHex: string;
   readonly masterKeyId: string;
+  readonly recoveryAddress: string | undefined;
+  readonly maxFundedWallets: number | undefined;
+  readonly maxFundedWalletsPerDay: number | undefined;
 }
+
+export const PAPER_WALLET_MAINNET_ACK = "I_UNDERSTAND_THIS_SPENDS_REAL_XRP";
 
 /**
  * Runtime custodial isolé du runtime Live : même si Tide cible Mainnet, ce
@@ -319,6 +324,9 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   const issuerSeed = optional("TIDE_PAPER_WALLET_ISSUER_SEED");
   const funderSeed = optional("TIDE_PAPER_WALLET_FUNDER_SEED");
   const masterKeyHex = optional("TIDE_PAPER_WALLET_KEY_MASTER");
+  const recoveryAddress = optional("TIDE_PAPER_WALLET_RECOVERY_ADDRESS");
+  const rawMaxWallets = optional("TIDE_PAPER_WALLET_MAX_WALLETS");
+  const rawMaxDaily = optional("TIDE_PAPER_WALLET_MAX_DAILY");
   const activation = [
     network,
     serverUrl,
@@ -326,6 +334,10 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     issuerSeed,
     funderSeed,
     masterKeyHex,
+    recoveryAddress,
+    rawMaxWallets,
+    rawMaxDaily,
+    optional("TIDE_PAPER_WALLET_MAINNET_ACK"),
   ];
   if (activation.every((value) => value === undefined)) return undefined;
   if (
@@ -337,11 +349,11 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     masterKeyHex === undefined
   ) {
     throw new Error(
-      "Configuration wallet Paper Testnet incomplète: réseau, WSS, SourceTag, issuer, funder et clé maître sont requis",
+      "Configuration wallet Paper incomplète: réseau, WSS, SourceTag, issuer, funder et clé maître sont requis",
     );
   }
-  if (network !== "testnet") {
-    throw new Error("TIDE_PAPER_WALLET_NETWORK doit être testnet");
+  if (network !== "testnet" && network !== "mainnet") {
+    throw new Error("TIDE_PAPER_WALLET_NETWORK doit être testnet ou mainnet");
   }
   if (!/^wss?:\/\//.test(serverUrl)) {
     throw new Error("TIDE_PAPER_WALLET_WSS_URL doit être une URL ws:// ou wss://");
@@ -360,6 +372,47 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   if (!/^[0-9a-fA-F]{64}$/.test(masterKeyHex)) {
     throw new Error("TIDE_PAPER_WALLET_KEY_MASTER doit contenir 64 caractères hexadécimaux");
   }
+  if (network === "testnet" && !/altnet|testnet/i.test(serverUrl)) {
+    throw new Error("Le runtime Paper Testnet doit cibler un endpoint WSS Testnet");
+  }
+  if (network === "mainnet") {
+    if (/altnet|testnet|devnet/i.test(serverUrl)) {
+      throw new Error("Le runtime Paper Mainnet ne peut pas cibler un endpoint de test");
+    }
+    if (optional("TIDE_PAPER_WALLET_MAINNET_ACK") !== PAPER_WALLET_MAINNET_ACK) {
+      throw new Error(
+        `TIDE_PAPER_WALLET_MAINNET_ACK doit valoir ${PAPER_WALLET_MAINNET_ACK}`,
+      );
+    }
+    if (recoveryAddress === undefined) {
+      throw new Error("TIDE_PAPER_WALLET_RECOVERY_ADDRESS est requis en Mainnet");
+    }
+    assertValidAddress(recoveryAddress, "TIDE_PAPER_WALLET_RECOVERY_ADDRESS");
+    if (rawMaxWallets === undefined || rawMaxDaily === undefined) {
+      throw new Error(
+        "TIDE_PAPER_WALLET_MAX_WALLETS et TIDE_PAPER_WALLET_MAX_DAILY sont requis en Mainnet",
+      );
+    }
+  }
+  const maxFundedWallets = readOptionalBoundedInteger(
+    "TIDE_PAPER_WALLET_MAX_WALLETS",
+    rawMaxWallets,
+    1,
+    10_000,
+  );
+  const maxFundedWalletsPerDay = readOptionalBoundedInteger(
+    "TIDE_PAPER_WALLET_MAX_DAILY",
+    rawMaxDaily,
+    1,
+    1_000,
+  );
+  if (
+    maxFundedWallets !== undefined &&
+    maxFundedWalletsPerDay !== undefined &&
+    maxFundedWalletsPerDay > maxFundedWallets
+  ) {
+    throw new Error("TIDE_PAPER_WALLET_MAX_DAILY ne peut pas dépasser le plafond total");
+  }
   return {
     network,
     serverUrl,
@@ -368,7 +421,24 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     funderSeed,
     masterKeyHex,
     masterKeyId: optional("TIDE_PAPER_WALLET_KEY_ID") ?? "v1",
+    recoveryAddress,
+    maxFundedWallets,
+    maxFundedWalletsPerDay,
   };
+}
+
+function readOptionalBoundedInteger(
+  name: string,
+  raw: string | undefined,
+  minimum: number,
+  maximum: number,
+): number | undefined {
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} doit être un entier entre ${String(minimum)} et ${String(maximum)}`);
+  }
+  return value;
 }
 
 /** Modèle Claude par défaut pour le chat agent (Tâche 27). Surchargeable via

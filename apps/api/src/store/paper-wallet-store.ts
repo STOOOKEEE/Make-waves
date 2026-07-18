@@ -11,6 +11,7 @@ export interface PaperWallet {
     | "funding_failed"
     | "reclaimed";
   readonly fundingTxHash: string | null;
+  readonly fundedAt: number | null;
   readonly createdAt: number;
 }
 
@@ -20,9 +21,11 @@ export interface PaperWalletStore {
   create(wallet: PaperWallet): Promise<void>;
   /** Transition atomique pending → in-progress. */
   markFundingInProgress(userId: string): Promise<boolean>;
-  markFunded(userId: string, fundingTxHash: string): Promise<void>;
+  markFunded(userId: string, fundingTxHash: string, fundedAt: number): Promise<void>;
   markFundingFailed(userId: string): Promise<void>;
   markReclaimed(userId: string): Promise<void>;
+  countFunded(): Promise<number>;
+  countFundedSince(timestamp: number): Promise<number>;
 }
 
 export class InMemoryPaperWalletStore implements PaperWalletStore {
@@ -40,10 +43,10 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
     if (!this.wallets.has(wallet.userId)) this.wallets.set(wallet.userId, wallet);
   }
 
-  async markFunded(userId: string, fundingTxHash: string): Promise<void> {
+  async markFunded(userId: string, fundingTxHash: string, fundedAt: number): Promise<void> {
     const current = this.wallets.get(userId);
     if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
-    this.wallets.set(userId, { ...current, status: "funded", fundingTxHash });
+    this.wallets.set(userId, { ...current, status: "funded", fundingTxHash, fundedAt });
   }
 
   async markFundingInProgress(userId: string): Promise<boolean> {
@@ -64,5 +67,15 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
     const current = this.wallets.get(userId);
     if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
     this.wallets.set(userId, { ...current, status: "reclaimed" });
+  }
+
+  async countFunded(): Promise<number> {
+    return [...this.wallets.values()].filter((wallet) => wallet.fundingTxHash !== null).length;
+  }
+
+  async countFundedSince(timestamp: number): Promise<number> {
+    return [...this.wallets.values()].filter(
+      (wallet) => wallet.fundedAt !== null && wallet.fundedAt >= timestamp,
+    ).length;
   }
 }

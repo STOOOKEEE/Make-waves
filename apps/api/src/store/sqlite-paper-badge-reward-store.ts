@@ -19,18 +19,22 @@ function toReward(row: Record<string, unknown>): PaperBadgeReward {
 }
 
 export class SqlitePaperBadgeRewardStore implements PaperBadgeRewardStore {
-  constructor(private readonly db: DatabaseSync) {}
+  private readonly table: string;
+
+  constructor(private readonly db: DatabaseSync, network: "testnet" | "mainnet" = "testnet") {
+    this.table = network === "mainnet" ? "paper_badge_rewards_mainnet" : "paper_badge_rewards";
+  }
 
   async get(userId: string, badgeCode: string): Promise<PaperBadgeReward | null> {
     const row = this.db.prepare(
-      "SELECT * FROM paper_badge_rewards WHERE user_id = ? AND badge_code = ?",
+      `SELECT * FROM ${this.table} WHERE user_id = ? AND badge_code = ?`,
     ).get(userId, badgeCode) as Record<string, unknown> | undefined;
     return row === undefined ? null : toReward(row);
   }
 
   async ensureEligible(reward: PaperBadgeReward): Promise<void> {
     this.db.prepare(
-      `INSERT OR IGNORE INTO paper_badge_rewards (
+      `INSERT OR IGNORE INTO ${this.table} (
         user_id, badge_code, qualified_at, status, nft_token_id,
         sell_offer_id, claim_tx_hash, claimed_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -48,7 +52,7 @@ export class SqlitePaperBadgeRewardStore implements PaperBadgeRewardStore {
 
   async startMinting(userId: string, badgeCode: string): Promise<boolean> {
     const result = this.db.prepare(
-      `UPDATE paper_badge_rewards SET status = 'minting'
+      `UPDATE ${this.table} SET status = 'minting'
        WHERE user_id = ? AND badge_code = ? AND status = 'eligible'`,
     ).run(userId, badgeCode);
     return result.changes === 1;
@@ -61,7 +65,7 @@ export class SqlitePaperBadgeRewardStore implements PaperBadgeRewardStore {
     sellOfferId: string,
   ): Promise<void> {
     this.db.prepare(
-      `UPDATE paper_badge_rewards
+      `UPDATE ${this.table}
        SET status = 'offer_pending', nft_token_id = ?, sell_offer_id = ?
        WHERE user_id = ? AND badge_code = ?`,
     ).run(nftTokenId, sellOfferId, userId, badgeCode);
@@ -74,7 +78,7 @@ export class SqlitePaperBadgeRewardStore implements PaperBadgeRewardStore {
     claimedAt: number,
   ): Promise<void> {
     this.db.prepare(
-      `UPDATE paper_badge_rewards
+      `UPDATE ${this.table}
        SET status = 'claimed', claim_tx_hash = ?, claimed_at = ?
        WHERE user_id = ? AND badge_code = ?`,
     ).run(claimTxHash, claimedAt, userId, badgeCode);

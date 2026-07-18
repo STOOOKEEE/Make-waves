@@ -13,17 +13,21 @@ function rowToReward(row: unknown): WeeklyReward {
 }
 
 export class SqliteWeeklyRewardStore implements WeeklyRewardStore {
-  constructor(private readonly db: DatabaseSync) {}
+  private readonly table: string;
+
+  constructor(private readonly db: DatabaseSync, network: "testnet" | "mainnet" = "testnet") {
+    this.table = network === "mainnet" ? "weekly_rewards_mainnet" : "weekly_rewards";
+  }
   async get(userId: string, week: string): Promise<WeeklyReward | null> {
-    const row = this.db.prepare("SELECT * FROM weekly_rewards WHERE user_id = ? AND week = ?").get(userId, week);
+    const row = this.db.prepare(`SELECT * FROM ${this.table} WHERE user_id = ? AND week = ?`).get(userId, week);
     return row === undefined ? null : rowToReward(row);
   }
   async list(userId: string): Promise<readonly WeeklyReward[]> {
-    return this.db.prepare("SELECT * FROM weekly_rewards WHERE user_id = ? ORDER BY week DESC").all(userId).map(rowToReward);
+    return this.db.prepare(`SELECT * FROM ${this.table} WHERE user_id = ? ORDER BY week DESC`).all(userId).map(rowToReward);
   }
   async ensureEligible(reward: WeeklyReward): Promise<void> {
     this.db.prepare(
-      `INSERT OR IGNORE INTO weekly_rewards (
+      `INSERT OR IGNORE INTO ${this.table} (
         user_id, week, qualified_at, status, nft_token_id, sell_offer_id, claim_tx_hash, claimed_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(reward.userId, reward.week, reward.qualifiedAt, reward.status, null, null, null, null);
@@ -31,7 +35,7 @@ export class SqliteWeeklyRewardStore implements WeeklyRewardStore {
   async startMinting(userId: string, week: string): Promise<boolean> {
     const result = this.db
       .prepare(
-        `UPDATE weekly_rewards SET status = 'minting'
+        `UPDATE ${this.table} SET status = 'minting'
          WHERE user_id = ? AND week = ? AND status = 'eligible'`,
       )
       .run(userId, week);
@@ -39,13 +43,13 @@ export class SqliteWeeklyRewardStore implements WeeklyRewardStore {
   }
   async markOfferPending(userId: string, week: string, nftTokenId: string, sellOfferId: string): Promise<void> {
     this.db.prepare(
-      `UPDATE weekly_rewards SET status = 'offer_pending', nft_token_id = ?, sell_offer_id = ?
+      `UPDATE ${this.table} SET status = 'offer_pending', nft_token_id = ?, sell_offer_id = ?
        WHERE user_id = ? AND week = ?`,
     ).run(nftTokenId, sellOfferId, userId, week);
   }
   async markClaimed(userId: string, week: string, claimTxHash: string, claimedAt: number): Promise<void> {
     this.db.prepare(
-      `UPDATE weekly_rewards SET status = 'claimed', claim_tx_hash = ?, claimed_at = ?
+      `UPDATE ${this.table} SET status = 'claimed', claim_tx_hash = ?, claimed_at = ?
        WHERE user_id = ? AND week = ?`,
     ).run(claimTxHash, claimedAt, userId, week);
   }

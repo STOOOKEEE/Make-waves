@@ -2316,3 +2316,10 @@ serveur et ne prétend plus inscrire sans hash confirmé.
 - Vérification production-like réelle : ordre 201, wallet financé 1,25 Test XRP,
   NFT minté/accepté, admin public 404 et privé 200. 968 tests, typecheck, lint et
   build web verts.
+## 2026-07-18 — Wallet custodial Paper Mainnet, création à l’arrivée et NFT admin
+
+- Le wallet custodial est désormais généré et chiffré lors de `POST /accounts/ensure`, sans funding. Le premier fill Paper déclenche ensuite, de façon idempotente, le Payment de 1,25 XRP puis le NFT First Trade.
+- Le runtime `TIDE_PAPER_WALLET_NETWORK` accepte `testnet` ou `mainnet`. Mainnet exige un acknowledgement explicite, une adresse froide de récupération et des plafonds total/quotidien persistants.
+- Les tables wallets/récompenses Mainnet sont séparées des tables Testnet. Les Payments du funder et les émissions de l’issuer sont sérialisés pour éviter les collisions de `Sequence`.
+- La console admin privée affiche le réseau et possède une section visible pour mint + envoyer un NFT individuel, ainsi que burn + `AccountDelete` + sweep vers l’adresse de récupération.
+- Vérification : typecheck complet, lint, build web, 972 tests, audit dépendances sans vulnérabilité connue, dashboard local sans erreur console. Aucun XRP Mainnet déplacé et aucun secret Mainnet configuré.

@@ -48,6 +48,11 @@ export class XrplCustodialWalletGateway {
     this.clientFactory = deps.clientFactory ?? (() => new Client(deps.serverUrl));
   }
 
+  /** Adresse publique du hot funder, utile aux contrôles de séparation au boot. */
+  get funderAddress(): string {
+    return this.funder.classicAddress;
+  }
+
   async fundWallet(destination: string, amountDrops: string): Promise<CustodySubmitResult> {
     return this.submit(
       this.funder,

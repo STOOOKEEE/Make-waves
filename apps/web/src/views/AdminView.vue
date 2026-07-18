@@ -12,6 +12,7 @@ const {
   walletJob,
   provisionResult,
   competitionPayout,
+  lastNftGrant,
   load,
   runTestnetE2E,
   refreshWalletJob,
@@ -27,6 +28,8 @@ const {
 const selectedBadge = ref<Record<string, string>>({});
 const bulkConfirmation = ref("");
 const provisionCount = ref(1);
+const nftUserId = ref("");
+const nftBadgeCode = ref("first_trade");
 const closeCompetitionId = ref("");
 const competitionForm = ref({
   id: "",
@@ -39,7 +42,6 @@ const competitionForm = ref({
   startsAt: "",
   endsAt: "",
 });
-const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
 const BADGES = [
   { code: "first_trade", label: "First Trade" },
   { code: "ten_trades", label: "Ten Trades" },
@@ -50,6 +52,17 @@ const paperWallets = computed(() =>
 );
 const fundedPaperWallets = computed(() =>
   paperWallets.value.filter((wallet) => wallet.status === "funded").length,
+);
+const fundedWalletRows = computed(() =>
+  paperWallets.value.filter(
+    (wallet) => wallet.status === "funded" && wallet.userId !== null,
+  ),
+);
+const walletNetwork = computed<"testnet" | "mainnet">(
+  () => walletJob.value?.network ?? paperWallets.value[0]?.network ?? "testnet",
+);
+const deleteConfirmation = computed(
+  () => `DELETE ALL ${walletNetwork.value.toUpperCase()} WALLETS`,
 );
 const reclaimedPaperWallets = computed(() =>
   paperWallets.value.filter((wallet) => wallet.status === "reclaimed").length,
@@ -92,8 +105,8 @@ function confirmReclaim(userId: string, address: string | null): void {
 }
 
 function confirmReclaimAll(): void {
-  if (bulkConfirmation.value !== DELETE_CONFIRMATION) return;
-  if (window.confirm(`Action irréversible sur ${String(paperWallets.value.length)} wallets Testnet. Continuer ?`)) {
+  if (bulkConfirmation.value !== deleteConfirmation.value) return;
+  if (window.confirm(`Action irréversible sur ${String(paperWallets.value.length)} wallets ${walletNetwork.value}. Continuer ?`)) {
     void reclaimAll(bulkConfirmation.value);
   }
 }
@@ -122,7 +135,7 @@ async function submitCompetition(): Promise<void> {
   <section class="admin">
     <header class="admin__head">
       <h1>Console admin</h1>
-      <p class="admin__sub">Administration privée des wallets Testnet créés par les trades Paper de tidetrade.xyz.</p>
+      <p class="admin__sub">Administration privée des wallets {{ walletNetwork }} créés par les trades Paper de tidetrade.xyz.</p>
     </header>
 
     <form v-if="overview === null" class="admin__gate" @submit.prevent="load">
@@ -230,11 +243,32 @@ async function submitCompetition(): Promise<void> {
         </div>
       </section>
 
+      <section class="admin__nft">
+        <h2>Envoyer un NFT individuellement</h2>
+        <p>Le serveur mint le badge avec l’issuer {{ walletNetwork }}, crée une offre à 0 XRP puis l’accepte avec la seed chiffrée du wallet custodial. Aucune clé ne sort de l’API privée.</p>
+        <div class="admin__bar">
+          <select v-model="nftUserId" :disabled="loading || fundedWalletRows.length === 0">
+            <option value="" disabled>Choisir un utilisateur</option>
+            <option v-for="walletRow in fundedWalletRows" :key="walletRow.userId ?? ''" :value="walletRow.userId ?? ''">
+              {{ walletRow.userId }} — {{ walletRow.address }}
+            </option>
+          </select>
+          <select v-model="nftBadgeCode" :disabled="loading">
+            <option v-for="badge in BADGES" :key="badge.code" :value="badge.code">{{ badge.label }}</option>
+          </select>
+          <button type="button" :disabled="loading || walletJob?.enabled !== true || nftUserId === ''" @click="grantNft(nftUserId, nftBadgeCode)">
+            Mint + envoyer
+          </button>
+        </div>
+        <p v-if="fundedWalletRows.length === 0">Aucun wallet financé sur {{ walletNetwork }}.</p>
+        <p v-if="lastNftGrant">NFT {{ lastNftGrant.badgeCode }} envoyé à {{ lastNftGrant.walletAddress }} · tx {{ lastNftGrant.claimHash }}</p>
+      </section>
+
       <section class="admin__testnet">
         <h2>Création manuelle de wallets techniques</h2>
         <p>Les utilisateurs de tidetrade.xyz obtiennent automatiquement leur wallet au premier trade Paper. Ce contrôle crée seulement des wallets techniques supplémentaires pour les tests opérateur.</p>
-        <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,25 Test XRP. Ils ne comptent jamais comme utilisateurs humains.</p>
-        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé : configure les variables <code>TIDE_PAPER_WALLET_*</code>.</p>
+        <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,25 XRP sur {{ walletNetwork }}.</p>
+        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper désactivé : configure les variables <code>TIDE_PAPER_WALLET_*</code>.</p>
         <div class="admin__bar">
           <label for="provision-count">Nombre</label>
           <input id="provision-count" v-model.number="provisionCount" type="number" min="1" max="10" step="1" />
@@ -247,12 +281,12 @@ async function submitCompetition(): Promise<void> {
 
       <div class="admin__danger">
         <h2>Récupération globale</h2>
-        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé.</p>
-        <p>Brûle les NFT détenus, attend les 256 ledgers requis, supprime chaque compte avec <code>AccountDelete</code>, puis envoie le solde restant à l'issuer Testnet.</p>
-        <label for="bulk-confirm">Saisir <code>{{ DELETE_CONFIRMATION }}</code></label>
+        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper désactivé.</p>
+        <p>Brûle les NFT détenus, attend les 256 ledgers requis, supprime chaque compte avec <code>AccountDelete</code>, puis envoie le solde restant à l’adresse de récupération {{ walletNetwork }}.</p>
+        <label for="bulk-confirm">Saisir <code>{{ deleteConfirmation }}</code></label>
         <div class="admin__bar">
           <input id="bulk-confirm" v-model="bulkConfirmation" autocomplete="off" />
-          <button type="button" class="danger" :disabled="loading || walletJob?.enabled !== true || bulkConfirmation !== DELETE_CONFIRMATION || walletJob?.state === 'running'" @click="confirmReclaimAll">
+          <button type="button" class="danger" :disabled="loading || walletJob?.enabled !== true || bulkConfirmation !== deleteConfirmation || walletJob?.state === 'running'" @click="confirmReclaimAll">
             Récupérer tous les fonds
           </button>
         </div>
@@ -268,7 +302,7 @@ async function submitCompetition(): Promise<void> {
         </ul>
       </section>
 
-      <h2>Wallets Paper Testnet</h2>
+      <h2>Wallets Paper {{ walletNetwork }}</h2>
       <table class="admin__table">
         <thead>
           <tr><th>Adresse</th><th>Utilisateur</th><th>Réseau</th><th>Statut</th><th>NFT individuel</th><th>Récupération</th></tr>
@@ -277,7 +311,7 @@ async function submitCompetition(): Promise<void> {
           <tr v-for="(w, i) in paperWallets" :key="i">
             <td>{{ w.address ?? "—" }}</td>
             <td>{{ w.userId ?? "—" }}</td>
-            <td>Testnet</td>
+            <td>{{ w.network ?? walletNetwork }}</td>
             <td>{{ w.status ?? "—" }}</td>
             <td>
               <select :value="badgeFor(w.userId ?? '')" :disabled="w.status !== 'funded' || loading" @change="selectedBadge[w.userId ?? ''] = ($event.target as HTMLSelectElement).value">
@@ -314,6 +348,8 @@ async function submitCompetition(): Promise<void> {
 .admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__competitions { border: 1px solid rgba(79, 106, 255, .55); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__testnet { border: 1px solid rgba(44, 160, 90, .65); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__nft { border: 1px solid rgba(137, 91, 255, .7); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__nft h2 { margin-top: 0; }
 .admin__testnet h2 { margin-top: 0; }
 .competition-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }
 .competition-form label { display:flex; flex-direction:column; gap:.3rem; font-size:.8rem; }

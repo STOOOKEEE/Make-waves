@@ -138,6 +138,7 @@ describe("AdminService.overview", () => {
       userId: null,
       live: true,
       status: null,
+      network: null,
     });
   });
 
@@ -150,6 +151,7 @@ describe("AdminService.overview", () => {
       masterKeyId: "paper-v1",
       status: "funded",
       fundingTxHash: "ABC",
+      fundedAt: 10,
       createdAt: 10,
     });
 
@@ -162,6 +164,7 @@ describe("AdminService.overview", () => {
       userId: "paper:user-1",
       live: false,
       status: "funded",
+      network: "testnet",
     });
     expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
   });

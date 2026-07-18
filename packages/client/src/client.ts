@@ -289,6 +289,7 @@ export interface WeeklyRewardDto {
 }
 
 export interface PaperWalletRewardDto {
+  readonly network: "testnet" | "mainnet" | null;
   readonly walletAddress: string | null;
   readonly walletStatus:
     | "not_created"
@@ -349,6 +350,7 @@ export interface AdminWalletDto {
     | "funding_failed"
     | "reclaimed"
     | null;
+  readonly network: "testnet" | "mainnet" | null;
 }
 
 export interface AdminReclaimResultDto {
@@ -363,6 +365,7 @@ export interface AdminReclaimResultDto {
 
 export interface AdminReclaimJobDto {
   readonly enabled: boolean;
+  readonly network: "testnet" | "mainnet";
   readonly id: string | null;
   readonly state: "idle" | "running" | "succeeded" | "failed";
   readonly total: number;
@@ -386,7 +389,7 @@ export interface AdminNftGrantDto {
 }
 
 export interface AdminWalletProvisionDto {
-  readonly network: "testnet";
+  readonly network: "testnet" | "mainnet";
   readonly requested: number;
   readonly funded: number;
   readonly wallets: readonly {

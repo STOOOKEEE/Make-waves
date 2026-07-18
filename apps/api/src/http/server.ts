@@ -159,6 +159,8 @@ export interface ServerDeps {
   readonly weeklyRewards?: WeeklyRewardService;
   /** Wallet Testnet + badge custodial remis automatiquement au premier trade. */
   readonly firstTradeRewards?: FirstTradeRewardService;
+  /** Création du wallet custodial sans funding lors de l'arrivée utilisateur. */
+  readonly paperWallets?: Pick<import("../services/paper-wallet-service").PaperWalletService, "ensureCreated">;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: {
     readonly token: string;
@@ -403,16 +405,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     registerAuth(app, deps.auth);
   }
 
-  app.post("/accounts", (request, reply) => {
+  app.post("/accounts", async (request, reply) => {
     const { userId } = parseUserId(request.body, "openAccount");
     deps.paper.openAccount(userId);
+    await deps.paperWallets?.ensureCreated(userId);
     reply.code(201);
     return { userId };
   });
 
-  app.post("/accounts/ensure", (request) => {
+  app.post("/accounts/ensure", async (request) => {
     const { userId } = parseUserId(request.body, "ensureAccount");
     const created = deps.paper.ensureAccount(userId);
+    await deps.paperWallets?.ensureCreated(userId);
     return { userId, created };
   });
 
@@ -1039,6 +1043,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     "/accounts/:userId/paper-wallet",
     (request) =>
       deps.firstTradeRewards?.status(request.params.userId) ?? {
+        network: null,
         walletAddress: null,
         walletStatus: "not_created",
         fundingTxHash: null,
@@ -1160,6 +1165,7 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
     }
     return admin.walletAdmin?.status() ?? {
       enabled: false,
+      network: "testnet" as const,
       id: null,
       state: "idle",
       total: 0,

@@ -34,6 +34,7 @@ export function useAdmin(client: AdminClient) {
   const walletJob = ref<AdminReclaimJobDto | null>(null);
   const provisionResult = ref<AdminWalletProvisionDto | null>(null);
   const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
+  const lastNftGrant = ref<AdminNftGrantDto | null>(null);
 
   function logout(): void {
     token.value = "";
@@ -114,7 +115,7 @@ export function useAdmin(client: AdminClient) {
     loading.value = true;
     error.value = "";
     try {
-      await client.grantWalletNft(token.value, userId, badgeCode);
+      lastNftGrant.value = await client.grantWalletNft(token.value, userId, badgeCode);
       await load();
     } catch (err) {
       error.value = errorMessage(err);
@@ -185,6 +186,7 @@ export function useAdmin(client: AdminClient) {
     walletJob,
     provisionResult,
     competitionPayout,
+    lastNftGrant,
     load,
     runTestnetE2E,
     refreshWalletJob,

@@ -89,6 +89,7 @@ class EphemeralTestnetWallets {
       masterKeyId: "testnet-ephemeral",
       status: "funded",
       fundingTxHash: null,
+      fundedAt: Date.now(),
       createdAt: Date.now(),
     };
     this.records.set(userId, { wallet, seed: credentials.seed });

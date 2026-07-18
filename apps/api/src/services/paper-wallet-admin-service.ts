@@ -5,7 +5,6 @@ import { badgeByCode } from "../badges/catalog";
 import type { PaperBadgeRewardStore } from "../store/paper-badge-reward-store";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 import type { PaperWalletService } from "./paper-wallet-service";
-import { MANAGED_TESTNET_WALLET_USER_PREFIX } from "../simulation/arena-ids";
 
 const DELETE_LEDGER_DELAY = 255;
 const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
@@ -45,6 +44,7 @@ export interface ReclaimResult {
 
 export interface ReclaimJobStatus {
   readonly enabled: boolean;
+  readonly network: "testnet" | "mainnet";
   readonly id: string | null;
   readonly state: "idle" | "running" | "succeeded" | "failed";
   readonly total: number;
@@ -64,7 +64,7 @@ export interface AdminNftGrantResult extends NftIssueResult {
 }
 
 export interface AdminWalletProvisionResult {
-  readonly network: "testnet";
+  readonly network: "testnet" | "mainnet";
   readonly requested: number;
   readonly funded: number;
   readonly wallets: readonly {
@@ -81,7 +81,8 @@ export interface PaperWalletAdminServiceDeps {
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
   readonly provisioner: Pick<PaperWalletService, "ensureFunded">;
   readonly issuer: NftIssuer;
-  readonly issuerAddress: string;
+  readonly recoveryAddress: string;
+  readonly network: "testnet" | "mainnet";
   readonly gateway: PaperWalletAdminGateway;
   readonly metadataBaseUrl: string;
   readonly sleep?: (milliseconds: number) => Promise<void>;
@@ -96,11 +97,12 @@ export interface PaperWalletAdminServiceDeps {
 export class PaperWalletAdminService {
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly now: () => number;
-  private job: ReclaimJobStatus = idleJob();
+  private job: ReclaimJobStatus;
 
   constructor(private readonly deps: PaperWalletAdminServiceDeps) {
     this.sleep = deps.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.now = deps.now ?? Date.now;
+    this.job = idleJob(deps.network);
   }
 
   status(): ReclaimJobStatus {
@@ -117,7 +119,7 @@ export class PaperWalletAdminService {
     }
     const wallets: AdminWalletProvisionResult["wallets"][number][] = [];
     for (let index = 0; index < count; index += 1) {
-      const userId = `${MANAGED_TESTNET_WALLET_USER_PREFIX}${randomUUID()}`;
+      const userId = `wallet:${this.deps.network}:${randomUUID()}`;
       const wallet = await this.deps.provisioner.ensureFunded(userId);
       wallets.push({
         userId: wallet.userId,
@@ -127,7 +129,7 @@ export class PaperWalletAdminService {
       });
     }
     return {
-      network: "testnet",
+      network: this.deps.network,
       requested: count,
       funded: wallets.filter((wallet) => wallet.status === "funded").length,
       wallets,
@@ -190,7 +192,7 @@ export class PaperWalletAdminService {
   }
 
   async startReclaimAll(confirmation: string): Promise<ReclaimJobStatus> {
-    if (confirmation !== DELETE_CONFIRMATION) throw new Error("Confirmation globale incorrecte");
+    if (confirmation !== this.deleteConfirmation()) throw new Error("Confirmation globale incorrecte");
     const wallets = (await this.deps.store.list()).filter((wallet) => wallet.status === "funded");
     if (wallets.length === 0) throw new Error("Aucun wallet financé à récupérer");
     return this.startJob(wallets);
@@ -201,12 +203,13 @@ export class PaperWalletAdminService {
     const startedAt = this.now();
     this.job = {
       enabled: true,
+      network: this.deps.network,
       id: randomUUID(),
       state: "running",
       total: wallets.length,
       completed: 0,
       failed: 0,
-      destination: this.deps.issuerAddress,
+      destination: this.deps.recoveryAddress,
       startedAt,
       finishedAt: null,
       results: wallets.map((wallet) => queuedResult(wallet)),
@@ -276,7 +279,7 @@ export class PaperWalletAdminService {
     progress({ ...queuedResult(wallet), state: "deleting", burnedNfts });
     const deleted = await this.deps.gateway.deleteAccount(
       seed,
-      this.deps.issuerAddress,
+      this.deps.recoveryAddress,
       snapshot.deleteFeeDrops,
     );
     await this.deps.store.markReclaimed(wallet.userId);
@@ -307,6 +310,10 @@ export class PaperWalletAdminService {
     if (wallet === null) throw new Error("Wallet Paper introuvable");
     if (wallet.status !== "funded") throw new Error(`Wallet non disponible (${wallet.status})`);
     return wallet;
+  }
+
+  private deleteConfirmation(): string {
+    return `DELETE ALL ${this.deps.network.toUpperCase()} WALLETS`;
   }
 }
 
@@ -436,9 +443,10 @@ function queuedResult(wallet: PaperWallet): ReclaimResult {
   };
 }
 
-function idleJob(): ReclaimJobStatus {
+function idleJob(network: "testnet" | "mainnet"): ReclaimJobStatus {
   return {
     enabled: true,
+    network,
     id: null,
     state: "idle",
     total: 0,
