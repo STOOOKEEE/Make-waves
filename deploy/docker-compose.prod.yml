@@ -23,6 +23,10 @@ services:
       TIDE_DB_PATH: /data/tide.db
     volumes:
       - tide-data:/data
+    # Console opérateur privée : jamais accessible sur une interface publique.
+    # Depuis le Mac, utiliser un tunnel SSH vers 127.0.0.1:3101.
+    ports:
+      - "127.0.0.1:3101:3101"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/config',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s

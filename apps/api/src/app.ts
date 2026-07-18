@@ -36,6 +36,7 @@ import type { MandateStore } from "./store/mandate-store";
 import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
 import type { TestnetE2ERunner } from "./simulation/testnet-e2e-runner";
 import type { PaperWalletAdminService } from "./services/paper-wallet-admin-service";
+import type { AdminServerDeps } from "./http/server";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -83,6 +84,8 @@ export interface AppConfig {
   readonly agentActionsStore?: AgentActionsStore;
   /** Token de la console admin (route /admin/overview) — absent → route non montée. */
   readonly adminToken?: string;
+  /** Monte les routes admin sur l'API produit. `false` en production. */
+  readonly exposeAdminOnPublicServer?: boolean;
   /** Comptes classés "operator" dans la console admin (défaut : aucun). */
   readonly operatorUserIds?: readonly string[];
   /** Wallets Paper visibles dans la console locale, sans aucune seed. */
@@ -154,6 +157,8 @@ const DEFAULT_FEED_LOGGER: FeedLogger = {
 export interface App {
   readonly app: FastifyInstance;
   readonly cache: PriceCache;
+  /** Dépendances réutilisées par le serveur opérateur sur son port privé. */
+  readonly privateAdmin?: AdminServerDeps;
   /** Rafraîchit le cache depuis le feed CEX (à planifier périodiquement). */
   readonly refreshPrices: () => Promise<void>;
 }
@@ -295,7 +300,7 @@ export function createApp(config: AppConfig): App {
     badgeService,
     weeklyRewards: config.weeklyRewards,
     firstTradeRewards: config.firstTradeRewards,
-    admin,
+    ...(admin !== undefined && config.exposeAdminOnPublicServer !== false ? { admin } : {}),
     auth: config.auth,
     corsOrigin: config.corsOrigin,
     // F8 : les métadonnées NFT utilisent cette base publique, jamais le header Host.
@@ -342,5 +347,26 @@ export function createApp(config: AppConfig): App {
     await publishPrices(cexPrices, config.symbols);
   };
 
-  return { app, cache, refreshPrices };
+  const privateAdmin =
+    admin === undefined
+      ? undefined
+      : {
+          admin,
+          paper,
+          competition,
+          getPrices: () => cache.current(),
+          ...(config.competitionPayments !== undefined
+            ? { competitionPayments: config.competitionPayments }
+            : {}),
+          ...(config.getLiveCompetitionEquity !== undefined
+            ? { getLiveCompetitionEquity: config.getLiveCompetitionEquity }
+            : {}),
+        } satisfies AdminServerDeps;
+
+  return {
+    app,
+    cache,
+    refreshPrices,
+    ...(privateAdmin !== undefined ? { privateAdmin } : {}),
+  };
 }

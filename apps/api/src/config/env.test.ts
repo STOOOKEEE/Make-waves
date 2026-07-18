@@ -5,6 +5,7 @@ import {
   readTestnetE2EConfig,
   readCorsOrigin,
   readOperatorUserIds,
+  readPrivateAdminRuntimeConfig,
   readFirstTradeImageUri,
   readPaperWalletRuntimeConfig,
   readSessionSecret,
@@ -13,6 +14,7 @@ import {
 
 const KEYS = [
   "TIDE_ADMIN_TOKEN",
+  "TIDE_PRIVATE_ADMIN_PORT",
   "TIDE_OPERATOR_USER_IDS",
   "TIDE_SESSION_SECRET",
   "TIDE_SESSION_TTL",
@@ -59,6 +61,35 @@ describe("readAdminToken", () => {
       } else {
         process.env["NODE_ENV"] = previousNodeEnv;
       }
+    }
+  });
+});
+
+describe("readPrivateAdminRuntimeConfig", () => {
+  it("active un port admin distinct uniquement en production", () => {
+    const previousNodeEnv = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    process.env["TIDE_ADMIN_TOKEN"] = "a".repeat(32);
+    process.env["TIDE_PRIVATE_ADMIN_PORT"] = "3101";
+    try {
+      expect(readPrivateAdminRuntimeConfig()).toEqual({ token: "a".repeat(32), port: 3101 });
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previousNodeEnv;
+    }
+  });
+
+  it("refuse une configuration partielle ou le port public", () => {
+    const previousNodeEnv = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    process.env["TIDE_ADMIN_TOKEN"] = "a".repeat(32);
+    try {
+      expect(() => readPrivateAdminRuntimeConfig()).toThrow(/incomplète/);
+      process.env["TIDE_PRIVATE_ADMIN_PORT"] = "3000";
+      expect(() => readPrivateAdminRuntimeConfig()).toThrow(/distinct/);
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env["NODE_ENV"];
+      else process.env["NODE_ENV"] = previousNodeEnv;
     }
   });
 });

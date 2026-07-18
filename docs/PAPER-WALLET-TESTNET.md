@@ -45,6 +45,30 @@ VITE_API_BASE=http://127.0.0.1:3100 pnpm --filter @tide/web dev
 Le token à saisir dans `http://127.0.0.1:5173/#/admin` est la valeur locale de
 `TIDE_ADMIN_TOKEN` dans ce fichier.
 
+## Production TideTrade, ledger Testnet
+
+Le runtime wallet peut tourner dans l'API de production tout en ciblant
+exclusivement XRPL Testnet. À chaque premier ordre Paper sur `tidetrade.xyz`,
+l'API crée le wallet associé au `userId` authentifié, chiffre sa seed dans la
+SQLite privée du serveur, le finance puis remet le NFT First Trade. Le mode Live
+de Tide peut rester Mainnet : les variables `TIDE_PAPER_WALLET_*` forcent et
+valident séparément `testnet`.
+
+La console n'est jamais montée sur `api.tidetrade.xyz`. En production elle
+écoute sur le port conteneur `3101`, publié par Docker uniquement sur
+`127.0.0.1:3101` de l'hôte. Depuis le Mac :
+
+```bash
+ssh -N -L 3101:127.0.0.1:3101 <user>@<serveur-tailscale>
+VITE_API_BASE=https://api.tidetrade.xyz \
+VITE_ADMIN_API_BASE=http://127.0.0.1:3101 \
+pnpm --filter @tide/web dev
+```
+
+Le tunnel doit rester ouvert pendant l'utilisation de `#/admin`. Une requête
+publique vers `https://api.tidetrade.xyz/admin/overview` reste donc en `404`,
+même si le serveur possède un `TIDE_ADMIN_TOKEN`.
+
 Configuration manuelle équivalente :
 
 ```bash
@@ -97,9 +121,9 @@ ou gateway HTTP mutable n'est accepté par la configuration.
 
 ### Depuis la console locale
 
-La route `#/admin`, absente du build de production, expose un mode **wallets
-XRPL Testnet**. L'opérateur peut créer et financer séquentiellement de 1 à 10
-wallets gérés. Chaque wallet reçoit un identifiant `wallet:testnet:<uuid>`, est
+La route `#/admin`, absente du build de production, permet aussi de créer et
+financer séquentiellement de 1 à 10 wallets techniques. Chaque wallet reçoit un
+identifiant `wallet:testnet:<uuid>`, est
 exclu des métriques utilisateur et du leaderboard, et sa seed est chiffrée dans
 SQLite avant le premier Payment. L'endpoint correspondant est :
 

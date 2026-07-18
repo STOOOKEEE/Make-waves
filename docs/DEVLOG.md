@@ -2304,3 +2304,15 @@ JWT du wallet signataire ; montant et destination fournis par le client sont
 ignorés. Les anciennes routes publiques de création/clôture et `/sign/buy-in` ont
 été supprimées. L'outil MCP `join_competition` prépare désormais le même Payment
 serveur et ne prétend plus inscrire sans hash confirmé.
+## 2026-07-18 — Wallets Paper Testnet créés depuis TideTrade, admin sur port privé
+
+- Le runtime `TIDE_PAPER_WALLET_*` est destiné à l'API de production : chaque
+  ordre Paper de `tidetrade.xyz` déclenche idempotemment la création et le
+  financement du wallet Testnet associé, puis le NFT First Trade.
+- La console reste locale. Les routes opérateur sont retirées du serveur public
+  et montées sur `TIDE_PRIVATE_ADMIN_PORT`; Docker publie `3101` uniquement sur
+  `127.0.0.1` de l'hôte. Le dashboard local utilise `VITE_ADMIN_API_BASE` via un
+  tunnel SSH/Tailscale. `/admin/*` reste 404 sur le port public.
+- Vérification production-like réelle : ordre 201, wallet financé 1,25 Test XRP,
+  NFT minté/accepté, admin public 404 et privé 200. 968 tests, typecheck, lint et
+  build web verts.

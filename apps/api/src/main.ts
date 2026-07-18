@@ -18,7 +18,7 @@ import type { GeckoTerminalToken } from "./feed/geckoterminal-history";
 import { fetchHyperliquidBookDepth } from "./feed/hyperliquid-book-feed";
 import { isKlineInterval } from "./feed/klines";
 import type { SymbolPoolMap } from "./feed/onchain-price";
-import type { ExecDeps, MetricsDeps, SignDeps } from "./http/server";
+import { buildAdminServer, type ExecDeps, type MetricsDeps, type SignDeps } from "./http/server";
 import { DEFAULT_LIVE_QUOTE } from "./exec/plan-live";
 import { AttributionIndexer } from "./indexer/indexer";
 import { AgentChatService } from "./services/agent-chat-service";
@@ -294,6 +294,8 @@ async function main(): Promise<void> {
   const xrpl = wsUrl !== undefined ? connectXrplClient(wsUrl) : undefined;
 
   const network = env.readXrplNetwork();
+  const publicAdminToken = env.readAdminToken();
+  const privateAdminRuntime = env.readPrivateAdminRuntimeConfig();
   const sourceTag = env.readSourceTag();
   const onchainPrices = buildOnchainProvider(xrpl, env.readOnchainPools() ?? {});
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
@@ -498,7 +500,7 @@ async function main(): Promise<void> {
           });
         })();
 
-  const { app, cache, refreshPrices } = createApp({
+  const { app, cache, refreshPrices, privateAdmin } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
       vsCurrency: DEFAULT_VS_CURRENCY,
@@ -527,7 +529,10 @@ async function main(): Promise<void> {
     sourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
     firstTradeImageUri,
-    adminToken: env.readAdminToken(),
+    ...(publicAdminToken !== undefined || privateAdminRuntime !== undefined
+      ? { adminToken: publicAdminToken ?? privateAdminRuntime?.token }
+      : {}),
+    exposeAdminOnPublicServer: publicAdminToken !== undefined,
     operatorUserIds: env.readOperatorUserIds(),
     paperWalletStore,
     simulation: arenaSimulation,
@@ -572,6 +577,18 @@ async function main(): Promise<void> {
       },
     );
     startIndexerSync(indexer);
+  }
+
+  if (privateAdminRuntime !== undefined) {
+    if (privateAdmin === undefined) {
+      throw new Error("Serveur admin privé demandé mais dépendances admin indisponibles");
+    }
+    const adminApp = buildAdminServer({
+      ...privateAdmin,
+      corsOrigin: ["http://127.0.0.1:5173", "http://localhost:5173"],
+    });
+    await adminApp.listen({ port: privateAdminRuntime.port, host: "0.0.0.0" });
+    console.log(`Console admin privée à l'écoute sur :${String(privateAdminRuntime.port)}`);
   }
 
   await app.listen({ port, host: "0.0.0.0" });

@@ -418,6 +418,38 @@ export function readAdminToken(): string | undefined {
   return optional("TIDE_ADMIN_TOKEN");
 }
 
+export interface PrivateAdminRuntimeConfig {
+  readonly token: string;
+  readonly port: number;
+}
+
+/**
+ * Console opérateur de production sur un port séparé. Les deux variables sont
+ * obligatoires ensemble ; Docker publie ce port exclusivement sur 127.0.0.1.
+ */
+export function readPrivateAdminRuntimeConfig(): PrivateAdminRuntimeConfig | undefined {
+  if (process.env["NODE_ENV"] !== "production") return undefined;
+  const token = optional("TIDE_ADMIN_TOKEN");
+  const rawPort = optional("TIDE_PRIVATE_ADMIN_PORT");
+  if (token === undefined && rawPort === undefined) return undefined;
+  if (token === undefined || rawPort === undefined) {
+    throw new Error(
+      "Configuration admin privée incomplète: TIDE_ADMIN_TOKEN et TIDE_PRIVATE_ADMIN_PORT sont requis",
+    );
+  }
+  if (token.length < 32) {
+    throw new Error("TIDE_ADMIN_TOKEN doit contenir au moins 32 caractères en production");
+  }
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port <= 0 || port > MAX_PORT) {
+    throw new Error(`TIDE_PRIVATE_ADMIN_PORT invalide: ${rawPort}`);
+  }
+  if (port === readPort()) {
+    throw new Error("Le port admin privé doit être distinct du port API public");
+  }
+  return { token, port };
+}
+
 /**
  * Origines CORS autorisées (F6, CSV). En développement, l'absence conserve le
  * mode permissif. En production, on tombe sur l'allowlist Tide plutôt que de

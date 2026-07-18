@@ -48,6 +48,12 @@ const BADGES = [
 const paperWallets = computed(() =>
   overview.value?.wallets.filter((wallet) => wallet.kind === "paper") ?? [],
 );
+const fundedPaperWallets = computed(() =>
+  paperWallets.value.filter((wallet) => wallet.status === "funded").length,
+);
+const reclaimedPaperWallets = computed(() =>
+  paperWallets.value.filter((wallet) => wallet.status === "reclaimed").length,
+);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const SEGMENT_LABEL: Record<string, string> = {
@@ -116,7 +122,7 @@ async function submitCompetition(): Promise<void> {
   <section class="admin">
     <header class="admin__head">
       <h1>Console admin</h1>
-      <p class="admin__sub">Custody locale des wallets Paper Testnet.</p>
+      <p class="admin__sub">Administration privée des wallets Testnet créés par les trades Paper de tidetrade.xyz.</p>
     </header>
 
     <form v-if="overview === null" class="admin__gate" @submit.prevent="load">
@@ -145,8 +151,12 @@ async function submitCompetition(): Promise<void> {
         </div>
 
         <div class="card">
-          <span class="card__label">Wallets</span>
-          <strong class="card__value">{{ overview.totals.wallets }}</strong>
+          <span class="card__label">Wallets Paper actifs</span>
+          <strong class="card__value">{{ fundedPaperWallets }}</strong>
+          <ul class="segments">
+            <li>{{ paperWallets.length }} créés au total</li>
+            <li>{{ reclaimedPaperWallets }} supprimés / récupérés</li>
+          </ul>
         </div>
 
         <div class="card">
@@ -221,8 +231,9 @@ async function submitCompetition(): Promise<void> {
       </section>
 
       <section class="admin__testnet">
-        <h2>Mode wallets XRPL Testnet</h2>
-        <p>Crée des wallets techniques, chiffre leurs seeds dans la DB privée et finance chacun avec 1,25 Test XRP. Ils ne comptent jamais comme utilisateurs humains.</p>
+        <h2>Création manuelle de wallets techniques</h2>
+        <p>Les utilisateurs de tidetrade.xyz obtiennent automatiquement leur wallet au premier trade Paper. Ce contrôle crée seulement des wallets techniques supplémentaires pour les tests opérateur.</p>
+        <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,25 Test XRP. Ils ne comptent jamais comme utilisateurs humains.</p>
         <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé : configure les variables <code>TIDE_PAPER_WALLET_*</code>.</p>
         <div class="admin__bar">
           <label for="provision-count">Nombre</label>

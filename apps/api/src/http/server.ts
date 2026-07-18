@@ -186,6 +186,20 @@ export interface ServerDeps {
 }
 
 /**
+ * Dépendances du serveur opérateur privé. Il écoute sur un port distinct du
+ * serveur public ; le déploiement ne publie ce port que sur le loopback hôte.
+ */
+export interface AdminServerDeps {
+  readonly admin: NonNullable<ServerDeps["admin"]>;
+  readonly paper: PaperService;
+  readonly competition: CompetitionService;
+  readonly competitionPayments?: NonNullable<ServerDeps["competitionPayments"]>;
+  readonly getPrices: () => PriceMap;
+  readonly getLiveCompetitionEquity?: (userId: string) => number;
+  readonly corsOrigin?: string | string[];
+}
+
+/**
  * Erreur uniforme renvoyée par tout stub `ctx` du chat agent tant que le
  * câblage runtime complet n'est pas branché. Garantit qu'un LLM qui appelle
  * `place_order` / `open_position` / `join_competition` / etc. NE reçoit
@@ -1043,154 +1057,188 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     },
   );
 
-  // Console opérateur locale : montée uniquement si un token est configuré
-  // (TIDE_ADMIN_TOKEN). Absente → 404, rien n'est exposé en prod par défaut.
+  // En développement local, la console peut partager le serveur principal.
+  // En production, main.ts l'omet ici et la monte sur le port privé distinct.
   if (deps.admin !== undefined) {
-    const admin = deps.admin;
-    app.get("/admin/overview", async (request, reply) => {
-      if (!hasAdminToken(request, admin.token)) {
-        reply.code(401);
-        return { error: "unauthorized" };
-      }
-      return admin.service.overview(deps.getPrices());
-    });
-    app.post("/admin/competitions", (request, reply) => {
-      if (!hasAdminToken(request, admin.token)) {
-        reply.code(401);
-        return { error: "unauthorized" };
-      }
-      const competition = parseCompetition(request.body);
-      deps.competition.create(competition);
-      reply.code(201);
-      return { id: competition.id.trim() };
-    });
-    app.post<{ Params: { id: string } }>(
-      "/admin/competitions/:id/close",
-      (request, reply) => {
-        if (!hasAdminToken(request, admin.token)) {
-          reply.code(401);
-          return { error: "unauthorized" };
-        }
-        const result = deps.competition.isClosed(request.params.id)
-          ? deps.competition.settlement(request.params.id)
-          : deps.competition.close(
-              request.params.id,
-              competitionEquity(request.params.id),
-            );
-        const payments = deps.competitionPayments;
-        const payoutTx =
-          payments !== undefined && result.winner !== null && result.pot > 0
-            ? payments.winnerPayout(
-                request.params.id,
-                result.winner.walletAddress,
-                result.pot,
-              )
-            : null;
-        // Le compte pool est multisig : on prépare la transaction exacte, mais
-        // le quorum opérateur doit encore la signer avant soumission.
-        return { ...result, payoutTx };
-      },
-    );
-    if (admin.testnetE2E !== undefined) {
-      const testnetE2E = admin.testnetE2E;
-      app.post("/admin/testnet-e2e/run", async (request, reply) => {
-        if (!hasAdminToken(request, admin.token)) {
-          reply.code(401);
-          return { error: "unauthorized" };
-        }
-        return testnetE2E.run();
-      });
-    }
-    app.get("/admin/wallet-ops/status", (request, reply) => {
-      if (!hasAdminToken(request, admin.token)) {
-        reply.code(401);
-        return { error: "unauthorized" };
-      }
-      return admin.walletAdmin?.status() ?? {
-        enabled: false,
-        id: null,
-        state: "idle",
-        total: 0,
-        completed: 0,
-        failed: 0,
-        destination: null,
-        startedAt: null,
-        finishedAt: null,
-        results: [],
-      };
-    });
-    if (admin.walletAdmin !== undefined) {
-      const walletAdmin = admin.walletAdmin;
-      app.post("/admin/wallets/provision", async (request, reply) => {
-        if (!hasAdminToken(request, admin.token)) {
-          reply.code(401);
-          return { error: "unauthorized" };
-        }
-        try {
-          const result = await walletAdmin.provision(readNumberField(request.body, "count"));
-          reply.code(201);
-          return result;
-        } catch (error) {
-          reply.code(409);
-          return { error: error instanceof Error ? error.message : "provisioning refusé" };
-        }
-      });
-      app.post<{ Params: { userId: string } }>(
-        "/admin/wallets/:userId/nfts",
-        async (request, reply) => {
-          if (!hasAdminToken(request, admin.token)) {
-            reply.code(401);
-            return { error: "unauthorized" };
-          }
-          const badgeCode = readStringField(request.body, "badgeCode");
-          try {
-            return await walletAdmin.grantBadge(request.params.userId, badgeCode);
-          } catch (error) {
-            reply.code(409);
-            return { error: error instanceof Error ? error.message : "distribution NFT refusée" };
-          }
-        },
-      );
-      app.post<{ Params: { userId: string } }>(
-        "/admin/wallets/:userId/reclaim",
-        async (request, reply) => {
-          if (!hasAdminToken(request, admin.token)) {
-            reply.code(401);
-            return { error: "unauthorized" };
-          }
-          try {
-            const status = await walletAdmin.startReclaimOne(
-              request.params.userId,
-              readStringField(request.body, "confirmation"),
-            );
-            reply.code(202);
-            return status;
-          } catch (error) {
-            reply.code(409);
-            return { error: error instanceof Error ? error.message : "récupération refusée" };
-          }
-        },
-      );
-      app.post("/admin/wallets/reclaim-all", async (request, reply) => {
-        if (!hasAdminToken(request, admin.token)) {
-          reply.code(401);
-          return { error: "unauthorized" };
-        }
-        try {
-          const status = await walletAdmin.startReclaimAll(
-            readStringField(request.body, "confirmation"),
-          );
-          reply.code(202);
-          return status;
-        } catch (error) {
-          reply.code(409);
-          return { error: error instanceof Error ? error.message : "récupération globale refusée" };
-        }
-      });
-    }
+    registerAdminRoutes(app, adminDepsFromServer(deps));
   }
 
   return app;
+}
+
+/** Construit la surface opérateur privée, sans aucune route produit publique. */
+export function buildAdminServer(deps: AdminServerDeps): FastifyInstance {
+  const app = Fastify({ logger: false });
+  void app.register(cors, { origin: deps.corsOrigin ?? false });
+  registerAdminRoutes(app, deps);
+  return app;
+}
+
+function adminDepsFromServer(deps: ServerDeps): AdminServerDeps {
+  if (deps.admin === undefined) throw new Error("Admin non configuré");
+  return {
+    admin: deps.admin,
+    paper: deps.paper,
+    competition: deps.competition,
+    getPrices: deps.getPrices,
+    ...(deps.competitionPayments !== undefined
+      ? { competitionPayments: deps.competitionPayments }
+      : {}),
+    ...(deps.getLiveCompetitionEquity !== undefined
+      ? { getLiveCompetitionEquity: deps.getLiveCompetitionEquity }
+      : {}),
+  };
+}
+
+function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void {
+  const { admin } = deps;
+  const competitionEquity = (competitionId: string) => {
+    const competition = deps.competition.get(competitionId);
+    if (competition.mode === "paper") {
+      const prices = deps.getPrices();
+      return (userId: string) => deps.paper.equityOf(userId, prices);
+    }
+    if (deps.getLiveCompetitionEquity === undefined) {
+      throw new CompetitionScoringUnavailableError("live");
+    }
+    return deps.getLiveCompetitionEquity;
+  };
+
+  app.get("/admin/overview", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    return admin.service.overview(deps.getPrices());
+  });
+  app.post("/admin/competitions", (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    const competition = parseCompetition(request.body);
+    deps.competition.create(competition);
+    reply.code(201);
+    return { id: competition.id.trim() };
+  });
+  app.post<{ Params: { id: string } }>(
+    "/admin/competitions/:id/close",
+    (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      const result = deps.competition.isClosed(request.params.id)
+        ? deps.competition.settlement(request.params.id)
+        : deps.competition.close(request.params.id, competitionEquity(request.params.id));
+      const payments = deps.competitionPayments;
+      const payoutTx =
+        payments !== undefined && result.winner !== null && result.pot > 0
+          ? payments.winnerPayout(
+              request.params.id,
+              result.winner.walletAddress,
+              result.pot,
+            )
+          : null;
+      return { ...result, payoutTx };
+    },
+  );
+  if (admin.testnetE2E !== undefined) {
+    const testnetE2E = admin.testnetE2E;
+    app.post("/admin/testnet-e2e/run", async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      return testnetE2E.run();
+    });
+  }
+  app.get("/admin/wallet-ops/status", (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    return admin.walletAdmin?.status() ?? {
+      enabled: false,
+      id: null,
+      state: "idle",
+      total: 0,
+      completed: 0,
+      failed: 0,
+      destination: null,
+      startedAt: null,
+      finishedAt: null,
+      results: [],
+    };
+  });
+  if (admin.walletAdmin === undefined) return;
+  const walletAdmin = admin.walletAdmin;
+  app.post("/admin/wallets/provision", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      const result = await walletAdmin.provision(readNumberField(request.body, "count"));
+      reply.code(201);
+      return result;
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "provisioning refusé" };
+    }
+  });
+  app.post<{ Params: { userId: string } }>(
+    "/admin/wallets/:userId/nfts",
+    async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      const badgeCode = readStringField(request.body, "badgeCode");
+      try {
+        return await walletAdmin.grantBadge(request.params.userId, badgeCode);
+      } catch (error) {
+        reply.code(409);
+        return { error: error instanceof Error ? error.message : "distribution NFT refusée" };
+      }
+    },
+  );
+  app.post<{ Params: { userId: string } }>(
+    "/admin/wallets/:userId/reclaim",
+    async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      try {
+        const status = await walletAdmin.startReclaimOne(
+          request.params.userId,
+          readStringField(request.body, "confirmation"),
+        );
+        reply.code(202);
+        return status;
+      } catch (error) {
+        reply.code(409);
+        return { error: error instanceof Error ? error.message : "récupération refusée" };
+      }
+    },
+  );
+  app.post("/admin/wallets/reclaim-all", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      const status = await walletAdmin.startReclaimAll(
+        readStringField(request.body, "confirmation"),
+      );
+      reply.code(202);
+      return status;
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "récupération globale refusée" };
+    }
+  });
 }
 
 function hasAdminToken(request: FastifyRequest, expected: string): boolean {
@@ -1235,10 +1283,13 @@ function registerAuth(
   const { service, resolvers } = auth;
 
   app.addHook("preHandler", async (request, reply) => {
+    // Une route inconnue doit rester un vrai 404. Le garde ne doit ni masquer
+    // ce statut par un 401, ni transformer l'absence des routes admin publiques.
+    if (request.routeOptions.url === undefined) return;
     const decision = await authorize(
       {
         method: request.method,
-        routeUrl: request.routeOptions.url ?? "",
+        routeUrl: request.routeOptions.url,
         params: request.params as Record<string, string | undefined>,
         query: (request.query ?? {}) as Record<string, unknown>,
         body: request.body,

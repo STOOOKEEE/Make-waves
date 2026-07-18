@@ -13,6 +13,9 @@ import type { AdminClient } from "../composables/useAdmin";
 import { API_BASE } from "./client";
 import { createFetchTransport } from "./transport";
 
+/** Port opérateur privé, généralement rejoint par un tunnel SSH local. */
+export const ADMIN_API_BASE = import.meta.env.VITE_ADMIN_API_BASE ?? API_BASE;
+
 async function expectBody<T>(
   transport: ApiTransport,
   request: ApiRequest,
@@ -30,7 +33,7 @@ async function expectBody<T>(
  * elle-même éliminée du build de production.
  */
 export function createLocalAdminClient(
-  transport: ApiTransport = createFetchTransport(API_BASE),
+  transport: ApiTransport = createFetchTransport(ADMIN_API_BASE),
 ): AdminClient {
   return {
     adminOverview: (token) =>

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildServer } from "./server";
+import { buildAdminServer as buildPrivateAdminServer, buildServer } from "./server";
 import { AdminService } from "../services/admin-service";
 import { PaperService } from "../services/paper-service";
 import { CompetitionService } from "../services/competition-service";
@@ -11,6 +11,8 @@ import { InMemoryCompetitionStore } from "../store/competition-store";
 import { arenaSimulationUserId } from "../simulation/arena-ids";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import type { CompetitionDefinition } from "../store/competition-store";
+import { AuthService } from "../auth/auth-service";
+import { InMemoryChallengeStore } from "../auth/challenge-store";
 
 const ADMIN_TOKEN = "secret";
 
@@ -36,6 +38,37 @@ function buildAdminServer(walletAdmin?: PaperWalletAdminService) {
 }
 
 describe("GET /admin/overview", () => {
+  it("monte uniquement les routes opérateur sur le serveur privé", async () => {
+    const paper = new PaperService(undefined, new InMemoryAccountStore());
+    paper.openAccount("visitor");
+    const service = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions: new InMemoryAgentActionsStore(),
+      prizePoolAddress: null,
+      operatorUserIds: new Set<string>(),
+    });
+    const app = buildPrivateAdminServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service },
+      corsOrigin: "http://127.0.0.1:5173",
+    });
+
+    const overview = await app.inject({
+      method: "GET",
+      url: "/admin/overview",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+    const publicRoute = await app.inject({ method: "GET", url: "/leaderboard" });
+
+    expect(overview.statusCode).toBe(200);
+    expect(publicRoute.statusCode).toBe(404);
+    await app.close();
+  });
+
   it("401 sans token", async () => {
     const app = buildAdminServer();
     const res = await app.inject({ method: "GET", url: "/admin/overview" });
@@ -88,6 +121,34 @@ describe("GET /admin/overview", () => {
       url: "/admin/overview",
       headers: { "x-admin-token": ADMIN_TOKEN },
     });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("conserve le 404 public avec le garde JWT de production", async () => {
+    const app = buildServer({
+      paper: new PaperService(undefined, new InMemoryAccountStore()),
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      auth: {
+        service: new AuthService({
+          secret: "test-session-secret-long-enough",
+          ttlSeconds: 3600,
+          challenges: new InMemoryChallengeStore(60_000),
+        }),
+        resolvers: {
+          agentOwner: async () => null,
+          mandateOwner: async () => null,
+        },
+      },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/overview",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+
     expect(res.statusCode).toBe(404);
     await app.close();
   });
