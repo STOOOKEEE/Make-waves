@@ -7,12 +7,11 @@ Ce runtime associe un wallet XRPL custodial à chaque compte Tide Paper :
 3. L'issuer dédié mint le NFT XLS-20 `First Trade`, crée une offre à 0 XRP réservée au wallet, puis l'API l'accepte avec la seed déchiffrée uniquement en mémoire.
 4. La console admin privée permet de mint/mettre un NFT individuel, de brûler les NFT, puis d'exécuter `AccountDelete` vers une adresse de récupération séparée.
 
-Les tables SQLite Mainnet (`paper_wallets_mainnet`, `weekly_rewards_mainnet`, `paper_badge_rewards_mainnet`) sont distinctes des tables Testnet. Une transaction ou un claim Testnet ne peut donc pas être pris pour un état Mainnet.
+Le runtime est Mainnet-only et utilise exclusivement les tables SQLite `paper_wallets_mainnet`, `weekly_rewards_mainnet` et `paper_badge_rewards_mainnet`.
 
 ## Variables obligatoires
 
 ```dotenv
-TIDE_PAPER_WALLET_NETWORK=mainnet
 TIDE_PAPER_WALLET_WSS_URL=wss://xrplcluster.com
 TIDE_PAPER_WALLET_SOURCE_TAG=100
 TIDE_PAPER_WALLET_ISSUER_SEED=s...
@@ -27,7 +26,7 @@ TIDE_PUBLIC_BASE_URL=https://api.tidetrade.xyz
 TIDE_FIRST_TRADE_IMAGE_URI=ipfs://bafy.../first-trade.png
 ```
 
-Le serveur refuse de démarrer si l'acknowledgement, l'adresse de récupération ou les deux plafonds manquent en Mainnet. Le plafond total et le plafond UTC quotidien sont relus depuis SQLite avant chaque Payment et les soumissions du funder sont sérialisées.
+Le serveur refuse de démarrer si l'acknowledgement, l'adresse de récupération ou les deux plafonds manquent. Il refuse aussi tout endpoint Testnet/Devnet. Le plafond total et le plafond UTC quotidien sont relus depuis SQLite avant chaque Payment et les soumissions du funder sont sérialisées.
 
 ## Séparation des secrets
 

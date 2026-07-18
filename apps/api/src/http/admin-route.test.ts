@@ -155,9 +155,9 @@ describe("GET /admin/overview", () => {
 });
 
 describe("admin wallet operations", () => {
-  it("provisionne un lot Testnet uniquement avec le token admin", async () => {
+  it("provisionne un lot Mainnet uniquement avec le token admin", async () => {
     const provision = vi.fn(async (count: number) => ({
-      network: "testnet" as const,
+      network: "mainnet" as const,
       requested: count,
       funded: count,
       wallets: [],
@@ -185,7 +185,7 @@ describe("admin wallet operations", () => {
       payload: { count: 2 },
     });
     expect(accepted.statusCode).toBe(201);
-    expect(accepted.json()).toMatchObject({ network: "testnet", requested: 2, funded: 2 });
+    expect(accepted.json()).toMatchObject({ network: "mainnet", requested: 2, funded: 2 });
     expect(provision).toHaveBeenCalledWith(2);
     await app.close();
   });
@@ -214,7 +214,7 @@ describe("admin wallet operations", () => {
     const unauthorized = await app.inject({
       method: "POST",
       url: "/admin/wallets/reclaim-all",
-      payload: { confirmation: "DELETE ALL TESTNET WALLETS" },
+      payload: { confirmation: "DELETE ALL MAINNET WALLETS" },
     });
     expect(unauthorized.statusCode).toBe(401);
 
@@ -222,10 +222,10 @@ describe("admin wallet operations", () => {
       method: "POST",
       url: "/admin/wallets/reclaim-all",
       headers: { "x-admin-token": ADMIN_TOKEN },
-      payload: { confirmation: "DELETE ALL TESTNET WALLETS" },
+      payload: { confirmation: "DELETE ALL MAINNET WALLETS" },
     });
     expect(accepted.statusCode).toBe(202);
-    expect(startReclaimAll).toHaveBeenCalledWith("DELETE ALL TESTNET WALLETS");
+    expect(startReclaimAll).toHaveBeenCalledWith("DELETE ALL MAINNET WALLETS");
     await app.close();
   });
 });

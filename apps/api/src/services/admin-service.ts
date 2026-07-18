@@ -5,7 +5,6 @@ import type { MandateStore } from "../store/mandate-store";
 import type { AgentActionsStore } from "../store/agent-actions-store";
 import { isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { ArenaSimulationStatus, ArenaSimulationStatusReader } from "../simulation/arena-simulation-service";
-import type { TestnetE2EStatus, TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 
 /** Origine d'un compte paper. Précédence : operator > agent > frontend. */
@@ -49,7 +48,7 @@ export interface AdminWalletRow {
   readonly userId: string | null;
   readonly live: boolean;
   readonly status: PaperWallet["status"] | null;
-  readonly network: "testnet" | "mainnet" | null;
+  readonly network: "mainnet" | null;
 }
 
 export interface AdminSegmentTotals {
@@ -80,8 +79,6 @@ export interface AdminOverview {
   readonly wallets: readonly AdminWalletRow[];
   /** Banc de charge Paper, explicitement séparé de la population humaine. */
   readonly simulation: ArenaSimulationStatus;
-  /** Parcours LLM + wallet + NFT, visible et déclenchable par l'opérateur. */
-  readonly testnetE2E: TestnetE2EStatus;
 }
 
 export interface AdminServiceDeps {
@@ -92,9 +89,7 @@ export interface AdminServiceDeps {
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
   readonly paperWallets?: Pick<PaperWalletStore, "list">;
-  readonly paperWalletNetwork?: "testnet" | "mainnet";
   readonly simulation?: ArenaSimulationStatusReader;
-  readonly testnetE2E?: TestnetE2ERunner;
 }
 
 /** Nombre d'actions récentes à charger par agent (seule la dernière est exposée). */
@@ -122,7 +117,6 @@ export class AdminService {
       agents: agentRows,
       wallets,
       simulation: this.deps.simulation?.status() ?? disabledSimulationStatus(),
-      testnetE2E: this.deps.testnetE2E?.status() ?? disabledTestnetE2EStatus(),
     };
   }
 
@@ -202,7 +196,7 @@ export class AdminService {
       userId: wallet.userId,
       live: false,
       status: wallet.status,
-      network: this.deps.paperWalletNetwork ?? "testnet",
+      network: "mainnet" as const,
     })));
     if (this.deps.prizePoolAddress !== null) {
       wallets.push({
@@ -253,17 +247,6 @@ function disabledSimulationStatus(): ArenaSimulationStatus {
     completedTicks: 0,
     executedTrades: 0,
     skippedTrades: 0,
-    lastError: null,
-  };
-}
-
-function disabledTestnetE2EStatus(): TestnetE2EStatus {
-  return {
-    enabled: false,
-    state: "idle",
-    configuredUsers: 0,
-    completedUsers: 0,
-    lastRunAt: null,
     lastError: null,
   };
 }

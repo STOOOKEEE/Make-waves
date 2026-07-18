@@ -42,7 +42,7 @@ async function submit(
 async function main(): Promise<void> {
   const runtime = env.readPaperWalletRuntimeConfig();
   if (runtime === undefined) {
-    throw new Error("Configuration wallet Paper Testnet incomplète");
+    throw new Error("Configuration wallet Paper Mainnet incomplète");
   }
 
   const userId = readUserId(process.argv.slice(2));
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
       return;
     }
     const reserve = server.result.info.validated_ledger?.reserve_inc_xrp;
-    if (reserve === undefined) throw new Error("Owner reserve Testnet indisponible");
+    if (reserve === undefined) throw new Error("Owner reserve Mainnet indisponible");
     const feeDrops = String(Math.ceil(reserve * 1_000_000));
     const deleteHash = await submit(
       client,

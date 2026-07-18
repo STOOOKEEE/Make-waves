@@ -34,7 +34,6 @@ import type { AgentStore } from "./store/agent-store";
 import type { PaperWalletStore } from "./store/paper-wallet-store";
 import type { MandateStore } from "./store/mandate-store";
 import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
-import type { TestnetE2ERunner } from "./simulation/testnet-e2e-runner";
 import type { PaperWalletAdminService } from "./services/paper-wallet-admin-service";
 import type { AdminServerDeps } from "./http/server";
 
@@ -90,13 +89,9 @@ export interface AppConfig {
   readonly operatorUserIds?: readonly string[];
   /** Wallets Paper visibles dans la console locale, sans aucune seed. */
   readonly paperWalletStore?: Pick<PaperWalletStore, "list">;
-  /** Réseau des wallets custodiaux affichés dans la console. */
-  readonly paperWalletNetwork?: "testnet" | "mainnet";
   /** Etat du banc de charge Paper, visible seulement dans la console admin. */
   readonly simulation?: ArenaSimulationStatusReader;
-  /** Runner Testnet explicitement déclenché depuis la console admin. */
-  readonly testnetE2E?: TestnetE2ERunner;
-  /** Distribution NFT et récupération des wallets, uniquement dans la console locale Testnet. */
+  /** Distribution NFT et récupération des wallets depuis la console locale Mainnet. */
   readonly paperWalletAdmin?: PaperWalletAdminService;
   /** Store des agents — requis avec `adminToken` pour activer la console admin. */
   readonly agentStore?: AgentStore;
@@ -123,7 +118,7 @@ export interface AppConfig {
   readonly badgeStore?: BadgeStore;
   /** Programme « trade de la semaine » : wallet Paper financé + claim NFT. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Wallet Testnet + badge automatique du premier trade. */
+  /** Wallet Mainnet + badge automatique du premier trade. */
   readonly firstTradeRewards?: import("./services/first-trade-reward-service").FirstTradeRewardService;
   /** Génère l'adresse custodiale à l'ouverture, sans la financer. */
   readonly paperWallets?: Pick<import("./services/paper-wallet-service").PaperWalletService, "ensureCreated">;
@@ -210,11 +205,8 @@ export function createApp(config: AppConfig): App {
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
             paperWallets: config.paperWalletStore,
-            paperWalletNetwork: config.paperWalletNetwork,
             simulation: config.simulation,
-            testnetE2E: config.testnetE2E,
           }),
-          ...(config.testnetE2E !== undefined ? { testnetE2E: config.testnetE2E } : {}),
           ...(config.paperWalletAdmin !== undefined
             ? { walletAdmin: config.paperWalletAdmin }
             : {}),

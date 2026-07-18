@@ -18,9 +18,9 @@ describe("readXrplNetwork", () => {
     expect(readXrplNetwork()).toBe("mainnet");
   });
 
-  it("accepte testnet + normalise la casse", () => {
+  it("refuse testnet", () => {
     process.env["TIDE_XRPL_NETWORK"] = "TESTNET";
-    expect(readXrplNetwork()).toBe("testnet");
+    expect(() => readXrplNetwork()).toThrow(/mainnet/i);
   });
 
   it("lève sur une valeur inconnue", () => {

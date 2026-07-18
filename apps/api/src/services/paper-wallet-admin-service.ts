@@ -7,7 +7,7 @@ import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store"
 import type { PaperWalletService } from "./paper-wallet-service";
 
 const DELETE_LEDGER_DELAY = 255;
-const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
+const DELETE_CONFIRMATION = "DELETE ALL MAINNET WALLETS";
 const MAX_DELETE_WAIT_MS = 45 * 60 * 1000;
 const LEDGER_POLL_MS = 4_000;
 const RECLAIM_CONCURRENCY = 3;
@@ -44,7 +44,7 @@ export interface ReclaimResult {
 
 export interface ReclaimJobStatus {
   readonly enabled: boolean;
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly id: string | null;
   readonly state: "idle" | "running" | "succeeded" | "failed";
   readonly total: number;
@@ -64,7 +64,7 @@ export interface AdminNftGrantResult extends NftIssueResult {
 }
 
 export interface AdminWalletProvisionResult {
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly requested: number;
   readonly funded: number;
   readonly wallets: readonly {
@@ -82,7 +82,7 @@ export interface PaperWalletAdminServiceDeps {
   readonly provisioner: Pick<PaperWalletService, "ensureFunded">;
   readonly issuer: NftIssuer;
   readonly recoveryAddress: string;
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly gateway: PaperWalletAdminGateway;
   readonly metadataBaseUrl: string;
   readonly sleep?: (milliseconds: number) => Promise<void>;
@@ -91,7 +91,7 @@ export interface PaperWalletAdminServiceDeps {
 
 /**
  * Opérations sensibles de la console locale, strictement câblées au runtime
- * wallet Paper Testnet. Les seeds ne quittent jamais ce service et ne sont
+ * wallet Paper Mainnet. Les seeds ne quittent jamais ce service et ne sont
  * jamais incluses dans les DTO admin.
  */
 export class PaperWalletAdminService {
@@ -317,7 +317,7 @@ export class PaperWalletAdminService {
   }
 }
 
-/** Gateway réel, construit uniquement par le runtime Paper explicitement Testnet. */
+/** Gateway réel, construit uniquement par le runtime Paper Mainnet. */
 export class XrplPaperWalletAdminGateway implements PaperWalletAdminGateway {
   constructor(
     private readonly serverUrl: string,
@@ -336,7 +336,7 @@ export class XrplPaperWalletAdminGateway implements PaperWalletAdminGateway {
         }
       }
     }
-    throw lastError instanceof Error ? lastError : new Error("Lecture XRPL Testnet impossible");
+    throw lastError instanceof Error ? lastError : new Error("Lecture XRPL Mainnet impossible");
   }
 
   private async snapshotOnce(address: string): Promise<WalletLedgerSnapshot> {
@@ -443,7 +443,7 @@ function queuedResult(wallet: PaperWallet): ReclaimResult {
   };
 }
 
-function idleJob(network: "testnet" | "mainnet"): ReclaimJobStatus {
+function idleJob(network: "mainnet"): ReclaimJobStatus {
   return {
     enabled: true,
     network,

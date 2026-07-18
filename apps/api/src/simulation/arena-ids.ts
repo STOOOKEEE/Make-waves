@@ -3,9 +3,8 @@
  * jamais des comptes XRPL, ni des utilisateurs authentifiables du produit.
  */
 export const ARENA_SIMULATION_USER_PREFIX = "sim:arena:";
-export const TESTNET_E2E_USER_PREFIX = "e2e:testnet:";
-/** Wallets custodiaux créés manuellement depuis la console locale Testnet. */
-export const MANAGED_TESTNET_WALLET_USER_PREFIX = "wallet:testnet:";
+/** Wallets custodiaux créés manuellement depuis la console locale Mainnet. */
+export const MANAGED_WALLET_USER_PREFIX = "wallet:mainnet:";
 
 /** Identifiant stable d'un profil de l'arène (indexé à partir de 0). */
 export function arenaSimulationUserId(index: number): string {
@@ -20,8 +19,6 @@ export function isArenaSimulationUserId(userId: string): boolean {
 /** Comptes techniques, exclus de toute surface et métrique d'utilisateur humain. */
 export function isTechnicalTestUserId(userId: string): boolean {
   return (
-    isArenaSimulationUserId(userId) ||
-    userId.startsWith(TESTNET_E2E_USER_PREFIX) ||
-    userId.startsWith(MANAGED_TESTNET_WALLET_USER_PREFIX)
+    isArenaSimulationUserId(userId) || userId.startsWith(MANAGED_WALLET_USER_PREFIX)
   );
 }

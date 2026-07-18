@@ -83,7 +83,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     provisioner,
     issuer,
     recoveryAddress: ISSUER_ADDRESS,
-    network: "testnet",
+    network: "mainnet",
     gateway,
     metadataBaseUrl: "https://api.test",
     sleep: async () => undefined,
@@ -92,14 +92,14 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
 }
 
 describe("PaperWalletAdminService", () => {
-  it("crée et finance un lot borné de wallets techniques Testnet", async () => {
+  it("crée et finance un lot borné de wallets techniques Mainnet", async () => {
     const { service, provisioner } = await fixture();
 
     const result = await service.provision(2);
 
-    expect(result).toMatchObject({ network: "testnet", requested: 2, funded: 2 });
+    expect(result).toMatchObject({ network: "mainnet", requested: 2, funded: 2 });
     expect(result.wallets).toHaveLength(2);
-    expect(result.wallets.every((wallet) => wallet.userId.startsWith("wallet:testnet:"))).toBe(true);
+    expect(result.wallets.every((wallet) => wallet.userId.startsWith("wallet:mainnet:"))).toBe(true);
     expect(provisioner.ensureFunded).toHaveBeenCalledTimes(2);
   });
 

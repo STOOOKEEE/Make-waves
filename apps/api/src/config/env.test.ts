@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   readAdminToken,
   readArenaSimulationConfig,
-  readTestnetE2EConfig,
   readCorsOrigin,
   readOperatorUserIds,
   readPrivateAdminRuntimeConfig,
@@ -22,13 +21,8 @@ const KEYS = [
   "TIDE_SIMULATION_USERS",
   "TIDE_SIMULATION_TRADES_PER_TICK",
   "TIDE_SIMULATION_TICK_MS",
-  "TIDE_E2E_TESTNET_USERS",
-  "TIDE_E2E_TESTNET_ISSUER_SEED",
-  "TIDE_E2E_TESTNET_SOURCE_TAG",
-  "TIDE_E2E_TESTNET_WSS_URL",
   "TIDE_XRPL_NETWORK",
   "TIDE_FIRST_TRADE_IMAGE_URI",
-  "TIDE_PAPER_WALLET_NETWORK",
   "TIDE_PAPER_WALLET_WSS_URL",
   "TIDE_PAPER_WALLET_SOURCE_TAG",
   "TIDE_PAPER_WALLET_ISSUER_SEED",
@@ -113,9 +107,8 @@ describe("readFirstTradeImageUri", () => {
 describe("readPaperWalletRuntimeConfig", () => {
   const validSeed = `s${"a".repeat(28)}`;
 
-  function configure(network = "testnet"): void {
-    process.env["TIDE_PAPER_WALLET_NETWORK"] = network;
-    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://s.altnet.rippletest.net:51233";
+  function configure(): void {
+    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://xrplcluster.com";
     process.env["TIDE_PAPER_WALLET_SOURCE_TAG"] = "123";
     process.env["TIDE_PAPER_WALLET_ISSUER_SEED"] = validSeed;
     process.env["TIDE_PAPER_WALLET_FUNDER_SEED"] = validSeed;
@@ -126,18 +119,14 @@ describe("readPaperWalletRuntimeConfig", () => {
     expect(readPaperWalletRuntimeConfig()).toBeUndefined();
   });
 
-  it("isole un runtime Testnet complet du réseau Live", () => {
+  it("refuse un endpoint de test", () => {
     configure();
-    process.env["TIDE_XRPL_NETWORK"] = "mainnet";
-    expect(readPaperWalletRuntimeConfig()).toMatchObject({
-      network: "testnet",
-      serverUrl: "wss://s.altnet.rippletest.net:51233",
-    });
+    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://s.altnet.rippletest.net:51233";
+    expect(() => readPaperWalletRuntimeConfig()).toThrow(/endpoint de test/);
   });
 
   it("active Mainnet uniquement avec acknowledgement, récupération et plafonds", () => {
-    configure("mainnet");
-    process.env["TIDE_PAPER_WALLET_WSS_URL"] = "wss://xrplcluster.com";
+    configure();
     expect(() => readPaperWalletRuntimeConfig()).toThrow(/MAINNET_ACK/);
     process.env["TIDE_PAPER_WALLET_MAINNET_ACK"] = "I_UNDERSTAND_THIS_SPENDS_REAL_XRP";
     process.env["TIDE_PAPER_WALLET_RECOVERY_ADDRESS"] = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
@@ -237,22 +226,5 @@ describe("readArenaSimulationConfig", () => {
     process.env["TIDE_SIMULATION_USERS"] = "300";
     process.env["TIDE_SIMULATION_TICK_MS"] = "1000";
     expect(() => readArenaSimulationConfig()).toThrow();
-  });
-});
-
-describe("readTestnetE2EConfig", () => {
-  it("reste off sans nombre de profils", () => {
-    expect(readTestnetE2EConfig()).toBeUndefined();
-  });
-  it("refuse tout réseau autre que Testnet", () => {
-    process.env["TIDE_E2E_TESTNET_USERS"] = "1";
-    expect(() => readTestnetE2EConfig()).toThrow("testnet");
-  });
-  it("lit une configuration Testnet complète", () => {
-    process.env["TIDE_XRPL_NETWORK"] = "testnet";
-    process.env["TIDE_E2E_TESTNET_USERS"] = "2";
-    process.env["TIDE_E2E_TESTNET_ISSUER_SEED"] = "sEd7e5DsqP1E3Vpv6t3knnP7E4EcaD2";
-    process.env["TIDE_E2E_TESTNET_SOURCE_TAG"] = "123";
-    expect(readTestnetE2EConfig()).toMatchObject({ users: 2, sourceTag: 123 });
   });
 });

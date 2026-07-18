@@ -15,17 +15,13 @@ function rowToWallet(row: unknown): PaperWallet {
   };
 }
 
-export type PaperWalletNetwork = "testnet" | "mainnet";
-
-function tableFor(network: PaperWalletNetwork): string {
-  return network === "mainnet" ? "paper_wallets_mainnet" : "paper_wallets";
-}
+const TABLE = "paper_wallets_mainnet";
 
 export class SqlitePaperWalletStore implements PaperWalletStore {
   private readonly table: string;
 
-  constructor(private readonly db: DatabaseSync, network: PaperWalletNetwork = "testnet") {
-    this.table = tableFor(network);
+  constructor(private readonly db: DatabaseSync) {
+    this.table = TABLE;
   }
 
   async get(userId: string): Promise<PaperWallet | null> {

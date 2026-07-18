@@ -21,8 +21,8 @@ function toReward(row: Record<string, unknown>): PaperBadgeReward {
 export class SqlitePaperBadgeRewardStore implements PaperBadgeRewardStore {
   private readonly table: string;
 
-  constructor(private readonly db: DatabaseSync, network: "testnet" | "mainnet" = "testnet") {
-    this.table = network === "mainnet" ? "paper_badge_rewards_mainnet" : "paper_badge_rewards";
+  constructor(private readonly db: DatabaseSync) {
+    this.table = "paper_badge_rewards_mainnet";
   }
 
   async get(userId: string, badgeCode: string): Promise<PaperBadgeReward | null> {

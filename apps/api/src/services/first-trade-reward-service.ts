@@ -6,7 +6,7 @@ import type { PaperWalletService } from "./paper-wallet-service";
 const FIRST_TRADE = BADGE_CODES.FIRST_TRADE;
 
 export interface FirstTradeRewardStatus {
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly walletAddress: string | null;
   readonly walletStatus:
     | "not_created"
@@ -27,7 +27,7 @@ export interface FirstTradeRewardServiceDeps {
   readonly issuer: NftIssuer;
   readonly gateway: Pick<XrplCustodialWalletGateway, "acceptNft">;
   readonly metadataBaseUrl: string;
-  readonly network?: "testnet" | "mainnet";
+  readonly network?: "mainnet";
   readonly now?: () => number;
 }
 
@@ -68,7 +68,7 @@ export class FirstTradeRewardService {
       this.deps.store.get(userId, FIRST_TRADE),
     ]);
     return {
-      network: this.deps.network ?? "testnet",
+      network: this.deps.network ?? "mainnet",
       walletAddress: wallet?.address ?? null,
       walletStatus: wallet?.status ?? "not_created",
       fundingTxHash: wallet?.fundingTxHash ?? null,

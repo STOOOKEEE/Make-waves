@@ -55,9 +55,6 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "POST", url: "/admin/wallets/reclaim-all" },
   { method: "POST", url: "/admin/competitions" },
   { method: "POST", url: "/admin/competitions/:id/close" },
-  // Le déclencheur E2E porte la même garde admin ; sans cette exception, le
-  // garde JWT global renverrait 401 avant que le handler ne voie son token.
-  { method: "POST", url: "/admin/testnet-e2e/run" },
   // Flux SSE agent : auto-gardé dans le handler (token en query + filtrage par
   // propriétaire) car EventSource ne peut pas poser de header Authorization.
   { method: "GET", url: "/api/agents/events" },

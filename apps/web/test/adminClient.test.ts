@@ -41,24 +41,24 @@ describe("client admin local", () => {
 
     await createLocalAdminClient(transport).reclaimAllWallets(
       "secret",
-      "DELETE ALL TESTNET WALLETS",
+      "DELETE ALL MAINNET WALLETS",
     );
 
     expect(seen).toEqual({
       path: "/admin/wallets/reclaim-all",
       method: "POST",
       headers: { "x-admin-token": "secret" },
-      body: { confirmation: "DELETE ALL TESTNET WALLETS" },
+      body: { confirmation: "DELETE ALL MAINNET WALLETS" },
     });
   });
 
-  it("demande la création d'un lot de wallets Testnet", async () => {
+  it("demande la création d'un lot de wallets Mainnet", async () => {
     let seen: ApiRequest | undefined;
     const transport = async (request: ApiRequest): Promise<ApiResponse> => {
       seen = request;
       return {
         status: 201,
-        body: { network: "testnet", requested: 3, funded: 3, wallets: [] },
+        body: { network: "mainnet", requested: 3, funded: 3, wallets: [] },
       };
     };
 

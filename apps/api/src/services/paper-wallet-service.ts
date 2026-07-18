@@ -38,7 +38,7 @@ export interface PaperWalletServiceDeps {
   /** 32 octets hex, réservés aux wallets Paper (ne pas réutiliser pour les agents). */
   readonly masterKeyHex: string;
   readonly masterKeyId: string;
-  readonly network?: "testnet" | "mainnet";
+  readonly network?: "mainnet";
   /** Limites persistantes appliquées avant chaque Payment du funder. */
   readonly maxFundedWallets?: number;
   readonly maxFundedWalletsPerDay?: number;
@@ -152,7 +152,7 @@ export class PaperWalletService {
     const totalLimit = this.deps.maxFundedWallets;
     if (totalLimit !== undefined && (await this.deps.store.countFunded()) >= totalLimit) {
       throw new PaperWalletFundingLimitError(
-        `Plafond ${this.deps.network ?? "testnet"} atteint (${String(totalLimit)} wallets)`,
+        `Plafond ${this.deps.network ?? "mainnet"} atteint (${String(totalLimit)} wallets)`,
       );
     }
     const dailyLimit = this.deps.maxFundedWalletsPerDay;

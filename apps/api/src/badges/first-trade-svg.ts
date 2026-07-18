@@ -16,7 +16,7 @@ export const FIRST_TRADE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox=
 </g>
 <text x="82" y="124" fill="#7589ff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="34" font-weight="700" letter-spacing="12">TIDE</text>
 <text x="82" y="820" fill="#f8fbff" font-family="Inter, Arial, sans-serif" font-size="92" font-weight="800" letter-spacing="-3">FIRST TRADE</text>
-<text x="86" y="884" fill="#8da0b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="27" letter-spacing="4">XRPL TESTNET · GENESIS BADGE</text>
+<text x="86" y="884" fill="#8da0b8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="27" letter-spacing="4">XRPL MAINNET · GENESIS BADGE</text>
 <rect x="82" y="925" width="860" height="2" fill="#26334b"/>
 <text x="82" y="970" fill="#526dff" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="22">PROOF OF PRACTICE / 001</text>
 </svg>`;

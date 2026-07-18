@@ -2323,3 +2323,11 @@ serveur et ne prétend plus inscrire sans hash confirmé.
 - Les tables wallets/récompenses Mainnet sont séparées des tables Testnet. Les Payments du funder et les émissions de l’issuer sont sérialisés pour éviter les collisions de `Sequence`.
 - La console admin privée affiche le réseau et possède une section visible pour mint + envoyer un NFT individuel, ainsi que burn + `AccountDelete` + sweep vers l’adresse de récupération.
 - Vérification : typecheck complet, lint, build web, 972 tests, audit dépendances sans vulnérabilité connue, dashboard local sans erreur console. Aucun XRP Mainnet déplacé et aucun secret Mainnet configuré.
+
+## 2026-07-18 — Retrait complet du runtime XRPL Testnet
+
+**Décision produit.** Tide cible désormais exclusivement XRPL Mainnet. Le runner E2E Testnet, le bootstrap faucet, les routes et cartes admin associées, les variables d'environnement Testnet et leur documentation ont été supprimés.
+
+**Garde-fous.** `TIDE_XRPL_NETWORK` n'accepte plus que `mainnet`. Le runtime custodial Paper n'a plus de sélecteur réseau et refuse les endpoints altnet/testnet/devnet. Les stores utilisent uniquement les tables suffixées `_mainnet`; la migration supprime les anciennes tables Testnet.
+
+**Console.** Le dashboard opérateur reste local/privé et toutes ses opérations wallet/NFT/reclaim sont Mainnet-only. La confirmation destructive devient `DELETE ALL MAINNET WALLETS`.

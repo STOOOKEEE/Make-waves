@@ -15,7 +15,6 @@ const TOKEN_KEY = "tide.adminToken";
 /** Contrat du client admin, implémenté dans un chunk réservé au dev local. */
 export interface AdminClient {
   adminOverview(token: string): Promise<AdminOverviewDto>;
-  runTestnetE2E(token: string): Promise<AdminOverviewDto["testnetE2E"]>;
   walletOpsStatus(token: string): Promise<AdminReclaimJobDto>;
   provisionWallets(token: string, count: number): Promise<AdminWalletProvisionDto>;
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
@@ -65,23 +64,6 @@ export function useAdmin(client: AdminClient) {
       } else {
         error.value = errorMessage(err);
       }
-    } finally {
-      loading.value = false;
-    }
-  }
-
-  async function runTestnetE2E(): Promise<void> {
-    if (token.value === "") {
-      error.value = "Token requis.";
-      return;
-    }
-    loading.value = true;
-    error.value = "";
-    try {
-      const status = await client.runTestnetE2E(token.value);
-      if (overview.value !== null) overview.value = { ...overview.value, testnetE2E: status };
-    } catch (err) {
-      error.value = errorMessage(err);
     } finally {
       loading.value = false;
     }
@@ -188,7 +170,6 @@ export function useAdmin(client: AdminClient) {
     competitionPayout,
     lastNftGrant,
     load,
-    runTestnetE2E,
     refreshWalletJob,
     provisionWallets,
     grantNft,

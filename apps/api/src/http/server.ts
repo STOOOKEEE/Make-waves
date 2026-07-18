@@ -62,7 +62,6 @@ import type { AuthService } from "../auth/auth-service";
 import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
-import type { TestnetE2ERunner } from "../simulation/testnet-e2e-runner";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import {
@@ -157,7 +156,7 @@ export interface ServerDeps {
   readonly badgeService?: BadgeService;
   /** Une carte/NFT par semaine avec au moins un trade Paper. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Wallet Testnet + badge custodial remis automatiquement au premier trade. */
+  /** Wallet Mainnet + badge custodial remis automatiquement au premier trade. */
   readonly firstTradeRewards?: FirstTradeRewardService;
   /** Création du wallet custodial sans funding lors de l'arrivée utilisateur. */
   readonly paperWallets?: Pick<import("../services/paper-wallet-service").PaperWalletService, "ensureCreated">;
@@ -165,7 +164,6 @@ export interface ServerDeps {
   readonly admin?: {
     readonly token: string;
     readonly service: AdminService;
-    readonly testnetE2E?: TestnetE2ERunner;
     readonly walletAdmin?: PaperWalletAdminService;
   };
   /**
@@ -314,7 +312,7 @@ const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
-  /** Découple le fill Paper immédiat du funding Testnet (lent et optionnel). */
+  /** Découple le fill Paper immédiat du funding XRPL (lent et optionnel). */
   const registerPaperTrade = async (userId: string): Promise<void> => {
     // Les profils du banc de charge ne reçoivent ni wallet XRPL ni récompense :
     // ils n'existent que pour exercer le moteur Paper local.
@@ -1148,16 +1146,6 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { ...result, payoutTx };
     },
   );
-  if (admin.testnetE2E !== undefined) {
-    const testnetE2E = admin.testnetE2E;
-    app.post("/admin/testnet-e2e/run", async (request, reply) => {
-      if (!hasAdminToken(request, admin.token)) {
-        reply.code(401);
-        return { error: "unauthorized" };
-      }
-      return testnetE2E.run();
-    });
-  }
   app.get("/admin/wallet-ops/status", (request, reply) => {
     if (!hasAdminToken(request, admin.token)) {
       reply.code(401);
@@ -1165,7 +1153,7 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
     }
     return admin.walletAdmin?.status() ?? {
       enabled: false,
-      network: "testnet" as const,
+      network: "mainnet" as const,
       id: null,
       state: "idle",
       total: 0,

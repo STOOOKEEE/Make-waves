@@ -29,18 +29,10 @@ const EMPTY: AdminOverviewDto = {
     skippedTrades: 0,
     lastError: null,
   },
-  testnetE2E: {
-    enabled: false,
-    state: "idle",
-    configuredUsers: 0,
-    completedUsers: 0,
-    lastRunAt: null,
-    lastError: null,
-  },
 };
 const IDLE_JOB: AdminReclaimJobDto = {
   enabled: false,
-  network: "testnet",
+  network: "mainnet",
   id: null,
   state: "idle",
   total: 0,
@@ -68,16 +60,9 @@ function clientWithToken(
       }
       return Promise.resolve(response.body as AdminOverviewDto);
     },
-    runTestnetE2E: (token) => {
-      const response = responseFor(token);
-      if (response.status !== 200) {
-        throw new TideApiError(response.status, "invalide");
-      }
-      return Promise.resolve(response.body as AdminOverviewDto["testnetE2E"]);
-    },
     walletOpsStatus: async () => IDLE_JOB,
     provisionWallets: async (_token, count) => ({
-      network: "testnet",
+      network: "mainnet",
       requested: count,
       funded: count,
       wallets: [],

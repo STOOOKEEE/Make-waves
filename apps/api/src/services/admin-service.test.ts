@@ -164,7 +164,7 @@ describe("AdminService.overview", () => {
       userId: "paper:user-1",
       live: false,
       status: "funded",
-      network: "testnet",
+      network: "mainnet",
     });
     expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
   });

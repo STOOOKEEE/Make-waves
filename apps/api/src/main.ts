@@ -51,7 +51,6 @@ import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-pa
 import { removeLegacyDemoAccounts } from "./store/migrations/2026-07-18-remove-demo-data";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
-import { TestnetE2EFlowRunner } from "./simulation/testnet-e2e-runner";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
 // `fetch`, variables d'environnement, écoute réseau, rafraîchissement périodique
@@ -207,19 +206,16 @@ function buildSignDeps(sourceTag: number | undefined): SignDeps | undefined {
 
 /**
  * Moteur d'exécution Live. Quote par défaut = RLUSD mainnet (le token de cotation
- * du produit) ; `TIDE_RLUSD_ISSUER` permet de surcharger l'issuer (autre émetteur,
- * testnet). Dans les deux cas, le moteur n'est activé que si un SourceTag est
+ * du produit) ; `TIDE_RLUSD_ISSUER` permet de surcharger l'issuer. Dans les deux
+ * cas, le moteur n'est activé que si un SourceTag est
  * présent (sinon on signerait des swaps non attribués) :
  * - issuer SURCHARGÉ sans SourceTag = config explicitement cassée → on lève ;
  * - défaut sans SourceTag = mode off-chain pur assumé → Live simplement désactivé.
- * Le quote par défaut est l'issuer RLUSD **mainnet** : hors mainnet sans issuer
- * explicite, on lèverait des swaps contre un émetteur inexistant → on lève.
  * Le moteur tourne sans Xaman : `/exec/plan` (GemWallet) reste exposé ;
  * `/sign/live-offer` n'apparaît qu'avec Xaman.
  */
 function buildExecDeps(
   sourceTag: number | undefined,
-  network: env.XrplNetwork,
   xrpl: XrplClient | undefined,
 ): ExecDeps | undefined {
   // Lecteur de prix on-chain (AMM + carnet) si un nœud est câblé — le
@@ -234,11 +230,6 @@ function buildExecDeps(
   }
   if (sourceTag === undefined) {
     return undefined;
-  }
-  if (network !== "mainnet") {
-    throw new Error(
-      `Live activé sur ${network} sans TIDE_RLUSD_ISSUER : le quote par défaut est l'émetteur RLUSD mainnet (inexistant hors mainnet). Fournir TIDE_RLUSD_ISSUER.`,
-    );
   }
   return { sourceTag, quote: DEFAULT_LIVE_QUOTE, ...onchain };
 }
@@ -293,14 +284,14 @@ async function main(): Promise<void> {
   const wsUrl = env.readOnchainWsUrl();
   const xrpl = wsUrl !== undefined ? connectXrplClient(wsUrl) : undefined;
 
-  const network = env.readXrplNetwork();
+  env.readXrplNetwork();
   const publicAdminToken = env.readAdminToken();
   const privateAdminRuntime = env.readPrivateAdminRuntimeConfig();
   const sourceTag = env.readSourceTag();
   const onchainPrices = buildOnchainProvider(xrpl, env.readOnchainPools() ?? {});
   const indexerSetup = buildIndexerSetup(xrpl, sourceTag);
   const sign = buildSignDeps(sourceTag);
-  const exec = buildExecDeps(sourceTag, network, xrpl);
+  const exec = buildExecDeps(sourceTag, xrpl);
   const agentChatService = buildAgentChatService();
   const metrics: MetricsDeps | undefined =
     indexerSetup !== undefined
@@ -318,10 +309,7 @@ async function main(): Promise<void> {
       : undefined;
   const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
   const firstTradeImageUri = env.readFirstTradeImageUri();
-  const paperWalletStore = new SqlitePaperWalletStore(
-    db,
-    paperWalletRuntime?.network ?? "testnet",
-  );
+  const paperWalletStore = new SqlitePaperWalletStore(db);
   const paperRewardRuntime =
     paperWalletRuntime === undefined
       ? undefined
@@ -336,20 +324,18 @@ async function main(): Promise<void> {
             funderSeed: paperWalletRuntime.funderSeed,
             sourceTag: paperWalletRuntime.sourceTag,
           });
-          if (paperWalletRuntime.network === "mainnet") {
-            const recovery = paperWalletRuntime.recoveryAddress;
-            if (issuer.issuerAddress === gateway.funderAddress) {
-              throw new Error("Le funder et l'issuer Paper Mainnet doivent être deux comptes distincts");
-            }
-            if (
-              recovery === undefined ||
-              recovery === issuer.issuerAddress ||
-              recovery === gateway.funderAddress
-            ) {
-              throw new Error(
-                "L'adresse de récupération Mainnet doit être distincte du funder et de l'issuer",
-              );
-            }
+          const recovery = paperWalletRuntime.recoveryAddress;
+          if (issuer.issuerAddress === gateway.funderAddress) {
+            throw new Error("Le funder et l'issuer Paper Mainnet doivent être deux comptes distincts");
+          }
+          if (
+            recovery === undefined ||
+            recovery === issuer.issuerAddress ||
+            recovery === gateway.funderAddress
+          ) {
+            throw new Error(
+              "L'adresse de récupération Mainnet doit être distincte du funder et de l'issuer",
+            );
           }
           const wallets = new PaperWalletService({
             store: paperWalletStore,
@@ -362,15 +348,12 @@ async function main(): Promise<void> {
           });
           return { gateway, issuer, wallets };
         })();
-  const paperBadgeRewardStore = new SqlitePaperBadgeRewardStore(
-    db,
-    paperWalletRuntime?.network ?? "testnet",
-  );
+  const paperBadgeRewardStore = new SqlitePaperBadgeRewardStore(db);
   const weeklyRewards =
     paperRewardRuntime === undefined
       ? undefined
       : new WeeklyRewardService({
-          store: new SqliteWeeklyRewardStore(db, paperWalletRuntime?.network ?? "testnet"),
+          store: new SqliteWeeklyRewardStore(db),
           wallets: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
@@ -385,7 +368,7 @@ async function main(): Promise<void> {
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
           metadataBaseUrl: env.readPublicBaseUrl(),
-          network: paperWalletRuntime?.network ?? "testnet",
+          network: "mainnet",
         });
   const paperWalletAdmin =
     paperWalletRuntime === undefined || paperRewardRuntime === undefined
@@ -396,9 +379,8 @@ async function main(): Promise<void> {
           wallets: paperRewardRuntime.wallets,
           provisioner: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
-          recoveryAddress:
-            paperWalletRuntime.recoveryAddress ?? paperRewardRuntime.issuer.issuerAddress,
-          network: paperWalletRuntime.network,
+          recoveryAddress: paperWalletRuntime.recoveryAddress,
+          network: "mainnet",
           gateway: new XrplPaperWalletAdminGateway(
             paperWalletRuntime.serverUrl,
             paperWalletRuntime.sourceTag,
@@ -505,28 +487,6 @@ async function main(): Promise<void> {
           (userId) => authService.issueToken(userId),
         );
 
-  const testnetE2EConfig = env.readTestnetE2EConfig();
-  const testnetE2E =
-    testnetE2EConfig === undefined
-      ? undefined
-      : (() => {
-          if (agentChatService === undefined || agentChatCtx === undefined) {
-            throw new Error("E2E Testnet configuré mais TIDE_LLM_API_KEY manquant");
-          }
-          return new TestnetE2EFlowRunner({
-            config: {
-              ...testnetE2EConfig,
-              metadataBaseUrl: env.readPublicBaseUrl(),
-            },
-            paper,
-            agents: agentService,
-            mandates: mandateStore,
-            chat: agentChatService,
-            chatCtx: agentChatCtx,
-            weeklyRewardsStore: new SqliteWeeklyRewardStore(db),
-          });
-        })();
-
   const { app, cache, refreshPrices, privateAdmin } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
@@ -563,9 +523,7 @@ async function main(): Promise<void> {
     exposeAdminOnPublicServer: publicAdminToken !== undefined,
     operatorUserIds: env.readOperatorUserIds(),
     paperWalletStore,
-    paperWalletNetwork: paperWalletRuntime?.network,
     simulation: arenaSimulation,
-    testnetE2E,
     paperWalletAdmin,
     agentStore,
     mandateStore,

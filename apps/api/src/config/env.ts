@@ -71,14 +71,13 @@ export function readSourceTag(): number | undefined {
   return tag;
 }
 
-/** Réseau XRPL ciblé. Détermine notamment l'émetteur RLUSD par défaut. */
-export type XrplNetwork = "mainnet" | "testnet";
-
-const XRPL_NETWORKS: readonly XrplNetwork[] = ["mainnet", "testnet"];
+/** Tide cible exclusivement XRPL Mainnet. */
+export type XrplNetwork = "mainnet";
 
 /**
  * Réseau XRPL (`TIDE_XRPL_NETWORK`). Défaut `mainnet` (le hackathon tourne en
- * mainnet). Toute autre valeur que celles connues = config cassée → on lève.
+ * mainnet). Toute autre valeur est refusée pour empêcher un démarrage accidentel
+ * sur un réseau de test.
  */
 export function readXrplNetwork(): XrplNetwork {
   const raw = optional("TIDE_XRPL_NETWORK");
@@ -86,12 +85,10 @@ export function readXrplNetwork(): XrplNetwork {
     return "mainnet";
   }
   const network = raw.toLowerCase();
-  if (!XRPL_NETWORKS.includes(network as XrplNetwork)) {
-    throw new Error(
-      `TIDE_XRPL_NETWORK invalide: ${raw} (attendu: ${XRPL_NETWORKS.join(" | ")})`,
-    );
+  if (network !== "mainnet") {
+    throw new Error(`TIDE_XRPL_NETWORK invalide: ${raw} (attendu: mainnet)`);
   }
-  return network as XrplNetwork;
+  return "mainnet";
 }
 
 /**
@@ -298,27 +295,25 @@ export function readAgentKeyMaster(): string | undefined {
 
 /** Configuration volontairement complète du wallet Paper financé. */
 export interface PaperWalletRuntimeConfig {
-  readonly network: XrplNetwork;
+  readonly network: "mainnet";
   readonly serverUrl: string;
   readonly sourceTag: number;
   readonly issuerSeed: string;
   readonly funderSeed: string;
   readonly masterKeyHex: string;
   readonly masterKeyId: string;
-  readonly recoveryAddress: string | undefined;
-  readonly maxFundedWallets: number | undefined;
-  readonly maxFundedWalletsPerDay: number | undefined;
+  readonly recoveryAddress: string;
+  readonly maxFundedWallets: number;
+  readonly maxFundedWalletsPerDay: number;
 }
 
 export const PAPER_WALLET_MAINNET_ACK = "I_UNDERSTAND_THIS_SPENDS_REAL_XRP";
 
 /**
- * Runtime custodial isolé du runtime Live : même si Tide cible Mainnet, ce
- * sous-système doit déclarer explicitement son propre réseau Testnet, nœud,
- * SourceTag et issuer. Une configuration partielle est refusée.
+ * Runtime custodial Mainnet isolé du runtime Live. Une configuration partielle
+ * est refusée et les endpoints de test sont rejetés.
  */
 export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undefined {
-  const network = optional("TIDE_PAPER_WALLET_NETWORK");
   const serverUrl = optional("TIDE_PAPER_WALLET_WSS_URL");
   const rawSourceTag = optional("TIDE_PAPER_WALLET_SOURCE_TAG");
   const issuerSeed = optional("TIDE_PAPER_WALLET_ISSUER_SEED");
@@ -328,7 +323,6 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   const rawMaxWallets = optional("TIDE_PAPER_WALLET_MAX_WALLETS");
   const rawMaxDaily = optional("TIDE_PAPER_WALLET_MAX_DAILY");
   const activation = [
-    network,
     serverUrl,
     rawSourceTag,
     issuerSeed,
@@ -341,7 +335,6 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   ];
   if (activation.every((value) => value === undefined)) return undefined;
   if (
-    network === undefined ||
     serverUrl === undefined ||
     rawSourceTag === undefined ||
     issuerSeed === undefined ||
@@ -349,11 +342,8 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     masterKeyHex === undefined
   ) {
     throw new Error(
-      "Configuration wallet Paper incomplète: réseau, WSS, SourceTag, issuer, funder et clé maître sont requis",
+      "Configuration wallet Paper incomplète: WSS, SourceTag, issuer, funder et clé maître sont requis",
     );
-  }
-  if (network !== "testnet" && network !== "mainnet") {
-    throw new Error("TIDE_PAPER_WALLET_NETWORK doit être testnet ou mainnet");
   }
   if (!/^wss?:\/\//.test(serverUrl)) {
     throw new Error("TIDE_PAPER_WALLET_WSS_URL doit être une URL ws:// ou wss://");
@@ -372,27 +362,22 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   if (!/^[0-9a-fA-F]{64}$/.test(masterKeyHex)) {
     throw new Error("TIDE_PAPER_WALLET_KEY_MASTER doit contenir 64 caractères hexadécimaux");
   }
-  if (network === "testnet" && !/altnet|testnet/i.test(serverUrl)) {
-    throw new Error("Le runtime Paper Testnet doit cibler un endpoint WSS Testnet");
+  if (/altnet|testnet|devnet/i.test(serverUrl)) {
+    throw new Error("Le runtime Paper Mainnet ne peut pas cibler un endpoint de test");
   }
-  if (network === "mainnet") {
-    if (/altnet|testnet|devnet/i.test(serverUrl)) {
-      throw new Error("Le runtime Paper Mainnet ne peut pas cibler un endpoint de test");
-    }
-    if (optional("TIDE_PAPER_WALLET_MAINNET_ACK") !== PAPER_WALLET_MAINNET_ACK) {
-      throw new Error(
-        `TIDE_PAPER_WALLET_MAINNET_ACK doit valoir ${PAPER_WALLET_MAINNET_ACK}`,
-      );
-    }
-    if (recoveryAddress === undefined) {
-      throw new Error("TIDE_PAPER_WALLET_RECOVERY_ADDRESS est requis en Mainnet");
-    }
-    assertValidAddress(recoveryAddress, "TIDE_PAPER_WALLET_RECOVERY_ADDRESS");
-    if (rawMaxWallets === undefined || rawMaxDaily === undefined) {
-      throw new Error(
-        "TIDE_PAPER_WALLET_MAX_WALLETS et TIDE_PAPER_WALLET_MAX_DAILY sont requis en Mainnet",
-      );
-    }
+  if (optional("TIDE_PAPER_WALLET_MAINNET_ACK") !== PAPER_WALLET_MAINNET_ACK) {
+    throw new Error(
+      `TIDE_PAPER_WALLET_MAINNET_ACK doit valoir ${PAPER_WALLET_MAINNET_ACK}`,
+    );
+  }
+  if (recoveryAddress === undefined) {
+    throw new Error("TIDE_PAPER_WALLET_RECOVERY_ADDRESS est requis en Mainnet");
+  }
+  assertValidAddress(recoveryAddress, "TIDE_PAPER_WALLET_RECOVERY_ADDRESS");
+  if (rawMaxWallets === undefined || rawMaxDaily === undefined) {
+    throw new Error(
+      "TIDE_PAPER_WALLET_MAX_WALLETS et TIDE_PAPER_WALLET_MAX_DAILY sont requis en Mainnet",
+    );
   }
   const maxFundedWallets = readOptionalBoundedInteger(
     "TIDE_PAPER_WALLET_MAX_WALLETS",
@@ -413,8 +398,11 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   ) {
     throw new Error("TIDE_PAPER_WALLET_MAX_DAILY ne peut pas dépasser le plafond total");
   }
+  if (maxFundedWallets === undefined || maxFundedWalletsPerDay === undefined) {
+    throw new Error("Plafonds Mainnet manquants");
+  }
   return {
-    network,
+    network: "mainnet",
     serverUrl,
     sourceTag,
     issuerSeed,
@@ -633,48 +621,6 @@ export function readArenaSimulationConfig(): ArenaSimulationRuntimeConfig {
     MIN_ARENA_TICK_INTERVAL_MS,
   );
   return { users, tradesPerTick, tickIntervalMs };
-}
-
-/** Parcours réel de vérification : LLM + Paper + NFT, strictement sur Testnet. */
-export interface TestnetE2ERuntimeConfig {
-  readonly users: number;
-  readonly wssUrl: string;
-  readonly issuerSeed: string;
-  readonly sourceTag: number;
-}
-
-const TESTNET_WSS_URL = "wss://s.altnet.rippletest.net:51233";
-
-/**
- * Le runner est OFF sans `TIDE_E2E_TESTNET_USERS`. Quand activé, il refuse
- * explicitement tout réseau autre que Testnet : aucune variable Mainnet ne peut
- * le faire démarrer par erreur.
- */
-export function readTestnetE2EConfig(): TestnetE2ERuntimeConfig | undefined {
-  const rawUsers = optional("TIDE_E2E_TESTNET_USERS");
-  if (rawUsers === undefined || rawUsers === "0") return undefined;
-  if (readXrplNetwork() !== "testnet") {
-    throw new Error("Le parcours E2E wallets/NFT est autorisé uniquement avec TIDE_XRPL_NETWORK=testnet");
-  }
-  const users = Number(rawUsers);
-  if (!Number.isInteger(users) || users < 1 || users > 10) {
-    throw new Error(`TIDE_E2E_TESTNET_USERS invalide (entier 1..10 attendu): ${rawUsers}`);
-  }
-  const issuerSeed = optional("TIDE_E2E_TESTNET_ISSUER_SEED");
-  if (issuerSeed === undefined || !/^s[1-9A-HJ-NP-Za-km-z]{25,}$/.test(issuerSeed)) {
-    throw new Error("TIDE_E2E_TESTNET_ISSUER_SEED mal formé (seed Testnet requis)");
-  }
-  const rawTag = optional("TIDE_E2E_TESTNET_SOURCE_TAG");
-  if (rawTag === undefined || !Number.isInteger(Number(rawTag))) {
-    throw new Error("TIDE_E2E_TESTNET_SOURCE_TAG manquant ou invalide");
-  }
-  const sourceTag = Number(rawTag);
-  assertAttributionTag(sourceTag);
-  const wssUrl = optional("TIDE_E2E_TESTNET_WSS_URL") ?? TESTNET_WSS_URL;
-  if (!/^wss:\/\//.test(wssUrl) || !/altnet|testnet/i.test(wssUrl)) {
-    throw new Error("TIDE_E2E_TESTNET_WSS_URL doit cibler un endpoint WSS Testnet");
-  }
-  return { users, wssUrl, issuerSeed, sourceTag };
 }
 
 function readBoundedPositiveInteger(

@@ -15,8 +15,8 @@ function rowToReward(row: unknown): WeeklyReward {
 export class SqliteWeeklyRewardStore implements WeeklyRewardStore {
   private readonly table: string;
 
-  constructor(private readonly db: DatabaseSync, network: "testnet" | "mainnet" = "testnet") {
-    this.table = network === "mainnet" ? "weekly_rewards_mainnet" : "weekly_rewards";
+  constructor(private readonly db: DatabaseSync) {
+    this.table = "weekly_rewards_mainnet";
   }
   async get(userId: string, week: string): Promise<WeeklyReward | null> {
     const row = this.db.prepare(`SELECT * FROM ${this.table} WHERE user_id = ? AND week = ?`).get(userId, week);

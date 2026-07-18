@@ -56,14 +56,6 @@ describe("authorize — routes publiques", () => {
     expect(d.ok).toBe(true);
   });
 
-  it("laisse passer le déclencheur E2E, gardé par le token admin du handler", async () => {
-    const d = await authorize(
-      req({ method: "POST", routeUrl: "/admin/testnet-e2e/run", tokenAddress: null }),
-      resolvers,
-    );
-    expect(d.ok).toBe(true);
-  });
-
   it("laisse le provisioning au garde dédié du handler admin", async () => {
     const d = await authorize(
       req({ method: "POST", routeUrl: "/admin/wallets/provision", tokenAddress: null }),

@@ -289,7 +289,7 @@ export interface WeeklyRewardDto {
 }
 
 export interface PaperWalletRewardDto {
-  readonly network: "testnet" | "mainnet" | null;
+  readonly network: "mainnet" | null;
   readonly walletAddress: string | null;
   readonly walletStatus:
     | "not_created"
@@ -350,7 +350,7 @@ export interface AdminWalletDto {
     | "funding_failed"
     | "reclaimed"
     | null;
-  readonly network: "testnet" | "mainnet" | null;
+  readonly network: "mainnet" | null;
 }
 
 export interface AdminReclaimResultDto {
@@ -365,7 +365,7 @@ export interface AdminReclaimResultDto {
 
 export interface AdminReclaimJobDto {
   readonly enabled: boolean;
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly id: string | null;
   readonly state: "idle" | "running" | "succeeded" | "failed";
   readonly total: number;
@@ -389,7 +389,7 @@ export interface AdminNftGrantDto {
 }
 
 export interface AdminWalletProvisionDto {
-  readonly network: "testnet" | "mainnet";
+  readonly network: "mainnet";
   readonly requested: number;
   readonly funded: number;
   readonly wallets: readonly {
@@ -444,14 +444,6 @@ export interface AdminOverviewDto {
     readonly completedTicks: number;
     readonly executedTrades: number;
     readonly skippedTrades: number;
-    readonly lastError: string | null;
-  };
-  readonly testnetE2E: {
-    readonly enabled: boolean;
-    readonly state: "idle" | "running" | "succeeded" | "failed";
-    readonly configuredUsers: number;
-    readonly completedUsers: number;
-    readonly lastRunAt: number | null;
     readonly lastError: string | null;
   };
 }
@@ -913,7 +905,7 @@ export class TideClient {
     );
   }
 
-  /** Wallet technique Testnet + état du NFT First Trade (jamais la seed). */
+  /** Wallet technique Mainnet + état du NFT First Trade (jamais la seed). */
   async paperWalletStatus(userId: string): Promise<PaperWalletRewardDto> {
     return this.call(
       { path: path("accounts", userId, "paper-wallet"), method: "GET" },

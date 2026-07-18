@@ -42,16 +42,6 @@ export function createLocalAdminClient(
         { path: "/admin/overview", method: "GET", headers: { "x-admin-token": token } },
         200,
       ),
-    runTestnetE2E: (token) =>
-      expectBody<AdminOverviewDto["testnetE2E"]>(
-        transport,
-        {
-          path: "/admin/testnet-e2e/run",
-          method: "POST",
-          headers: { "x-admin-token": token },
-        },
-        200,
-      ),
     walletOpsStatus: (token) =>
       expectBody<AdminReclaimJobDto>(
         transport,

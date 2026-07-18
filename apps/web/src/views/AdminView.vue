@@ -14,7 +14,6 @@ const {
   competitionPayout,
   lastNftGrant,
   load,
-  runTestnetE2E,
   refreshWalletJob,
   provisionWallets,
   grantNft,
@@ -58,9 +57,7 @@ const fundedWalletRows = computed(() =>
     (wallet) => wallet.status === "funded" && wallet.userId !== null,
   ),
 );
-const walletNetwork = computed<"testnet" | "mainnet">(
-  () => walletJob.value?.network ?? paperWallets.value[0]?.network ?? "testnet",
-);
+const walletNetwork = computed<"mainnet">(() => "mainnet");
 const deleteConfirmation = computed(
   () => `DELETE ALL ${walletNetwork.value.toUpperCase()} WALLETS`,
 );
@@ -183,18 +180,6 @@ async function submitCompetition(): Promise<void> {
           </ul>
         </div>
 
-        <div class="card">
-          <span class="card__label">Parcours E2E Testnet</span>
-          <strong class="card__value">{{ overview.testnetE2E.enabled ? overview.testnetE2E.state : "Désactivé" }}</strong>
-          <ul class="segments">
-            <li v-if="overview.testnetE2E.enabled">{{ overview.testnetE2E.completedUsers }} / {{ overview.testnetE2E.configuredUsers }} profils terminés</li>
-            <li v-if="overview.testnetE2E.enabled">LLM · wallet faucet · ordre Paper · NFT</li>
-            <li v-if="overview.testnetE2E.lastError" class="admin__error">{{ overview.testnetE2E.lastError }}</li>
-          </ul>
-          <button v-if="overview.testnetE2E.enabled" type="button" :disabled="loading || overview.testnetE2E.state === 'running'" @click="runTestnetE2E">
-            Lancer le parcours Testnet
-          </button>
-        </div>
       </div>
 
       <h2>Utilisateurs</h2>
@@ -264,7 +249,7 @@ async function submitCompetition(): Promise<void> {
         <p v-if="lastNftGrant">NFT {{ lastNftGrant.badgeCode }} envoyé à {{ lastNftGrant.walletAddress }} · tx {{ lastNftGrant.claimHash }}</p>
       </section>
 
-      <section class="admin__testnet">
+      <section class="admin__wallet-provision">
         <h2>Création manuelle de wallets techniques</h2>
         <p>Les utilisateurs de tidetrade.xyz obtiennent automatiquement leur wallet au premier trade Paper. Ce contrôle crée seulement des wallets techniques supplémentaires pour les tests opérateur.</p>
         <p>Les seeds sont chiffrées dans la DB privée et chaque wallet reçoit 1,25 XRP sur {{ walletNetwork }}.</p>
@@ -347,10 +332,10 @@ async function submitCompetition(): Promise<void> {
 .admin__danger input { min-width: 300px; }
 .admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__competitions { border: 1px solid rgba(79, 106, 255, .55); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
-.admin__testnet { border: 1px solid rgba(44, 160, 90, .65); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__wallet-provision { border: 1px solid rgba(44, 160, 90, .65); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__nft { border: 1px solid rgba(137, 91, 255, .7); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__nft h2 { margin-top: 0; }
-.admin__testnet h2 { margin-top: 0; }
+.admin__wallet-provision h2 { margin-top: 0; }
 .competition-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }
 .competition-form label { display:flex; flex-direction:column; gap:.3rem; font-size:.8rem; }
 .competition-form .wide,.competition-form button { grid-column:1/-1; }
