@@ -60,20 +60,28 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     })),
   };
   const rewards = new InMemoryPaperBadgeRewardStore();
+  const ensureCreated = vi.fn(async (userId: string) => {
+    const existing = await store.get(userId);
+    if (existing !== null) return existing;
+    const wallet: PaperWallet = {
+      userId,
+      address: `r${userId.slice(-12)}`,
+      encryptedSeed: "encrypted-generated",
+      masterKeyId: "v1",
+      status: "pending_funding",
+      fundingTxHash: null,
+      fundedAt: null,
+      createdAt: 2,
+    };
+    await store.create(wallet);
+    return wallet;
+  });
   const provisioner = {
+    ensureCreated,
     ensureFunded: vi.fn(async (userId: string) => {
-      const wallet: PaperWallet = {
-        userId,
-        address: `r${userId.slice(-12)}`,
-        encryptedSeed: "encrypted-generated",
-        masterKeyId: "v1",
-        status: "funded",
-        fundingTxHash: `fund-${userId}`,
-        fundedAt: 2,
-        createdAt: 2,
-      };
-      await store.create(wallet);
-      return wallet;
+      const wallet = await ensureCreated(userId);
+      await store.markFunded(userId, `fund-${userId}`, 2);
+      return { ...wallet, status: "funded" as const, fundingTxHash: `fund-${userId}`, fundedAt: 2 };
     }),
   };
   const service = new PaperWalletAdminService({
@@ -81,6 +89,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     rewards,
     wallets: { decryptSeed: vi.fn(async () => "sTestSeed") },
     provisioner,
+    paperUserActivity: () => ({ exists: true, hasTraded: true }),
     issuer,
     recoveryAddress: ISSUER_ADDRESS,
     network: "mainnet",
@@ -110,6 +119,22 @@ describe("PaperWalletAdminService", () => {
     await expect(service.provision(1.5)).rejects.toThrow(/entre 1 et 10/);
   });
 
+  it("crée sans funding puis finance une sélection de comptes Paper", async () => {
+    const { service, store, provisioner } = await fixture();
+
+    const created = await service.createForUsers(["paper:u1", "paper:u2", "paper:u2"]);
+    expect(created).toMatchObject({ requested: 2, funded: 0 });
+    expect((await store.get("paper:u1"))?.status).toBe("pending_funding");
+
+    await expect(service.fundForUsers(["paper:u1", "paper:u2"], "wrong")).rejects.toThrow(/FUND 2 MAINNET WALLETS/);
+    const funded = await service.fundForUsers(
+      ["paper:u1", "paper:u2"],
+      "FUND 2 MAINNET WALLETS",
+    );
+    expect(funded).toMatchObject({ requested: 2, funded: 2 });
+    expect(provisioner.ensureFunded).toHaveBeenCalledTimes(2);
+  });
+
   it("distribue un badge individuel et persiste le claim", async () => {
     const { service, rewards, issuer, gateway } = await fixture();
 
@@ -128,6 +153,16 @@ describe("PaperWalletAdminService", () => {
     });
     expect(gateway.acceptNft).toHaveBeenCalledWith("sTestSeed", "offer-id");
     expect(await rewards.get(USER_ID, "first_trade")).toMatchObject({ status: "claimed" });
+  });
+
+  it("distribue un badge en lot et rapporte les succès", async () => {
+    const { service, store } = await fixture();
+    await store.create({ ...WALLET, userId: "paper:second", address: "rSecondWallet" });
+
+    const result = await service.grantBadgeBatch([USER_ID, "paper:second"], "first_trade");
+
+    expect(result).toMatchObject({ requested: 2, succeeded: 2, failed: 0 });
+    expect(result.results.map((item) => item.userId)).toEqual([USER_ID, "paper:second"]);
   });
 
   it("brûle les NFT puis supprime le compte vers l'issuer", async () => {

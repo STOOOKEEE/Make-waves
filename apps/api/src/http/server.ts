@@ -1181,6 +1181,50 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { error: error instanceof Error ? error.message : "provisioning refusé" };
     }
   });
+  app.post("/admin/wallets/create-for-users", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      const result = await walletAdmin.createForUsers(readStringArrayField(request.body, "userIds"));
+      reply.code(201);
+      return result;
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "création refusée" };
+    }
+  });
+  app.post("/admin/wallets/fund-for-users", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      return await walletAdmin.fundForUsers(
+        readStringArrayField(request.body, "userIds"),
+        readStringField(request.body, "confirmation"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "funding refusé" };
+    }
+  });
+  app.post("/admin/wallets/nfts", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      return await walletAdmin.grantBadgeBatch(
+        readStringArrayField(request.body, "userIds"),
+        readStringField(request.body, "badgeCode"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "distribution NFT refusée" };
+    }
+  });
   app.post<{ Params: { userId: string } }>(
     "/admin/wallets/:userId/nfts",
     async (request, reply) => {
@@ -1250,6 +1294,13 @@ function readStringField(body: unknown, field: string): string {
   if (typeof body !== "object" || body === null) return "";
   const value = (body as Record<string, unknown>)[field];
   return typeof value === "string" ? value : "";
+}
+
+function readStringArrayField(body: unknown, field: string): string[] {
+  if (typeof body !== "object" || body === null) return [];
+  const value = (body as Record<string, unknown>)[field];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
 }
 
 function readNumberField(body: unknown, field: string): number {

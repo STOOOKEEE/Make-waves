@@ -139,6 +139,9 @@ describe("AdminService.overview", () => {
       live: true,
       status: null,
       network: null,
+      fundingTxHash: null,
+      fundedAt: null,
+      createdAt: null,
     });
   });
 
@@ -165,8 +168,41 @@ describe("AdminService.overview", () => {
       live: false,
       status: "funded",
       network: "mainnet",
+      fundingTxHash: "ABC",
+      fundedAt: 10,
+      createdAt: 10,
     });
     expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
+  });
+
+  it("affiche chaque compte Paper même si son wallet n'est pas encore créé", async () => {
+    const { paper, paperWallets, service } = makeService([]);
+    paper.openAccount("paper:with-wallet");
+    paper.openAccount("paper:without-wallet");
+    await paperWallets.create({
+      userId: "paper:with-wallet",
+      address: "rExistingWallet",
+      encryptedSeed: "hidden",
+      masterKeyId: "v1",
+      status: "funded",
+      fundingTxHash: "FUND_TX",
+      fundedAt: 20,
+      createdAt: 10,
+    });
+
+    const { wallets } = await service.overview(PRICES);
+    const rows = wallets.filter((wallet) => wallet.kind === "paper");
+
+    expect(rows).toHaveLength(2);
+    expect(rows.find((wallet) => wallet.userId === "paper:with-wallet")).toMatchObject({
+      status: "funded",
+      fundingTxHash: "FUND_TX",
+    });
+    expect(rows.find((wallet) => wallet.userId === "paper:without-wallet")).toMatchObject({
+      address: null,
+      status: "not_created",
+      fundingTxHash: null,
+    });
   });
 
   it("sépare les profils de simulation des totaux humains", async () => {

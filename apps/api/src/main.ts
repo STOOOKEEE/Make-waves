@@ -51,6 +51,7 @@ import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-pa
 import { removeLegacyDemoAccounts } from "./store/migrations/2026-07-18-remove-demo-data";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
+import { isTechnicalTestUserId } from "./simulation/arena-ids";
 
 // Entrypoint du serveur. Assemble l'app testée (`createApp`) avec le vrai monde :
 // `fetch`, variables d'environnement, écoute réseau, rafraîchissement périodique
@@ -378,6 +379,18 @@ async function main(): Promise<void> {
           rewards: paperBadgeRewardStore,
           wallets: paperRewardRuntime.wallets,
           provisioner: paperRewardRuntime.wallets,
+          paperUserActivity: (userId) => {
+            if (isTechnicalTestUserId(userId)) return { exists: false, hasTraded: false };
+            try {
+              return {
+                exists: true,
+                hasTraded:
+                  paper.ordersOf(userId).length > 0 || paper.positionsOf(userId).length > 0,
+              };
+            } catch {
+              return { exists: false, hasTraded: false };
+            }
+          },
           issuer: paperRewardRuntime.issuer,
           recoveryAddress: paperWalletRuntime.recoveryAddress,
           network: "mainnet",

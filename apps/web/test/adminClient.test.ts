@@ -71,4 +71,34 @@ describe("client admin local", () => {
       body: { count: 3 },
     });
   });
+
+  it("transmet la sélection multiple pour le funding et les NFT", async () => {
+    const seen: ApiRequest[] = [];
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen.push(request);
+      return request.path.endsWith("/nfts")
+        ? { status: 200, body: { requested: 2, succeeded: 2, failed: 0, results: [] } }
+        : { status: 200, body: { network: "mainnet", requested: 2, funded: 2, wallets: [] } };
+    };
+    const client = createLocalAdminClient(transport);
+    const userIds = ["paper:u1", "paper:u2"];
+
+    await client.fundUserWallets("secret", userIds, "FUND 2 MAINNET WALLETS");
+    await client.grantWalletNftBatch("secret", userIds, "first_trade");
+
+    expect(seen).toEqual([
+      {
+        path: "/admin/wallets/fund-for-users",
+        method: "POST",
+        headers: { "x-admin-token": "secret" },
+        body: { userIds, confirmation: "FUND 2 MAINNET WALLETS" },
+      },
+      {
+        path: "/admin/wallets/nfts",
+        method: "POST",
+        headers: { "x-admin-token": "secret" },
+        body: { userIds, badgeCode: "first_trade" },
+      },
+    ]);
+  });
 });

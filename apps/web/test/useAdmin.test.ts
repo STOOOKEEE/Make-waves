@@ -67,6 +67,18 @@ function clientWithToken(
       funded: count,
       wallets: [],
     }),
+    createUserWallets: async (_token, userIds) => ({
+      network: "mainnet",
+      requested: userIds.length,
+      funded: 0,
+      wallets: [],
+    }),
+    fundUserWallets: async (_token, userIds) => ({
+      network: "mainnet",
+      requested: userIds.length,
+      funded: userIds.length,
+      wallets: [],
+    }),
     grantWalletNft: async () => ({
       userId: "paper:u1",
       walletAddress: "rWallet",
@@ -76,6 +88,13 @@ function clientWithToken(
       mintHash: "mint",
       offerHash: "offer-hash",
       claimHash: "claim",
+    }),
+    grantWalletNftBatch: async (_token, userIds, badgeCode) => ({
+      badgeCode,
+      requested: userIds.length,
+      succeeded: userIds.length,
+      failed: 0,
+      results: [],
     }),
     reclaimWallet: async () => IDLE_JOB,
     reclaimAllWallets: async () => IDLE_JOB,

@@ -2331,3 +2331,23 @@ serveur et ne prétend plus inscrire sans hash confirmé.
 **Garde-fous.** `TIDE_XRPL_NETWORK` n'accepte plus que `mainnet`. Le runtime custodial Paper n'a plus de sélecteur réseau et refuse les endpoints altnet/testnet/devnet. Les stores utilisent uniquement les tables suffixées `_mainnet`; la migration supprime les anciennes tables Testnet.
 
 **Console.** Le dashboard opérateur reste local/privé et toutes ses opérations wallet/NFT/reclaim sont Mainnet-only. La confirmation destructive devient `DELETE ALL MAINNET WALLETS`.
+
+## 2026-07-18 — Supervision et opérations wallet par lot
+
+**Vue unifiée.** La console admin privée joint désormais chaque compte Paper à
+son wallet custodial Mainnet. Un compte sans adresse reste visible avec le statut
+`Non créé`; un wallet existant expose son état de funding, sa date et le hash du
+Payment vers XRPSCAN. La sélection globale, la sélection des seuls wallets
+financés et les actions individuelles restent disponibles dans la même table.
+
+**Actions par lot.** L'opérateur peut créer sans XRP les adresses manquantes,
+financer uniquement les comptes ayant une activité Paper réelle (confirmation
+explicite et coût affiché à 1,25 XRP par wallet), puis mint + envoyer un badge à
+tous les wallets financés sélectionnés. Les distributions NFT retournent un
+résultat individuel afin qu'un échec n'efface pas les succès précédents. Toutes
+les routes restent derrière le token admin et le serveur privé.
+
+**Vérifié.** Les sept comptes locaux sont visibles (un wallet financé, six
+manquants), la sélection globale active correctement les opérations éligibles,
+et aucun appel financier n'a été exécuté pendant la vérification. Typecheck,
+lint, 971 tests, build web et audit des dépendances sont verts.

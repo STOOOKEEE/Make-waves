@@ -12,6 +12,7 @@ const MAX_DELETE_WAIT_MS = 45 * 60 * 1000;
 const LEDGER_POLL_MS = 4_000;
 const RECLAIM_CONCURRENCY = 3;
 const MAX_PROVISION_COUNT = 10;
+const MAX_USER_BATCH_COUNT = 50;
 const XRPL_CONNECTION_TIMEOUT_MS = 20_000;
 const XRPL_SNAPSHOT_ATTEMPTS = 3;
 const XRPL_RETRY_DELAY_MS = 1_000;
@@ -75,11 +76,28 @@ export interface AdminWalletProvisionResult {
   }[];
 }
 
+export interface AdminBatchNftGrantResult {
+  readonly badgeCode: string;
+  readonly requested: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly (
+    | { readonly userId: string; readonly status: "succeeded"; readonly grant: AdminNftGrantResult }
+    | { readonly userId: string; readonly status: "failed"; readonly error: string }
+  )[];
+}
+
+export interface PaperUserActivity {
+  readonly exists: boolean;
+  readonly hasTraded: boolean;
+}
+
 export interface PaperWalletAdminServiceDeps {
   readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed">;
   readonly rewards: PaperBadgeRewardStore;
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
-  readonly provisioner: Pick<PaperWalletService, "ensureFunded">;
+  readonly provisioner: Pick<PaperWalletService, "ensureCreated" | "ensureFunded">;
+  readonly paperUserActivity: (userId: string) => PaperUserActivity;
   readonly issuer: NftIssuer;
   readonly recoveryAddress: string;
   readonly network: "mainnet";
@@ -133,6 +151,60 @@ export class PaperWalletAdminService {
       requested: count,
       funded: wallets.filter((wallet) => wallet.status === "funded").length,
       wallets,
+    };
+  }
+
+  /** Crée sans XRP les adresses manquantes des comptes Paper sélectionnés. */
+  async createForUsers(userIds: readonly string[]): Promise<AdminWalletProvisionResult> {
+    const ids = this.validatePaperUsers(userIds, false);
+    const wallets: AdminWalletProvisionResult["wallets"][number][] = [];
+    for (const userId of ids) {
+      const wallet = await this.deps.provisioner.ensureCreated(userId);
+      wallets.push(this.provisionRow(wallet));
+    }
+    return this.provisionResult(ids.length, wallets);
+  }
+
+  /** Finance uniquement des comptes Paper ayant déjà exécuté un trade. */
+  async fundForUsers(
+    userIds: readonly string[],
+    confirmation: string,
+  ): Promise<AdminWalletProvisionResult> {
+    const ids = this.validatePaperUsers(userIds, true);
+    const expected = `FUND ${String(ids.length)} MAINNET WALLETS`;
+    if (confirmation !== expected) throw new Error(`Confirmation requise: ${expected}`);
+    const wallets: AdminWalletProvisionResult["wallets"][number][] = [];
+    for (const userId of ids) {
+      const wallet = await this.deps.provisioner.ensureFunded(userId);
+      wallets.push(this.provisionRow(wallet));
+    }
+    return this.provisionResult(ids.length, wallets);
+  }
+
+  /** Distribue un même badge en série afin de préserver les séquences XRPL. */
+  async grantBadgeBatch(
+    userIds: readonly string[],
+    badgeCode: string,
+  ): Promise<AdminBatchNftGrantResult> {
+    const ids = this.normalizeBatchUserIds(userIds);
+    const results: AdminBatchNftGrantResult["results"][number][] = [];
+    for (const userId of ids) {
+      try {
+        results.push({ userId, status: "succeeded", grant: await this.grantBadge(userId, badgeCode) });
+      } catch (error) {
+        results.push({
+          userId,
+          status: "failed",
+          error: error instanceof Error ? error.message : "Distribution NFT refusée",
+        });
+      }
+    }
+    return {
+      badgeCode,
+      requested: ids.length,
+      succeeded: results.filter((result) => result.status === "succeeded").length,
+      failed: results.filter((result) => result.status === "failed").length,
+      results,
     };
   }
 
@@ -310,6 +382,47 @@ export class PaperWalletAdminService {
     if (wallet === null) throw new Error("Wallet Paper introuvable");
     if (wallet.status !== "funded") throw new Error(`Wallet non disponible (${wallet.status})`);
     return wallet;
+  }
+
+  private validatePaperUsers(userIds: readonly string[], requireTrade: boolean): string[] {
+    const ids = this.normalizeBatchUserIds(userIds);
+    for (const userId of ids) {
+      const activity = this.deps.paperUserActivity(userId);
+      if (!activity.exists) throw new Error(`Compte Paper inconnu: ${userId}`);
+      if (requireTrade && !activity.hasTraded) {
+        throw new Error(`Aucun trade Paper exécuté pour ${userId}`);
+      }
+    }
+    return ids;
+  }
+
+  private normalizeBatchUserIds(userIds: readonly string[]): string[] {
+    const ids = [...new Set(userIds.map((userId) => userId.trim()).filter(Boolean))];
+    if (ids.length < 1 || ids.length > MAX_USER_BATCH_COUNT) {
+      throw new Error(`La sélection doit contenir entre 1 et ${String(MAX_USER_BATCH_COUNT)} utilisateurs`);
+    }
+    return ids;
+  }
+
+  private provisionRow(wallet: PaperWallet): AdminWalletProvisionResult["wallets"][number] {
+    return {
+      userId: wallet.userId,
+      address: wallet.address,
+      status: wallet.status,
+      fundingTxHash: wallet.fundingTxHash,
+    };
+  }
+
+  private provisionResult(
+    requested: number,
+    wallets: readonly AdminWalletProvisionResult["wallets"][number][],
+  ): AdminWalletProvisionResult {
+    return {
+      network: this.deps.network,
+      requested,
+      funded: wallets.filter((wallet) => wallet.status === "funded").length,
+      wallets,
+    };
   }
 
   private deleteConfirmation(): string {

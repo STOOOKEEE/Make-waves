@@ -344,6 +344,7 @@ export interface AdminWalletDto {
   readonly userId: string | null;
   readonly live: boolean;
   readonly status:
+    | "not_created"
     | "pending_funding"
     | "funding_in_progress"
     | "funded"
@@ -351,6 +352,9 @@ export interface AdminWalletDto {
     | "reclaimed"
     | null;
   readonly network: "mainnet" | null;
+  readonly fundingTxHash: string | null;
+  readonly fundedAt: number | null;
+  readonly createdAt: number | null;
 }
 
 export interface AdminReclaimResultDto {
@@ -386,6 +390,17 @@ export interface AdminNftGrantDto {
   readonly mintHash: string;
   readonly offerHash: string;
   readonly claimHash: string;
+}
+
+export interface AdminBatchNftGrantDto {
+  readonly badgeCode: string;
+  readonly requested: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly (
+    | { readonly userId: string; readonly status: "succeeded"; readonly grant: AdminNftGrantDto }
+    | { readonly userId: string; readonly status: "failed"; readonly error: string }
+  )[];
 }
 
 export interface AdminWalletProvisionDto {

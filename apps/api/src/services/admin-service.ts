@@ -47,8 +47,11 @@ export interface AdminWalletRow {
   readonly agentId: string | null;
   readonly userId: string | null;
   readonly live: boolean;
-  readonly status: PaperWallet["status"] | null;
+  readonly status: PaperWallet["status"] | "not_created" | null;
   readonly network: "mainnet" | null;
+  readonly fundingTxHash: string | null;
+  readonly fundedAt: number | null;
+  readonly createdAt: number | null;
 }
 
 export interface AdminSegmentTotals {
@@ -109,7 +112,7 @@ export class AdminService {
 
     const users = this.buildUsers(prices, agentOwners);
     const agentRows = await this.buildAgents(agents);
-    const wallets = await this.buildWallets(agents);
+    const wallets = await this.buildWallets(agents, users);
 
     return {
       totals: this.buildTotals(users, agents, wallets),
@@ -176,7 +179,10 @@ export class AdminService {
     );
   }
 
-  private async buildWallets(agents: readonly Agent[]): Promise<AdminWalletRow[]> {
+  private async buildWallets(
+    agents: readonly Agent[],
+    users: readonly AdminUserRow[],
+  ): Promise<AdminWalletRow[]> {
     const wallets: AdminWalletRow[] = agents
       .filter((a) => a.hasLiveAccount)
       .map((a) => ({
@@ -187,9 +193,29 @@ export class AdminService {
         live: true,
         status: null,
         network: null,
+        fundingTxHash: null,
+        fundedAt: null,
+        createdAt: null,
       }));
     const paperWallets = await this.deps.paperWallets?.list() ?? [];
-    wallets.push(...paperWallets.map((wallet) => ({
+    const paperWalletByUser = new Map(paperWallets.map((wallet) => [wallet.userId, wallet]));
+    const userIds = new Set(users.map((user) => user.userId));
+    wallets.push(...users.map((user) => {
+      const wallet = paperWalletByUser.get(user.userId);
+      return {
+        address: wallet?.address ?? null,
+        kind: "paper" as const,
+        agentId: null,
+        userId: user.userId,
+        live: false,
+        status: wallet?.status ?? "not_created" as const,
+        network: "mainnet" as const,
+        fundingTxHash: wallet?.fundingTxHash ?? null,
+        fundedAt: wallet?.fundedAt ?? null,
+        createdAt: wallet?.createdAt ?? null,
+      };
+    }));
+    wallets.push(...paperWallets.filter((wallet) => !userIds.has(wallet.userId)).map((wallet) => ({
       address: wallet.address,
       kind: "paper" as const,
       agentId: null,
@@ -197,6 +223,9 @@ export class AdminService {
       live: false,
       status: wallet.status,
       network: "mainnet" as const,
+      fundingTxHash: wallet.fundingTxHash,
+      fundedAt: wallet.fundedAt,
+      createdAt: wallet.createdAt,
     })));
     if (this.deps.prizePoolAddress !== null) {
       wallets.push({
@@ -207,6 +236,9 @@ export class AdminService {
         live: true,
         status: null,
         network: null,
+        fundingTxHash: null,
+        fundedAt: null,
+        createdAt: null,
       });
     }
     return wallets;
@@ -231,7 +263,7 @@ export class AdminService {
         paused: agents.filter((a) => a.status === "paused").length,
         stopped: agents.filter((a) => a.status === "stopped").length,
       },
-      wallets: wallets.length,
+      wallets: wallets.filter((wallet) => wallet.kind !== "paper" || wallet.address !== null).length,
     };
   }
 }

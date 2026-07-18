@@ -62,6 +62,14 @@ describe("authorize — routes publiques", () => {
       resolvers,
     );
     expect(d.ok).toBe(true);
+    expect((await authorize(
+      req({ method: "POST", routeUrl: "/admin/wallets/fund-for-users", tokenAddress: null }),
+      resolvers,
+    )).ok).toBe(true);
+    expect((await authorize(
+      req({ method: "POST", routeUrl: "/admin/wallets/nfts", tokenAddress: null }),
+      resolvers,
+    )).ok).toBe(true);
   });
 });
 

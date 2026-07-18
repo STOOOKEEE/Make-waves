@@ -190,6 +190,45 @@ describe("admin wallet operations", () => {
     await app.close();
   });
 
+  it("crée, finance et distribue en lot avec le token admin", async () => {
+    const createForUsers = vi.fn(async (userIds: readonly string[]) => ({
+      network: "mainnet" as const,
+      requested: userIds.length,
+      funded: 0,
+      wallets: [],
+    }));
+    const fundForUsers = vi.fn(async (userIds: readonly string[]) => ({
+      network: "mainnet" as const,
+      requested: userIds.length,
+      funded: userIds.length,
+      wallets: [],
+    }));
+    const grantBadgeBatch = vi.fn(async (userIds: readonly string[], badgeCode: string) => ({
+      badgeCode,
+      requested: userIds.length,
+      succeeded: userIds.length,
+      failed: 0,
+      results: [],
+    }));
+    const walletAdmin = {
+      status: vi.fn(),
+      createForUsers,
+      fundForUsers,
+      grantBadgeBatch,
+    } as unknown as PaperWalletAdminService;
+    const app = buildAdminServer(walletAdmin);
+    const headers = { "x-admin-token": ADMIN_TOKEN };
+    const userIds = ["paper:u1", "paper:u2"];
+
+    expect((await app.inject({ method: "POST", url: "/admin/wallets/create-for-users", headers, payload: { userIds } })).statusCode).toBe(201);
+    expect((await app.inject({ method: "POST", url: "/admin/wallets/fund-for-users", headers, payload: { userIds, confirmation: "FUND 2 MAINNET WALLETS" } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/admin/wallets/nfts", headers, payload: { userIds, badgeCode: "first_trade" } })).statusCode).toBe(200);
+    expect(createForUsers).toHaveBeenCalledWith(userIds);
+    expect(fundForUsers).toHaveBeenCalledWith(userIds, "FUND 2 MAINNET WALLETS");
+    expect(grantBadgeBatch).toHaveBeenCalledWith(userIds, "first_trade");
+    await app.close();
+  });
+
   it("garde la récupération globale par token et confirmation serveur", async () => {
     const startReclaimAll = vi.fn(async () => ({
       enabled: true,

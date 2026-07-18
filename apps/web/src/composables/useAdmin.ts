@@ -1,6 +1,7 @@
 import { ref } from "vue";
 import type {
   AdminNftGrantDto,
+  AdminBatchNftGrantDto,
   AdminOverviewDto,
   AdminReclaimJobDto,
   AdminWalletProvisionDto,
@@ -17,7 +18,10 @@ export interface AdminClient {
   adminOverview(token: string): Promise<AdminOverviewDto>;
   walletOpsStatus(token: string): Promise<AdminReclaimJobDto>;
   provisionWallets(token: string, count: number): Promise<AdminWalletProvisionDto>;
+  createUserWallets(token: string, userIds: readonly string[]): Promise<AdminWalletProvisionDto>;
+  fundUserWallets(token: string, userIds: readonly string[], confirmation: string): Promise<AdminWalletProvisionDto>;
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
+  grantWalletNftBatch(token: string, userIds: readonly string[], badgeCode: string): Promise<AdminBatchNftGrantDto>;
   reclaimWallet(token: string, userId: string): Promise<AdminReclaimJobDto>;
   reclaimAllWallets(token: string, confirmation: string): Promise<AdminReclaimJobDto>;
   createCompetition(token: string, input: AdminCompetitionInput): Promise<{ id: string }>;
@@ -34,6 +38,7 @@ export function useAdmin(client: AdminClient) {
   const provisionResult = ref<AdminWalletProvisionDto | null>(null);
   const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
   const lastNftGrant = ref<AdminNftGrantDto | null>(null);
+  const lastBatchNftGrant = ref<AdminBatchNftGrantDto | null>(null);
 
   function logout(): void {
     token.value = "";
@@ -92,12 +97,59 @@ export function useAdmin(client: AdminClient) {
     }
   }
 
+  async function createUserWallets(userIds: readonly string[]): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      provisionResult.value = await client.createUserWallets(token.value, userIds);
+      await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      await load();
+      error.value = message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function fundUserWallets(userIds: readonly string[], confirmation: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      provisionResult.value = await client.fundUserWallets(token.value, userIds, confirmation);
+      await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      await load();
+      error.value = message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function grantNft(userId: string, badgeCode: string): Promise<void> {
     if (token.value === "") return;
     loading.value = true;
     error.value = "";
     try {
       lastNftGrant.value = await client.grantWalletNft(token.value, userId, badgeCode);
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function grantNftBatch(userIds: readonly string[], badgeCode: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    lastBatchNftGrant.value = null;
+    try {
+      lastBatchNftGrant.value = await client.grantWalletNftBatch(token.value, userIds, badgeCode);
       await load();
     } catch (err) {
       error.value = errorMessage(err);
@@ -169,10 +221,14 @@ export function useAdmin(client: AdminClient) {
     provisionResult,
     competitionPayout,
     lastNftGrant,
+    lastBatchNftGrant,
     load,
     refreshWalletJob,
     provisionWallets,
+    createUserWallets,
+    fundUserWallets,
     grantNft,
+    grantNftBatch,
     reclaimOne,
     reclaimAll,
     createCompetition,
