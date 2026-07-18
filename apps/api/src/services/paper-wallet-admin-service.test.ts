@@ -59,20 +59,54 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     })),
   };
   const rewards = new InMemoryPaperBadgeRewardStore();
+  const provisioner = {
+    ensureFunded: vi.fn(async (userId: string) => {
+      const wallet: PaperWallet = {
+        userId,
+        address: `r${userId.slice(-12)}`,
+        encryptedSeed: "encrypted-generated",
+        masterKeyId: "v1",
+        status: "funded",
+        fundingTxHash: `fund-${userId}`,
+        createdAt: 2,
+      };
+      await store.create(wallet);
+      return wallet;
+    }),
+  };
   const service = new PaperWalletAdminService({
     store,
     rewards,
     wallets: { decryptSeed: vi.fn(async () => "sTestSeed") },
+    provisioner,
     issuer,
     issuerAddress: ISSUER_ADDRESS,
     gateway,
     metadataBaseUrl: "https://api.test",
     sleep: async () => undefined,
   });
-  return { service, store, rewards, gateway, issuer };
+  return { service, store, rewards, gateway, issuer, provisioner };
 }
 
 describe("PaperWalletAdminService", () => {
+  it("crée et finance un lot borné de wallets techniques Testnet", async () => {
+    const { service, provisioner } = await fixture();
+
+    const result = await service.provision(2);
+
+    expect(result).toMatchObject({ network: "testnet", requested: 2, funded: 2 });
+    expect(result.wallets).toHaveLength(2);
+    expect(result.wallets.every((wallet) => wallet.userId.startsWith("wallet:testnet:"))).toBe(true);
+    expect(provisioner.ensureFunded).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuse un provisioning trop large ou non entier", async () => {
+    const { service } = await fixture();
+    await expect(service.provision(0)).rejects.toThrow(/entre 1 et 10/);
+    await expect(service.provision(11)).rejects.toThrow(/entre 1 et 10/);
+    await expect(service.provision(1.5)).rejects.toThrow(/entre 1 et 10/);
+  });
+
   it("distribue un badge individuel et persiste le claim", async () => {
     const { service, rewards, issuer, gateway } = await fixture();
 

@@ -3,6 +3,7 @@ import {
   TideApiError,
   type AdminOverviewDto,
   type AdminNftGrantDto,
+  type AdminWalletProvisionDto,
   type AdminReclaimJobDto,
   type AdminCompetitionCloseDto,
   type ApiRequest,
@@ -53,6 +54,17 @@ export function createLocalAdminClient(
         transport,
         { path: "/admin/wallet-ops/status", method: "GET", headers: { "x-admin-token": token } },
         200,
+      ),
+    provisionWallets: (token, count) =>
+      expectBody<AdminWalletProvisionDto>(
+        transport,
+        {
+          path: "/admin/wallets/provision",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { count },
+        },
+        201,
       ),
     grantWalletNft: (token, userId, badgeCode) =>
       expectBody<AdminNftGrantDto>(

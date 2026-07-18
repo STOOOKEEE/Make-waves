@@ -26,6 +26,27 @@ avant une campagne, car elles peuvent changer :
 
 ## Configuration locale/Testnet
 
+Pour créer automatiquement un funder et un issuer via le faucet Testnet, ainsi
+qu'une clé maître et un token admin locaux :
+
+```bash
+pnpm --filter @tide/api testnet:bootstrap-wallets
+```
+
+La commande écrit `apps/api/.env.paper-wallet-testnet` en permissions `0600`,
+sans afficher les seeds ni le token. Elle refuse d'écraser un fichier existant.
+Lancer ensuite l'API et le dashboard local :
+
+```bash
+DOTENV_CONFIG_PATH=.env.paper-wallet-testnet pnpm --filter @tide/api start
+VITE_API_BASE=http://127.0.0.1:3100 pnpm --filter @tide/web dev
+```
+
+Le token à saisir dans `http://127.0.0.1:5173/#/admin` est la valeur locale de
+`TIDE_ADMIN_TOKEN` dans ce fichier.
+
+Configuration manuelle équivalente :
+
 ```bash
 TIDE_PAPER_WALLET_NETWORK=testnet
 TIDE_PAPER_WALLET_WSS_URL=wss://s.altnet.rippletest.net:51233
@@ -34,6 +55,7 @@ TIDE_PAPER_WALLET_ISSUER_SEED=s...
 TIDE_PAPER_WALLET_FUNDER_SEED=s...
 TIDE_PAPER_WALLET_KEY_MASTER=<64 hex>
 TIDE_PAPER_WALLET_KEY_ID=paper-v1
+# Optionnel pour remplacer l'image locale dans les métadonnées NFT :
 TIDE_FIRST_TRADE_IMAGE_URI=ipfs://bafy...
 TIDE_PUBLIC_BASE_URL=https://api.example.test
 ```
@@ -72,6 +94,29 @@ Cette valeur est ensuite copiée dans l'environnement de l'API. Aucun faux CID
 ou gateway HTTP mutable n'est accepté par la configuration.
 
 ## Récupération des Test XRP
+
+### Depuis la console locale
+
+La route `#/admin`, absente du build de production, expose un mode **wallets
+XRPL Testnet**. L'opérateur peut créer et financer séquentiellement de 1 à 10
+wallets gérés. Chaque wallet reçoit un identifiant `wallet:testnet:<uuid>`, est
+exclu des métriques utilisateur et du leaderboard, et sa seed est chiffrée dans
+SQLite avant le premier Payment. L'endpoint correspondant est :
+
+```http
+POST /admin/wallets/provision
+x-admin-token: <token-admin>
+Content-Type: application/json
+
+{"count": 1}
+```
+
+Les wallets apparaissent ensuite dans la table **Wallets Paper Testnet**, où il
+est possible d'envoyer un NFT individuellement ou de lancer
+**Supprimer + sweep**. Le funding est volontairement séquentiel pour conserver
+une Sequence XRPL correcte sur le compte funder.
+
+### Depuis la ligne de commande
 
 La commande opérateur est locale et refuse Mainnet :
 

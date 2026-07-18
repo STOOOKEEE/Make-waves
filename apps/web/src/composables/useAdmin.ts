@@ -3,6 +3,7 @@ import type {
   AdminNftGrantDto,
   AdminOverviewDto,
   AdminReclaimJobDto,
+  AdminWalletProvisionDto,
   AdminCompetitionCloseDto,
   AdminCompetitionInput,
 } from "@tide/client";
@@ -16,6 +17,7 @@ export interface AdminClient {
   adminOverview(token: string): Promise<AdminOverviewDto>;
   runTestnetE2E(token: string): Promise<AdminOverviewDto["testnetE2E"]>;
   walletOpsStatus(token: string): Promise<AdminReclaimJobDto>;
+  provisionWallets(token: string, count: number): Promise<AdminWalletProvisionDto>;
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
   reclaimWallet(token: string, userId: string): Promise<AdminReclaimJobDto>;
   reclaimAllWallets(token: string, confirmation: string): Promise<AdminReclaimJobDto>;
@@ -30,6 +32,7 @@ export function useAdmin(client: AdminClient) {
   const error = ref("");
   const loading = ref(false);
   const walletJob = ref<AdminReclaimJobDto | null>(null);
+  const provisionResult = ref<AdminWalletProvisionDto | null>(null);
   const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
 
   function logout(): void {
@@ -46,7 +49,12 @@ export function useAdmin(client: AdminClient) {
     loading.value = true;
     error.value = "";
     try {
-      overview.value = await client.adminOverview(token.value);
+      const [nextOverview, nextWalletJob] = await Promise.all([
+        client.adminOverview(token.value),
+        client.walletOpsStatus(token.value),
+      ]);
+      overview.value = nextOverview;
+      walletJob.value = nextWalletJob;
       sessionStorage.setItem(TOKEN_KEY, token.value);
     } catch (err) {
       overview.value = null;
@@ -84,6 +92,20 @@ export function useAdmin(client: AdminClient) {
       walletJob.value = await client.walletOpsStatus(token.value);
     } catch (err) {
       error.value = errorMessage(err);
+    }
+  }
+
+  async function provisionWallets(count: number): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      provisionResult.value = await client.provisionWallets(token.value, count);
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
     }
   }
 
@@ -161,10 +183,12 @@ export function useAdmin(client: AdminClient) {
     error,
     loading,
     walletJob,
+    provisionResult,
     competitionPayout,
     load,
     runTestnetE2E,
     refreshWalletJob,
+    provisionWallets,
     grantNft,
     reclaimOne,
     reclaimAll,

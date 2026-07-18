@@ -75,6 +75,12 @@ function clientWithToken(
       return Promise.resolve(response.body as AdminOverviewDto["testnetE2E"]);
     },
     walletOpsStatus: async () => IDLE_JOB,
+    provisionWallets: async (_token, count) => ({
+      network: "testnet",
+      requested: count,
+      funded: count,
+      wallets: [],
+    }),
     grantWalletNft: async () => ({
       userId: "paper:u1",
       walletAddress: "rWallet",

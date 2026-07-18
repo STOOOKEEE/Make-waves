@@ -92,6 +92,7 @@ le serveur échoue au boot plutôt que de dégrader silencieusement le parcours.
 
 La même console locale permet ensuite :
 
+- de créer et financer manuellement 1 à 10 wallets persistants et chiffrés ;
 - de choisir un wallet financé et de lui distribuer individuellement un badge
   du catalogue ;
 - de supprimer un wallet précis après confirmation de son `userId` ;

@@ -385,6 +385,18 @@ export interface AdminNftGrantDto {
   readonly claimHash: string;
 }
 
+export interface AdminWalletProvisionDto {
+  readonly network: "testnet";
+  readonly requested: number;
+  readonly funded: number;
+  readonly wallets: readonly {
+    readonly userId: string;
+    readonly address: string;
+    readonly status: Exclude<AdminWalletDto["status"], null>;
+    readonly fundingTxHash: string | null;
+  }[];
+}
+
 export interface AdminCompetitionInput {
   readonly id: string;
   readonly nameEn: string;

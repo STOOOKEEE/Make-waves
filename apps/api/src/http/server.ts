@@ -1121,6 +1121,20 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     });
     if (admin.walletAdmin !== undefined) {
       const walletAdmin = admin.walletAdmin;
+      app.post("/admin/wallets/provision", async (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        try {
+          const result = await walletAdmin.provision(readNumberField(request.body, "count"));
+          reply.code(201);
+          return result;
+        } catch (error) {
+          reply.code(409);
+          return { error: error instanceof Error ? error.message : "provisioning refusé" };
+        }
+      });
       app.post<{ Params: { userId: string } }>(
         "/admin/wallets/:userId/nfts",
         async (request, reply) => {
@@ -1194,6 +1208,12 @@ function readStringField(body: unknown, field: string): string {
   if (typeof body !== "object" || body === null) return "";
   const value = (body as Record<string, unknown>)[field];
   return typeof value === "string" ? value : "";
+}
+
+function readNumberField(body: unknown, field: string): number {
+  if (typeof body !== "object" || body === null) return Number.NaN;
+  const value = (body as Record<string, unknown>)[field];
+  return typeof value === "number" ? value : Number.NaN;
 }
 
 /** Extrait `address` d'un corps `{address}` (chaîne, sinon vide → rejet en aval). */

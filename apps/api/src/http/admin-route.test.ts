@@ -94,6 +94,41 @@ describe("GET /admin/overview", () => {
 });
 
 describe("admin wallet operations", () => {
+  it("provisionne un lot Testnet uniquement avec le token admin", async () => {
+    const provision = vi.fn(async (count: number) => ({
+      network: "testnet" as const,
+      requested: count,
+      funded: count,
+      wallets: [],
+    }));
+    const walletAdmin = {
+      status: vi.fn(),
+      provision,
+      grantBadge: vi.fn(),
+      startReclaimOne: vi.fn(),
+      startReclaimAll: vi.fn(),
+    } as unknown as PaperWalletAdminService;
+    const app = buildAdminServer(walletAdmin);
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/admin/wallets/provision",
+      payload: { count: 2 },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/admin/wallets/provision",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { count: 2 },
+    });
+    expect(accepted.statusCode).toBe(201);
+    expect(accepted.json()).toMatchObject({ network: "testnet", requested: 2, funded: 2 });
+    expect(provision).toHaveBeenCalledWith(2);
+    await app.close();
+  });
+
   it("garde la récupération globale par token et confirmation serveur", async () => {
     const startReclaimAll = vi.fn(async () => ({
       enabled: true,

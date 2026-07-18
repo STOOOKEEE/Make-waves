@@ -10,6 +10,7 @@
     "dev": "tsx watch src/main.ts",
     "spike:tx": "tsx src/scripts/build-spike-tx.ts",
     "paper-wallet:reclaim": "tsx src/scripts/reclaim-paper-wallet.ts",
+    "testnet:bootstrap-wallets": "tsx src/scripts/bootstrap-paper-wallet-testnet.ts",
     "nft:pin-first-trade": "tsx src/scripts/pin-first-trade-ipfs.ts"
   },
   "dependencies": {

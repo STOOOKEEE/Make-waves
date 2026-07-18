@@ -367,6 +367,7 @@ async function main(): Promise<void> {
           store: paperWalletStore,
           rewards: paperBadgeRewardStore,
           wallets: paperRewardRuntime.wallets,
+          provisioner: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
           issuerAddress: paperRewardRuntime.issuer.issuerAddress,
           gateway: new XrplPaperWalletAdminGateway(

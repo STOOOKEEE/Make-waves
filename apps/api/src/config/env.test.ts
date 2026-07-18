@@ -85,7 +85,6 @@ describe("readPaperWalletRuntimeConfig", () => {
     process.env["TIDE_PAPER_WALLET_ISSUER_SEED"] = validSeed;
     process.env["TIDE_PAPER_WALLET_FUNDER_SEED"] = validSeed;
     process.env["TIDE_PAPER_WALLET_KEY_MASTER"] = "ab".repeat(32);
-    process.env["TIDE_FIRST_TRADE_IMAGE_URI"] = "ipfs://bafyfirsttrade";
   }
 
   it("reste désactivé si aucune variable dédiée n'est présente", () => {
@@ -99,7 +98,6 @@ describe("readPaperWalletRuntimeConfig", () => {
       network: "testnet",
       sourceTag: 123,
       serverUrl: "wss://s.altnet.rippletest.net:51233",
-      firstTradeImageUri: "ipfs://bafyfirsttrade",
     });
   });
 

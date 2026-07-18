@@ -10,10 +10,12 @@ const {
   error,
   loading,
   walletJob,
+  provisionResult,
   competitionPayout,
   load,
   runTestnetE2E,
   refreshWalletJob,
+  provisionWallets,
   grantNft,
   reclaimOne,
   reclaimAll,
@@ -24,6 +26,7 @@ const {
 
 const selectedBadge = ref<Record<string, string>>({});
 const bulkConfirmation = ref("");
+const provisionCount = ref(1);
 const closeCompetitionId = ref("");
 const competitionForm = ref({
   id: "",
@@ -60,7 +63,7 @@ function pct(part: number, total: number): string {
 
 onMounted(() => {
   if (token.value !== "") {
-    void Promise.all([load(), refreshWalletJob()]);
+    void load();
   }
   pollTimer = setInterval(() => {
     if (walletJob.value?.state === "running") void refreshWalletJob();
@@ -217,6 +220,20 @@ async function submitCompetition(): Promise<void> {
         </div>
       </section>
 
+      <section class="admin__testnet">
+        <h2>Mode wallets XRPL Testnet</h2>
+        <p>Crée des wallets techniques, chiffre leurs seeds dans la DB privée et finance chacun avec 1,25 Test XRP. Ils ne comptent jamais comme utilisateurs humains.</p>
+        <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé : configure les variables <code>TIDE_PAPER_WALLET_*</code>.</p>
+        <div class="admin__bar">
+          <label for="provision-count">Nombre</label>
+          <input id="provision-count" v-model.number="provisionCount" type="number" min="1" max="10" step="1" />
+          <button type="button" :disabled="loading || walletJob?.enabled !== true || !Number.isInteger(provisionCount) || provisionCount < 1 || provisionCount > 10" @click="provisionWallets(provisionCount)">
+            Créer et financer
+          </button>
+        </div>
+        <p v-if="provisionResult">{{ provisionResult.funded }} / {{ provisionResult.requested }} wallets financés sur {{ provisionResult.network }}.</p>
+      </section>
+
       <div class="admin__danger">
         <h2>Récupération globale</h2>
         <p v-if="walletJob?.enabled === false" class="admin__error">Runtime wallet Paper Testnet désactivé.</p>
@@ -285,6 +302,8 @@ async function submitCompetition(): Promise<void> {
 .admin__danger input { min-width: 300px; }
 .admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__competitions { border: 1px solid rgba(79, 106, 255, .55); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__testnet { border: 1px solid rgba(44, 160, 90, .65); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.admin__testnet h2 { margin-top: 0; }
 .competition-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }
 .competition-form label { display:flex; flex-direction:column; gap:.3rem; font-size:.8rem; }
 .competition-form .wide,.competition-form button { grid-column:1/-1; }

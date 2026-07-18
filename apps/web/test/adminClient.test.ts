@@ -51,4 +51,24 @@ describe("client admin local", () => {
       body: { confirmation: "DELETE ALL TESTNET WALLETS" },
     });
   });
+
+  it("demande la création d'un lot de wallets Testnet", async () => {
+    let seen: ApiRequest | undefined;
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen = request;
+      return {
+        status: 201,
+        body: { network: "testnet", requested: 3, funded: 3, wallets: [] },
+      };
+    };
+
+    await createLocalAdminClient(transport).provisionWallets("secret", 3);
+
+    expect(seen).toEqual({
+      path: "/admin/wallets/provision",
+      method: "POST",
+      headers: { "x-admin-token": "secret" },
+      body: { count: 3 },
+    });
+  });
 });

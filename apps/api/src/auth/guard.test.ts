@@ -63,6 +63,14 @@ describe("authorize — routes publiques", () => {
     );
     expect(d.ok).toBe(true);
   });
+
+  it("laisse le provisioning au garde dédié du handler admin", async () => {
+    const d = await authorize(
+      req({ method: "POST", routeUrl: "/admin/wallets/provision", tokenAddress: null }),
+      resolvers,
+    );
+    expect(d.ok).toBe(true);
+  });
 });
 
 describe("authorize — token requis", () => {

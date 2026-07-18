@@ -305,7 +305,6 @@ export interface PaperWalletRuntimeConfig {
   readonly funderSeed: string;
   readonly masterKeyHex: string;
   readonly masterKeyId: string;
-  readonly firstTradeImageUri: string;
 }
 
 /**
@@ -320,7 +319,6 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
   const issuerSeed = optional("TIDE_PAPER_WALLET_ISSUER_SEED");
   const funderSeed = optional("TIDE_PAPER_WALLET_FUNDER_SEED");
   const masterKeyHex = optional("TIDE_PAPER_WALLET_KEY_MASTER");
-  const firstTradeImageUri = readFirstTradeImageUri();
   const activation = [
     network,
     serverUrl,
@@ -336,11 +334,10 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     rawSourceTag === undefined ||
     issuerSeed === undefined ||
     funderSeed === undefined ||
-    masterKeyHex === undefined ||
-    firstTradeImageUri === undefined
+    masterKeyHex === undefined
   ) {
     throw new Error(
-      "Configuration wallet Paper Testnet incomplète: réseau, WSS, SourceTag, issuer, funder, clé maître et URI IPFS sont requis",
+      "Configuration wallet Paper Testnet incomplète: réseau, WSS, SourceTag, issuer, funder et clé maître sont requis",
     );
   }
   if (network !== "testnet") {
@@ -371,7 +368,6 @@ export function readPaperWalletRuntimeConfig(): PaperWalletRuntimeConfig | undef
     funderSeed,
     masterKeyHex,
     masterKeyId: optional("TIDE_PAPER_WALLET_KEY_ID") ?? "v1",
-    firstTradeImageUri,
   };
 }
 

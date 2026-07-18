@@ -5,12 +5,17 @@ import { badgeByCode } from "../badges/catalog";
 import type { PaperBadgeRewardStore } from "../store/paper-badge-reward-store";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 import type { PaperWalletService } from "./paper-wallet-service";
+import { MANAGED_TESTNET_WALLET_USER_PREFIX } from "../simulation/arena-ids";
 
 const DELETE_LEDGER_DELAY = 255;
 const DELETE_CONFIRMATION = "DELETE ALL TESTNET WALLETS";
 const MAX_DELETE_WAIT_MS = 45 * 60 * 1000;
 const LEDGER_POLL_MS = 4_000;
 const RECLAIM_CONCURRENCY = 3;
+const MAX_PROVISION_COUNT = 10;
+const XRPL_CONNECTION_TIMEOUT_MS = 20_000;
+const XRPL_SNAPSHOT_ATTEMPTS = 3;
+const XRPL_RETRY_DELAY_MS = 1_000;
 
 export interface WalletLedgerSnapshot {
   readonly balanceXrp: number;
@@ -58,10 +63,23 @@ export interface AdminNftGrantResult extends NftIssueResult {
   readonly claimHash: string;
 }
 
+export interface AdminWalletProvisionResult {
+  readonly network: "testnet";
+  readonly requested: number;
+  readonly funded: number;
+  readonly wallets: readonly {
+    readonly userId: string;
+    readonly address: string;
+    readonly status: PaperWallet["status"];
+    readonly fundingTxHash: string | null;
+  }[];
+}
+
 export interface PaperWalletAdminServiceDeps {
   readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed">;
   readonly rewards: PaperBadgeRewardStore;
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
+  readonly provisioner: Pick<PaperWalletService, "ensureFunded">;
   readonly issuer: NftIssuer;
   readonly issuerAddress: string;
   readonly gateway: PaperWalletAdminGateway;
@@ -87,6 +105,33 @@ export class PaperWalletAdminService {
 
   status(): ReclaimJobStatus {
     return this.job;
+  }
+
+  /**
+   * Crée et finance séquentiellement des wallets gérés. Le séquencement évite
+   * que plusieurs Payments du même funder réutilisent la même Sequence XRPL.
+   */
+  async provision(count: number): Promise<AdminWalletProvisionResult> {
+    if (!Number.isInteger(count) || count < 1 || count > MAX_PROVISION_COUNT) {
+      throw new Error(`Le nombre de wallets doit être compris entre 1 et ${String(MAX_PROVISION_COUNT)}`);
+    }
+    const wallets: AdminWalletProvisionResult["wallets"][number][] = [];
+    for (let index = 0; index < count; index += 1) {
+      const userId = `${MANAGED_TESTNET_WALLET_USER_PREFIX}${randomUUID()}`;
+      const wallet = await this.deps.provisioner.ensureFunded(userId);
+      wallets.push({
+        userId: wallet.userId,
+        address: wallet.address,
+        status: wallet.status,
+        fundingTxHash: wallet.fundingTxHash,
+      });
+    }
+    return {
+      network: "testnet",
+      requested: count,
+      funded: wallets.filter((wallet) => wallet.status === "funded").length,
+      wallets,
+    };
   }
 
   async grantBadge(userId: string, badgeCode: string): Promise<AdminNftGrantResult> {
@@ -273,7 +318,22 @@ export class XrplPaperWalletAdminGateway implements PaperWalletAdminGateway {
   ) {}
 
   async snapshot(address: string): Promise<WalletLedgerSnapshot> {
-    const client = new Client(this.serverUrl);
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= XRPL_SNAPSHOT_ATTEMPTS; attempt += 1) {
+      try {
+        return await this.snapshotOnce(address);
+      } catch (error) {
+        lastError = error;
+        if (attempt < XRPL_SNAPSHOT_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, XRPL_RETRY_DELAY_MS));
+        }
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("Lecture XRPL Testnet impossible");
+  }
+
+  private async snapshotOnce(address: string): Promise<WalletLedgerSnapshot> {
+    const client = new Client(this.serverUrl, { connectionTimeout: XRPL_CONNECTION_TIMEOUT_MS });
     await client.connect();
     try {
       const [account, nfts, ledger, server] = await Promise.all([
@@ -342,7 +402,7 @@ export class XrplPaperWalletAdminGateway implements PaperWalletAdminGateway {
     },
     failHard = false,
   ): Promise<{ hash: string }> {
-    const client = new Client(this.serverUrl);
+    const client = new Client(this.serverUrl, { connectionTimeout: XRPL_CONNECTION_TIMEOUT_MS });
     await client.connect();
     try {
       const prepared = await client.autofill(tx);
@@ -391,4 +451,4 @@ function idleJob(): ReclaimJobStatus {
   };
 }
 
-export { DELETE_CONFIRMATION };
+export { DELETE_CONFIRMATION, MAX_PROVISION_COUNT };
