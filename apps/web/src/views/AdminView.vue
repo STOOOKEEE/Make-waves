@@ -31,6 +31,8 @@ const {
 } = useAdmin(createLocalAdminClient());
 
 const selectedUserIds = ref<string[]>([]);
+const bulkSetupRunning = ref(false);
+const bulkSetupStep = ref<"idle" | "creating" | "funding" | "nft">("idle");
 const bulkConfirmation = ref("");
 const provisionCount = ref(1);
 const batchBadgeCode = ref("first_trade");
@@ -99,6 +101,21 @@ const selectedFundableIds = computed(() => selectedRows.value
 const selectedFundedIds = computed(() => selectedRows.value
   .filter(({ wallet }) => wallet.status === "funded")
   .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
+const selectedSetupRows = computed(() => selectedRows.value.filter(({ wallet, user }) =>
+  user !== undefined &&
+  (user.orders > 0 || user.positions > 0) &&
+  (wallet.status === "not_created" ||
+    wallet.status === "pending_funding" ||
+    wallet.status === "funded"),
+));
+const selectedSetupIds = computed(() => selectedSetupRows.value
+  .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
+const selectedSetupMissingIds = computed(() => selectedSetupRows.value
+  .filter(({ wallet }) => wallet.status === "not_created")
+  .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
+const selectedSetupFundIds = computed(() => selectedSetupRows.value
+  .filter(({ wallet }) => wallet.status === "not_created" || wallet.status === "pending_funding")
+  .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
 const inactiveUserIds = computed(() => managedRows.value
   .filter(({ wallet, user }) =>
     user !== undefined &&
@@ -117,6 +134,13 @@ const allRowsSelected = computed(() =>
   managedRows.value.length > 0 &&
   managedRows.value.every(({ wallet }) => wallet.userId !== null && selectedUserIds.value.includes(wallet.userId)),
 );
+const someRowsSelected = computed(() => selectedUserIds.value.length > 0 && !allRowsSelected.value);
+const bulkSetupLabel = computed(() => {
+  if (bulkSetupStep.value === "creating") return "Création des wallets…";
+  if (bulkSetupStep.value === "funding") return "Funding Mainnet…";
+  if (bulkSetupStep.value === "nft") return "Envoi des NFT…";
+  return `Créer + financer + NFT pour ${String(selectedSetupIds.value.length)}`;
+});
 const walletNetwork = computed<"mainnet">(() => "mainnet");
 const deleteConfirmation = computed(
   () => `DELETE ALL ${walletNetwork.value.toUpperCase()} WALLETS`,
@@ -150,10 +174,20 @@ onUnmounted(() => {
   if (pollTimer !== null) clearInterval(pollTimer);
 });
 
-function toggleAllRows(): void {
-  selectedUserIds.value = allRowsSelected.value
-    ? []
-    : managedRows.value.flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]);
+function selectAllRows(): void {
+  selectedUserIds.value = managedRows.value
+    .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]);
+}
+
+function clearSelectedRows(): void {
+  selectedUserIds.value = [];
+}
+
+function updateAllRows(event: Event): void {
+  const checkbox = event.target;
+  if (!(checkbox instanceof HTMLInputElement)) return;
+  if (checkbox.checked) selectAllRows();
+  else clearSelectedRows();
 }
 
 function selectFundedRows(): void {
@@ -219,6 +253,41 @@ async function sendSelectedNfts(): Promise<void> {
   if (ids.length === 0) return;
   if (!window.confirm(`Mint + envoyer ${String(ids.length)} NFT ${batchBadgeCode.value} ?`)) return;
   await grantNftBatch(ids, batchBadgeCode.value);
+}
+
+async function setupSelectedWallets(): Promise<void> {
+  const userIds = [...selectedSetupIds.value];
+  const missingIds = [...selectedSetupMissingIds.value];
+  const fundIds = [...selectedSetupFundIds.value];
+  const badgeCode = batchBadgeCode.value;
+  if (userIds.length === 0) return;
+  const maximumXrp = fundIds.length * PAPER_WALLET_FUNDING_XRP;
+  const confirmed = window.confirm(
+    `Traiter ${String(userIds.length)} utilisateur(s) sélectionné(s) sur Mainnet ?\n\n` +
+    `• Créer ${String(missingIds.length)} wallet(s) manquant(s)\n` +
+    `• Financer ${String(fundIds.length)} wallet(s), maximum ${maximumXrp.toFixed(2)} XRP\n` +
+    `• Mint + envoyer le NFT ${badgeCode} aux ${String(userIds.length)} wallet(s)`,
+  );
+  if (!confirmed) return;
+
+  bulkSetupRunning.value = true;
+  try {
+    if (missingIds.length > 0) {
+      bulkSetupStep.value = "creating";
+      await createUserWallets(missingIds);
+      if (error.value !== "") return;
+    }
+    if (fundIds.length > 0) {
+      bulkSetupStep.value = "funding";
+      await fundUserWallets(fundIds, `FUND ${String(fundIds.length)} MAINNET WALLETS`);
+      if (error.value !== "") return;
+    }
+    bulkSetupStep.value = "nft";
+    await grantNftBatch(userIds, badgeCode);
+  } finally {
+    bulkSetupRunning.value = false;
+    bulkSetupStep.value = "idle";
+  }
 }
 
 async function deleteInactive(ids: readonly string[]): Promise<void> {
@@ -336,11 +405,24 @@ async function submitCompetition(): Promise<void> {
         </div>
 
         <div class="wallet-manager__toolbar">
-          <button type="button" :disabled="loading" @click="toggleAllRows">{{ allRowsSelected ? "Tout désélectionner" : "Tout sélectionner" }}</button>
+          <button type="button" :disabled="loading || allRowsSelected" @click="selectAllRows">Tout sélectionner</button>
+          <button type="button" :disabled="loading || selectedUserIds.length === 0" @click="clearSelectedRows">Tout désélectionner</button>
           <button type="button" :disabled="loading || fundedPaperWallets === 0" @click="selectFundedRows">Sélectionner les financés</button>
           <button type="button" :disabled="loading || inactiveUserIds.length === 0" @click="selectInactiveRows">Sélectionner les inactifs</button>
-          <button type="button" :disabled="loading || selectedUserIds.length === 0" @click="selectedUserIds = []">Effacer</button>
-          <span class="toolbar-separator"></span>
+        </div>
+
+        <div class="wallet-manager__toolbar wallet-manager__toolbar--setup">
+          <select v-model="batchBadgeCode" :disabled="loading || bulkSetupRunning" aria-label="NFT du parcours complet">
+            <option v-for="badge in BADGES" :key="badge.code" :value="badge.code">{{ badge.label }}</option>
+          </select>
+          <button type="button" class="setup" :disabled="loading || bulkSetupRunning || walletJob?.enabled !== true || selectedSetupIds.length === 0" @click="setupSelectedWallets">
+            {{ bulkSetupLabel }}
+          </button>
+          <span class="hint">Une confirmation, puis création → funding → NFT uniquement pour les lignes cochées.</span>
+        </div>
+
+        <div class="wallet-manager__toolbar wallet-manager__toolbar--advanced">
+          <span class="hint">Actions séparées :</span>
           <button type="button" :disabled="loading || walletJob?.enabled !== true || selectedMissingIds.length === 0" @click="createSelectedWallets">
             Créer {{ selectedMissingIds.length }} wallet(s) manquant(s)
           </button>
@@ -353,9 +435,6 @@ async function submitCompetition(): Promise<void> {
         </div>
 
         <div class="wallet-manager__toolbar wallet-manager__toolbar--nft">
-          <select v-model="batchBadgeCode" :disabled="loading">
-            <option v-for="badge in BADGES" :key="badge.code" :value="badge.code">{{ badge.label }}</option>
-          </select>
           <button type="button" class="nft" :disabled="loading || walletJob?.enabled !== true || selectedFundedIds.length === 0" @click="sendSelectedNfts">
             Mint + envoyer à {{ selectedFundedIds.length }} wallet(s) financé(s)
           </button>
@@ -366,7 +445,7 @@ async function submitCompetition(): Promise<void> {
           <table class="admin__table wallet-table">
             <thead>
               <tr>
-                <th><input type="checkbox" :checked="allRowsSelected" aria-label="Sélectionner tous les wallets" @change="toggleAllRows" /></th>
+                <th><input type="checkbox" :checked="allRowsSelected" :indeterminate="someRowsSelected" aria-label="Sélectionner tous les wallets" @change="updateAllRows" /></th>
                 <th>Utilisateur</th><th>Activité</th><th>Wallet</th><th>Funding</th><th>Transaction</th><th>Actions</th>
               </tr>
             </thead>
@@ -506,8 +585,10 @@ async function submitCompetition(): Promise<void> {
 .wallet-manager__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .75rem; }
 .wallet-manager__toolbar button, .wallet-manager__toolbar select, .row-actions button { min-height: 34px; border-radius: 7px; padding: .42rem .7rem; border: 1px solid rgba(128,128,128,.35); }
 .wallet-manager__toolbar button:disabled, .row-actions button:disabled { opacity: .45; }
+.wallet-manager__toolbar--setup { padding: .75rem; border: 1px solid rgba(35, 184, 103, .42); border-radius: 9px; background: rgba(35, 184, 103, .10); }
+.wallet-manager__toolbar--setup button.setup { background: #116b42; color: #fff; font-weight: 700; }
+.wallet-manager__toolbar--advanced { padding-top: .1rem; }
 .wallet-manager__toolbar--nft { padding: .7rem; border-radius: 8px; background: rgba(137, 91, 255, .12); }
-.toolbar-separator { width: 1px; align-self: stretch; background: rgba(128, 128, 128, .35); margin: 0 .25rem; }
 .wallet-manager button.fund { background: #207a4a; color: #fff; }
 .wallet-manager button.nft { background: #6941c6; color: #fff; }
 .hint, .muted { opacity: .65; font-size: .82rem; }
