@@ -1,9 +1,9 @@
 # Analytics Tide avec Plausible
 
-Le front charge Plausible uniquement si `VITE_PLAUSIBLE_DOMAIN` et
-`VITE_PLAUSIBLE_SCRIPT_URL` sont définis au moment du build. Le script reste
-désactivé en développement et ne reçoit ni seed, ni adresse XRPL, ni `userId`
-Tide, ni token admin.
+Le front charge le script public TideTrade Plausible Cloud au moment du build
+production. Il reste désactivé en développement et ne reçoit ni seed, ni
+adresse XRPL, ni `userId` Tide, ni token admin. Le script peut être remplacé
+par une instance auto-hébergée via `VITE_PLAUSIBLE_SCRIPT_URL`.
 
 Plausible fournit des statistiques agrégées : visiteurs, visites, pages et
 routes hash (`#/dashboard`, `#/portfolio`…), referrers, campagnes UTM,
@@ -12,10 +12,9 @@ une personne donnée : pas de cookies ni d'IP persistante.
 
 ## Plausible Cloud
 
-1. Créer le site `tidetrade.xyz` dans Plausible.
-2. Copier les valeurs de [`apps/web/.env.example`](../apps/web/.env.example)
-   dans un fichier local non commité `apps/web/.env.production.local`.
-3. Lancer le build avec les variables :
+1. Le site `tidetrade.xyz` est déjà associé au script Plausible Cloud public
+   configuré dans le front.
+2. Lancer le build :
 
 ```bash
 pnpm --filter @tide/web build
