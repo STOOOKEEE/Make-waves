@@ -22,11 +22,6 @@ const { t, locale, intlLocale } = useI18n({
     tradersCount: 'REAL MARKET DATA',
     join: 'Join',
     heroTag: '[ PAPER TRADING · COMPETITIONS · AI AGENTS ]',
-    formatLabel: 'Format',
-    tagPaper: 'Paper Trading',
-    tagCompetition: 'Competition',
-    tagRewards: 'On-chain Rewards',
-    tagArena: 'AI Arena',
     aiLabel: 'AI Arena · Season 01',
     aiHeadL1: 'One model.',
     aiHeadL2: 'A thousand brains.',
@@ -83,8 +78,8 @@ const { t, locale, intlLocale } = useI18n({
     statWallets: 'wallets created',
     statMarkets: 'markets available',
     statFeeFree: 'fee-free trading',
-    stepsHeadL1: 'From zero to',
-    stepsHeadL2: 'the grid — 60s',
+    stepsHeadL1: 'Start trading',
+    stepsHeadL2: 'in 60 seconds',
     stepsLead: 'Connect, get your capital, and the race begins. No endless onboarding.',
     step1Title: 'Connect your wallet',
     step1Body: 'Xaman or GemWallet. No deposit, no KYC. Your identity stays yours.',
@@ -130,11 +125,6 @@ const { t, locale, intlLocale } = useI18n({
     tradersCount: 'DONNÉES DE MARCHÉ RÉELLES',
     join: 'Rejoindre',
     heroTag: '[ PAPER TRADING · COMPÉTITIONS · AGENTS IA ]',
-    formatLabel: 'Format',
-    tagPaper: 'Paper Trading',
-    tagCompetition: 'Compétition',
-    tagRewards: 'Récompenses On-chain',
-    tagArena: 'Arène IA',
     aiLabel: 'Arène IA · Saison 01',
     aiHeadL1: 'Un modèle.',
     aiHeadL2: 'Mille cerveaux.',
@@ -191,8 +181,8 @@ const { t, locale, intlLocale } = useI18n({
     statWallets: 'portefeuilles créés',
     statMarkets: 'marchés disponibles',
     statFeeFree: 'trading sans frais',
-    stepsHeadL1: 'De zéro à',
-    stepsHeadL2: 'la grille — 60s',
+    stepsHeadL1: 'Commence à trader',
+    stepsHeadL2: 'en 60 secondes',
     stepsLead: "Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.",
     step1Title: 'Connecte ton wallet',
     step1Body: 'Xaman ou GemWallet. Aucun dépôt, aucun KYC. Ton identité reste la tienne.',
@@ -422,15 +412,6 @@ onUnmounted(() => {
           <span class="gl"><span>Onchain</span></span>
           <span class="gl"><span>Trading</span></span>
         </h1>
-        <div class="divider"></div>
-        <div class="tags rv" v-reveal>
-          <span class="k">{{ t('formatLabel') }}</span>
-          <a class="tag on" href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('tagPaper') }}</a>
-          <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagCompetition') }}</a>
-          <a class="tag" href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('tagRewards') }}</a>
-          <a class="tag" href="#/arena" @click.prevent="emit('navigate', '/arena')">{{ t('tagArena') }}</a>
-        </div>
-
         <!-- DARK SCREEN -->
         <div class="screen rv" v-reveal>
           <div class="scr-grid">
@@ -665,14 +646,8 @@ onUnmounted(() => {
 .landing.loaded .gl > span { transform: none; }
 .gl:nth-child(2) > span { transition-delay: .08s; }
 
-.divider { height: 1px; background: var(--hair); margin: 46px 0 22px; }
-.tags { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 34px; }
-.tags .k { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--soft); margin-right: 6px; }
-.tag { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; border: 1px solid var(--hair); border-radius: 100px; padding: 8px 15px; transition: background .2s, color .2s; text-decoration: none; cursor: pointer; }
-.tag:hover, .tag.on { background: #fff; color: var(--blue); border-color: #fff; }
-
 /* ---------- DARK SCREEN ---------- */
-.screen { position: relative; background: var(--ink); border-radius: 22px; overflow: hidden; padding: 40px 40px 96px; min-height: 560px; }
+.screen { position: relative; background: var(--ink); border-radius: 22px; overflow: hidden; padding: 40px 40px 96px; min-height: 560px; margin-top: 56px; }
 .scr-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; }
 @media (max-width: 900px) { .scr-grid { grid-template-columns: 1fr; gap: 40px; } .screen { padding: 28px 24px 100px; } }
 .scr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
