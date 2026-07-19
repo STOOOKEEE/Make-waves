@@ -13,6 +13,7 @@ const EMPTY: AdminOverviewDto = {
     bySegment: { operator: 0, frontend: 0, agent: 0 },
     agents: { total: 0, active: 0, paused: 0, stopped: 0 },
     wallets: 0,
+    fundedWalletsWithNft: 0,
   },
   users: [],
   agents: [],

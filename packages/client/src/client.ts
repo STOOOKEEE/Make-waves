@@ -452,6 +452,7 @@ export interface AdminOverviewDto {
     readonly bySegment: { readonly operator: number; readonly frontend: number; readonly agent: number };
     readonly agents: { readonly total: number; readonly active: number; readonly paused: number; readonly stopped: number };
     readonly wallets: number;
+    readonly fundedWalletsWithNft: number | null;
   };
   readonly users: readonly AdminUserDto[];
   readonly agents: readonly AdminAgentDto[];

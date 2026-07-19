@@ -305,6 +305,15 @@ async function submitCompetition(): Promise<void> {
         </div>
 
         <div class="card">
+          <span class="card__label">Wallets financés avec NFT</span>
+          <strong class="card__value">{{ overview.totals.fundedWalletsWithNft ?? "—" }}</strong>
+          <ul class="segments">
+            <li v-if="overview.totals.fundedWalletsWithNft !== null">Détiennent actuellement au moins 1 NFT</li>
+            <li v-else class="admin__warning">Lecture XRPL Mainnet indisponible</li>
+          </ul>
+        </div>
+
+        <div class="card">
           <span class="card__label">Arène de simulation</span>
           <strong class="card__value">{{ overview.simulation.enabled ? `${overview.simulation.provisionedUsers} profils` : "Désactivée" }}</strong>
           <ul class="segments">

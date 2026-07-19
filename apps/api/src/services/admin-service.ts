@@ -73,6 +73,8 @@ export interface AdminTotals {
   readonly bySegment: AdminSegmentTotals;
   readonly agents: AdminAgentTotals;
   readonly wallets: number;
+  /** Wallets Paper financés détenant actuellement au moins un NFT sur Mainnet. */
+  readonly fundedWalletsWithNft: number | null;
 }
 
 export interface AdminOverview {
@@ -99,6 +101,9 @@ export interface AdminServiceDeps {
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
   readonly paperWallets?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
+  readonly paperWalletNftInventory?: {
+    addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>>;
+  };
   readonly simulation?: ArenaSimulationStatusReader;
 }
 
@@ -120,9 +125,10 @@ export class AdminService {
     const users = this.buildUsers(prices, agentOwners);
     const agentRows = await this.buildAgents(agents);
     const wallets = await this.buildWallets(agents, users);
+    const fundedWalletsWithNft = await this.countFundedWalletsWithNft(wallets);
 
     return {
-      totals: this.buildTotals(users, agents, wallets),
+      totals: this.buildTotals(users, agents, wallets, fundedWalletsWithNft),
       users,
       agents: agentRows,
       wallets,
@@ -313,6 +319,7 @@ export class AdminService {
     users: readonly AdminUserRow[],
     agents: readonly Agent[],
     wallets: readonly AdminWalletRow[],
+    fundedWalletsWithNft: number | null,
   ): AdminTotals {
     const bySegment: AdminSegmentTotals = {
       operator: users.filter((u) => u.segment === "operator").length,
@@ -329,7 +336,27 @@ export class AdminService {
         stopped: agents.filter((a) => a.status === "stopped").length,
       },
       wallets: wallets.filter((wallet) => wallet.kind !== "paper" || wallet.address !== null).length,
+      fundedWalletsWithNft,
     };
+  }
+
+  private async countFundedWalletsWithNft(
+    wallets: readonly AdminWalletRow[],
+  ): Promise<number | null> {
+    const reader = this.deps.paperWalletNftInventory;
+    if (reader === undefined) return null;
+    const addresses = wallets.flatMap((wallet) =>
+      wallet.kind === "paper" && wallet.status === "funded" && wallet.address !== null
+        ? [wallet.address]
+        : [],
+    );
+    if (addresses.length === 0) return 0;
+    try {
+      return (await reader.addressesWithNfts(addresses)).size;
+    } catch (error) {
+      console.error("[admin] lecture inventaire NFT Mainnet échouée:", error);
+      return null;
+    }
   }
 }
 

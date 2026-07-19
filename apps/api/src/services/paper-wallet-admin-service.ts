@@ -16,6 +16,7 @@ const MAX_USER_BATCH_COUNT = 50;
 const XRPL_CONNECTION_TIMEOUT_MS = 20_000;
 const XRPL_SNAPSHOT_ATTEMPTS = 3;
 const XRPL_RETRY_DELAY_MS = 1_000;
+const NFT_INVENTORY_CONCURRENCY = 8;
 
 export interface WalletLedgerSnapshot {
   readonly balanceXrp: number;
@@ -450,6 +451,44 @@ export class XrplPaperWalletAdminGateway implements PaperWalletAdminGateway {
       }
     }
     throw lastError instanceof Error ? lastError : new Error("Lecture XRPL Mainnet impossible");
+  }
+
+  /**
+   * Lit l'inventaire réel Mainnet sur une seule connexion XRPL. Une limite de
+   * 1 NFT suffit puisque la console compte les wallets qui en ont au moins un.
+   */
+  async addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>> {
+    const unique = [...new Set(addresses)];
+    const matches = new Set<string>();
+    if (unique.length === 0) return matches;
+    const client = new Client(this.serverUrl, { connectionTimeout: XRPL_CONNECTION_TIMEOUT_MS });
+    await client.connect();
+    let cursor = 0;
+    const worker = async (): Promise<void> => {
+      while (cursor < unique.length) {
+        const address = unique[cursor];
+        cursor += 1;
+        if (address === undefined) continue;
+        const response = await client.request({
+          command: "account_nfts",
+          account: address,
+          ledger_index: "validated",
+          limit: 1,
+        });
+        if (response.result.account_nfts.length > 0) matches.add(address);
+      }
+    };
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(NFT_INVENTORY_CONCURRENCY, unique.length) },
+          () => worker(),
+        ),
+      );
+      return matches;
+    } finally {
+      await client.disconnect();
+    }
   }
 
   private async snapshotOnce(address: string): Promise<WalletLedgerSnapshot> {

@@ -93,6 +93,10 @@ export interface AppConfig {
   readonly simulation?: ArenaSimulationStatusReader;
   /** Distribution NFT et récupération des wallets depuis la console locale Mainnet. */
   readonly paperWalletAdmin?: PaperWalletAdminService;
+  /** Lecture réelle des NFT détenus par les wallets Paper financés. */
+  readonly paperWalletNftInventory?: {
+    addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>>;
+  };
   /** Store des agents — requis avec `adminToken` pour activer la console admin. */
   readonly agentStore?: AgentStore;
   /** Store des mandats — requis avec `adminToken` pour activer la console admin. */
@@ -205,6 +209,7 @@ export function createApp(config: AppConfig): App {
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
             paperWallets: config.paperWalletStore,
+            paperWalletNftInventory: config.paperWalletNftInventory,
             simulation: config.simulation,
           }),
           ...(config.paperWalletAdmin !== undefined

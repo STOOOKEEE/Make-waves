@@ -42,7 +42,10 @@ function mandate(agentId: string, userId: string): Mandate {
   };
 }
 
-function makeService(operatorUserIds: string[]) {
+function makeService(
+  operatorUserIds: string[],
+  addressesWithNfts?: (addresses: readonly string[]) => Promise<ReadonlySet<string>>,
+) {
   const accounts = new InMemoryAccountStore();
   const paper = new PaperService(undefined, accounts);
   const agents = new InMemoryAgentStore();
@@ -57,6 +60,9 @@ function makeService(operatorUserIds: string[]) {
     prizePoolAddress: "rPrizePoolXXXXXXXXXXXXXXXXXXXXXXXXX",
     operatorUserIds: new Set(operatorUserIds),
     paperWallets,
+    ...(addressesWithNfts === undefined
+      ? {}
+      : { paperWalletNftInventory: { addressesWithNfts } }),
   });
   return { paper, agents, mandates, actions, paperWallets, service };
 }
@@ -100,6 +106,35 @@ describe("AdminService.overview", () => {
     ).toBe(totals.users);
     expect(totals.agents.total).toBe(1);
     expect(totals.agents.active).toBe(1);
+    expect(totals.fundedWalletsWithNft).toBeNull();
+  });
+
+  it("compte sur XRPL les wallets financés détenant au moins un NFT", async () => {
+    const seen: string[][] = [];
+    const { paper, paperWallets, service } = makeService([], async (addresses) => {
+      seen.push([...addresses]);
+      return new Set(["rWithNft"]);
+    });
+    paper.openAccount("paper:with-nft");
+    paper.openAccount("paper:without-nft");
+    paper.openAccount("paper:not-funded");
+    for (const [userId, address, status] of [
+      ["paper:with-nft", "rWithNft", "funded"],
+      ["paper:without-nft", "rWithoutNft", "funded"],
+      ["paper:not-funded", "rPending", "pending_funding"],
+    ] as const) {
+      await paperWallets.create({
+        userId, address, encryptedSeed: "encrypted", masterKeyId: "v1", status,
+        fundingTxHash: status === "funded" ? `fund-${address}` : null,
+        fundedAt: status === "funded" ? 1 : null,
+        createdAt: 1,
+      });
+    }
+
+    const overview = await service.overview(PRICES);
+
+    expect(seen).toEqual([["rWithNft", "rWithoutNft"]]);
+    expect(overview.totals.fundedWalletsWithNft).toBe(1);
   });
 
   it("expose le mandat actif et la dernière action d'un agent", async () => {

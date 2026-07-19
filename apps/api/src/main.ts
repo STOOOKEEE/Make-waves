@@ -371,8 +371,17 @@ async function main(): Promise<void> {
           metadataBaseUrl: env.readPublicBaseUrl(),
           network: "mainnet",
         });
-  const paperWalletAdmin =
+  const paperWalletAdminGateway =
     paperWalletRuntime === undefined || paperRewardRuntime === undefined
+      ? undefined
+      : new XrplPaperWalletAdminGateway(
+          paperWalletRuntime.serverUrl,
+          paperWalletRuntime.sourceTag,
+        );
+  const paperWalletAdmin =
+    paperWalletAdminGateway === undefined ||
+    paperWalletRuntime === undefined ||
+    paperRewardRuntime === undefined
       ? undefined
       : new PaperWalletAdminService({
           store: paperWalletStore,
@@ -394,10 +403,7 @@ async function main(): Promise<void> {
           issuer: paperRewardRuntime.issuer,
           recoveryAddress: paperWalletRuntime.recoveryAddress,
           network: "mainnet",
-          gateway: new XrplPaperWalletAdminGateway(
-            paperWalletRuntime.serverUrl,
-            paperWalletRuntime.sourceTag,
-          ),
+          gateway: paperWalletAdminGateway,
           metadataBaseUrl: env.readPublicBaseUrl(),
         });
 
@@ -538,6 +544,7 @@ async function main(): Promise<void> {
     paperWalletStore,
     simulation: arenaSimulation,
     paperWalletAdmin,
+    paperWalletNftInventory: paperWalletAdminGateway,
     agentStore,
     mandateStore,
     prizePoolAddress,
