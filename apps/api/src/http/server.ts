@@ -64,6 +64,7 @@ import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
+import type { PortfolioManagerService } from "../services/portfolio-manager-service";
 import {
   CompetitionPaymentUnavailableError,
   CompetitionScoringUnavailableError,
@@ -165,6 +166,7 @@ export interface ServerDeps {
     readonly token: string;
     readonly service: AdminService;
     readonly walletAdmin?: PaperWalletAdminService;
+    readonly portfolioManager?: PortfolioManagerService;
   };
   /**
    * Authentification : garde global (Sign-In with XRPL) + routes /auth/*. Absente
@@ -1118,6 +1120,58 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { error: "unauthorized" };
     }
     return admin.service.overview(deps.getPrices());
+  });
+  app.get("/admin/portfolio-manager/status", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    return admin.portfolioManager?.status() ?? {
+      enabled: false,
+      managerAgentId: null,
+      managerName: null,
+      mode: null,
+      llmCallsPerCycle: null,
+      maxAccountsPerCycle: null,
+      preparedPlan: null,
+    };
+  });
+  app.post("/admin/portfolio-manager/plan", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    if (admin.portfolioManager === undefined) {
+      reply.code(503);
+      return { error: "portfolio manager indisponible" };
+    }
+    try {
+      return await admin.portfolioManager.prepare(
+        readStringArrayField(request.body, "userIds"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "planification refusée" };
+    }
+  });
+  app.post("/admin/portfolio-manager/execute", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    if (admin.portfolioManager === undefined) {
+      reply.code(503);
+      return { error: "portfolio manager indisponible" };
+    }
+    try {
+      return await admin.portfolioManager.execute(
+        readStringField(request.body, "planId"),
+        readStringField(request.body, "confirmation"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "exécution refusée" };
+    }
   });
   app.post("/admin/users/delete-inactive", async (request, reply) => {
     if (!hasAdminToken(request, admin.token)) {

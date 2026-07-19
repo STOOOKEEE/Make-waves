@@ -446,6 +446,48 @@ export interface AdminCompetitionCloseDto {
   readonly payoutTx: CompetitionEntryPayment | null;
 }
 
+export interface AdminPortfolioManagerTradeDto {
+  readonly userId: string;
+  readonly symbol: string;
+  readonly side: "long" | "short";
+  readonly leverage: number;
+  readonly notionalUsd: number;
+  readonly quantity: number;
+  readonly entryPrice: number;
+  readonly marginUsd: number;
+}
+
+export interface AdminPortfolioManagerPlanDto {
+  readonly id: string;
+  readonly managerAgentId: string;
+  readonly createdAt: number;
+  readonly status: "prepared" | "executed";
+  readonly llmCalls: 0;
+  readonly confirmation: string;
+  readonly trades: readonly AdminPortfolioManagerTradeDto[];
+}
+
+export interface AdminPortfolioManagerStatusDto {
+  readonly enabled: boolean;
+  readonly managerAgentId: string | null;
+  readonly managerName: string | null;
+  readonly mode: "deterministic_batch" | null;
+  readonly llmCallsPerCycle: 0 | null;
+  readonly maxAccountsPerCycle: number | null;
+  readonly preparedPlan: AdminPortfolioManagerPlanDto | null;
+}
+
+export interface AdminPortfolioManagerExecutionDto {
+  readonly planId: string;
+  readonly requested: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly (
+    | { readonly userId: string; readonly status: "succeeded"; readonly positionId: string }
+    | { readonly userId: string; readonly status: "failed"; readonly error: string }
+  )[];
+}
+
 export interface AdminOverviewDto {
   readonly totals: {
     readonly users: number;

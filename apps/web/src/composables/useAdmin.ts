@@ -8,6 +8,9 @@ import type {
   AdminCompetitionCloseDto,
   AdminCompetitionInput,
   AdminInactiveUserDeleteDto,
+  AdminPortfolioManagerExecutionDto,
+  AdminPortfolioManagerPlanDto,
+  AdminPortfolioManagerStatusDto,
 } from "@tide/client";
 import { TideApiError } from "@tide/client";
 import { errorMessage } from "./messages";
@@ -28,6 +31,9 @@ export interface AdminClient {
   reclaimAllWallets(token: string, confirmation: string): Promise<AdminReclaimJobDto>;
   createCompetition(token: string, input: AdminCompetitionInput): Promise<{ id: string }>;
   closeCompetition(token: string, id: string): Promise<AdminCompetitionCloseDto>;
+  portfolioManagerStatus(token: string): Promise<AdminPortfolioManagerStatusDto>;
+  preparePortfolioManager(token: string, userIds: readonly string[]): Promise<AdminPortfolioManagerPlanDto>;
+  executePortfolioManager(token: string, planId: string, confirmation: string): Promise<AdminPortfolioManagerExecutionDto>;
 }
 
 /** État de la console admin : token (persisté en sessionStorage), overview, chargement. */
@@ -42,6 +48,9 @@ export function useAdmin(client: AdminClient) {
   const lastNftGrant = ref<AdminNftGrantDto | null>(null);
   const lastBatchNftGrant = ref<AdminBatchNftGrantDto | null>(null);
   const lastInactiveDelete = ref<AdminInactiveUserDeleteDto | null>(null);
+  const portfolioManager = ref<AdminPortfolioManagerStatusDto | null>(null);
+  const portfolioPlan = ref<AdminPortfolioManagerPlanDto | null>(null);
+  const portfolioExecution = ref<AdminPortfolioManagerExecutionDto | null>(null);
 
   function logout(): void {
     token.value = "";
@@ -57,12 +66,15 @@ export function useAdmin(client: AdminClient) {
     loading.value = true;
     error.value = "";
     try {
-      const [nextOverview, nextWalletJob] = await Promise.all([
+      const [nextOverview, nextWalletJob, nextPortfolioManager] = await Promise.all([
         client.adminOverview(token.value),
         client.walletOpsStatus(token.value),
+        client.portfolioManagerStatus(token.value),
       ]);
       overview.value = nextOverview;
       walletJob.value = nextWalletJob;
+      portfolioManager.value = nextPortfolioManager;
+      portfolioPlan.value = nextPortfolioManager.preparedPlan;
       sessionStorage.setItem(TOKEN_KEY, token.value);
     } catch (err) {
       overview.value = null;
@@ -235,6 +247,38 @@ export function useAdmin(client: AdminClient) {
     }
   }
 
+  async function preparePortfolio(userIds: readonly string[]): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    portfolioExecution.value = null;
+    try {
+      portfolioPlan.value = await client.preparePortfolioManager(token.value, userIds);
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function executePortfolio(planId: string, confirmation: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      portfolioExecution.value = await client.executePortfolioManager(
+        token.value,
+        planId,
+        confirmation,
+      );
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     token,
     overview,
@@ -246,6 +290,9 @@ export function useAdmin(client: AdminClient) {
     lastNftGrant,
     lastBatchNftGrant,
     lastInactiveDelete,
+    portfolioManager,
+    portfolioPlan,
+    portfolioExecution,
     load,
     refreshWalletJob,
     provisionWallets,
@@ -258,6 +305,8 @@ export function useAdmin(client: AdminClient) {
     reclaimAll,
     createCompetition,
     closeCompetition,
+    preparePortfolio,
+    executePortfolio,
     logout,
   };
 }

@@ -15,6 +15,9 @@ const {
   lastNftGrant,
   lastBatchNftGrant,
   lastInactiveDelete,
+  portfolioManager,
+  portfolioPlan,
+  portfolioExecution,
   load,
   refreshWalletJob,
   provisionWallets,
@@ -27,6 +30,8 @@ const {
   reclaimAll,
   createCompetition,
   closeCompetition,
+  preparePortfolio,
+  executePortfolio,
   logout,
 } = useAdmin(createLocalAdminClient());
 
@@ -34,6 +39,7 @@ const selectedUserIds = ref<string[]>([]);
 const bulkSetupRunning = ref(false);
 const bulkSetupStep = ref<"idle" | "creating" | "funding" | "nft">("idle");
 const bulkConfirmation = ref("");
+const portfolioConfirmation = ref("");
 const provisionCount = ref(1);
 const batchBadgeCode = ref("first_trade");
 const closeCompetitionId = ref("");
@@ -330,6 +336,21 @@ async function submitCompetition(): Promise<void> {
     form.id = "";
   }
 }
+
+async function preparePortfolioCycle(): Promise<void> {
+  const fundedIds = paperWallets.value
+    .filter((wallet) => wallet.status === "funded")
+    .flatMap((wallet) => wallet.userId === null ? [] : [wallet.userId]);
+  await preparePortfolio(fundedIds);
+  portfolioConfirmation.value = "";
+}
+
+async function executePortfolioCycle(): Promise<void> {
+  const plan = portfolioPlan.value;
+  if (plan === null || portfolioConfirmation.value !== plan.confirmation) return;
+  if (!window.confirm(`Exécuter ${String(plan.trades.length)} trades Paper diversifiés ?`)) return;
+  await executePortfolio(plan.id, portfolioConfirmation.value);
+}
 </script>
 
 <template>
@@ -493,6 +514,46 @@ async function submitCompetition(): Promise<void> {
         <p v-if="lastInactiveDelete" class="result">{{ lastInactiveDelete.deleted }} compte(s) Paper inactif(s) supprimé(s), dont {{ lastInactiveDelete.walletRowsDeleted }} adresse(s) locale(s) non financée(s).</p>
       </section>
 
+      <section class="portfolio-manager">
+        <div class="wallet-manager__head">
+          <div>
+            <h2>Portfolio manager unique</h2>
+            <p>Un seul agent gère tous les wallets financés. Le routage batch est déterministe, diversifie actif, sens, levier et taille, et consomme 0 appel LLM par cycle.</p>
+          </div>
+          <strong v-if="portfolioManager?.enabled">{{ portfolioManager.managerName }}</strong>
+        </div>
+        <p v-if="portfolioManager?.enabled !== true" class="admin__error">Portfolio manager indisponible sur ce serveur.</p>
+        <template v-else>
+          <div class="admin__bar">
+            <button type="button" :disabled="loading || fundedPaperWallets === 0" @click="preparePortfolioCycle">
+              Préparer {{ fundedPaperWallets }} trade(s) diversifié(s)
+            </button>
+            <span>0 token LLM · maximum {{ portfolioManager.maxAccountsPerCycle }} wallets par cycle</span>
+          </div>
+          <div v-if="portfolioPlan" class="manager-plan">
+            <table class="admin__table">
+              <thead><tr><th>Utilisateur</th><th>Trade</th><th>Taille</th><th>Levier</th><th>Marge</th></tr></thead>
+              <tbody>
+                <tr v-for="trade in portfolioPlan.trades" :key="trade.userId">
+                  <td><code>{{ trade.userId }}</code></td>
+                  <td>{{ trade.symbol }} · {{ trade.side === "long" ? "Long" : "Short" }}</td>
+                  <td>{{ trade.notionalUsd.toFixed(2) }} USD</td>
+                  <td>{{ trade.leverage }}×</td>
+                  <td>{{ trade.marginUsd.toFixed(2) }} USD</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="admin__bar">
+              <input v-model="portfolioConfirmation" :placeholder="portfolioPlan.confirmation" />
+              <button type="button" class="fund" :disabled="loading || portfolioPlan.status !== 'prepared' || portfolioConfirmation !== portfolioPlan.confirmation" @click="executePortfolioCycle">
+                Exécuter le batch
+              </button>
+            </div>
+          </div>
+          <p v-if="portfolioExecution" class="result">{{ portfolioExecution.succeeded }} trade(s) exécuté(s) · {{ portfolioExecution.failed }} échec(s).</p>
+        </template>
+      </section>
+
       <section class="admin__competitions">
         <h2>Compétitions réelles</h2>
         <p>Aucun seed ni chiffre décoratif. Le ticket est un Payment XRP vérifié et le gagnant reçoit 100 % de la pool.</p>
@@ -612,6 +673,11 @@ async function submitCompetition(): Promise<void> {
 .admin__danger input { min-width: 300px; }
 .admin__job { border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__competitions { border: 1px solid rgba(79, 106, 255, .55); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.portfolio-manager { border: 1px solid rgba(35, 184, 103, .65); border-radius: 12px; padding: 1.1rem; margin: 1.5rem 0; background: rgba(35, 184, 103, .08); }
+.portfolio-manager .admin__bar { flex-wrap: wrap; margin: .75rem 0; }
+.portfolio-manager .admin__bar input { min-width: min(100%, 420px); flex: 1; }
+.manager-plan { overflow-x: auto; }
+.manager-plan .admin__table { min-width: 760px; margin-bottom: .75rem; }
 .admin__wallet-provision { border: 1px solid rgba(44, 160, 90, .65); border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__wallet-provision h2 { margin-top: 0; }
 .competition-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1rem 0; }

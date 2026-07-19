@@ -10,6 +10,7 @@ import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import { InMemoryCompetitionStore } from "../store/competition-store";
 import { arenaSimulationUserId } from "../simulation/arena-ids";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
+import type { PortfolioManagerService } from "../services/portfolio-manager-service";
 import type { CompetitionDefinition } from "../store/competition-store";
 import { AuthService } from "../auth/auth-service";
 import { InMemoryChallengeStore } from "../auth/challenge-store";
@@ -186,6 +187,73 @@ describe("GET /admin/overview", () => {
 });
 
 describe("admin wallet operations", () => {
+  it("garde la planification et l'exécution du portfolio manager derrière le token admin", async () => {
+    const paper = new PaperService(undefined, new InMemoryAccountStore());
+    paper.openAccount("visitor");
+    const service = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions: new InMemoryAgentActionsStore(),
+      prizePoolAddress: null,
+      operatorUserIds: new Set<string>(),
+    });
+    const plan = {
+      id: "plan-1",
+      managerAgentId: "manager",
+      createdAt: 1,
+      status: "prepared" as const,
+      llmCalls: 0 as const,
+      confirmation: "EXECUTE 1 DIVERSIFIED PAPER TRADES",
+      trades: [],
+    };
+    const prepare = vi.fn(async () => plan);
+    const execute = vi.fn(async () => ({
+      planId: plan.id,
+      requested: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [],
+    }));
+    const portfolioManager = {
+      status: vi.fn(async () => ({ enabled: true, preparedPlan: null })),
+      prepare,
+      execute,
+    } as unknown as PortfolioManagerService;
+    const app = buildPrivateAdminServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service, portfolioManager },
+    });
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/admin/portfolio-manager/plan",
+      payload: { userIds: ["visitor"] },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const prepared = await app.inject({
+      method: "POST",
+      url: "/admin/portfolio-manager/plan",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { userIds: ["visitor"] },
+    });
+    expect(prepared.statusCode).toBe(200);
+    expect(prepare).toHaveBeenCalledWith(["visitor"]);
+
+    const executed = await app.inject({
+      method: "POST",
+      url: "/admin/portfolio-manager/execute",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { planId: plan.id, confirmation: plan.confirmation },
+    });
+    expect(executed.statusCode).toBe(200);
+    expect(execute).toHaveBeenCalledWith(plan.id, plan.confirmation);
+    await app.close();
+  });
+
   it("provisionne un lot Mainnet uniquement avec le token admin", async () => {
     const provision = vi.fn(async (count: number) => ({
       network: "mainnet" as const,

@@ -107,6 +107,21 @@ function clientWithToken(
     reclaimAllWallets: async () => IDLE_JOB,
     createCompetition: async (_token, input) => ({ id: input.id }),
     closeCompetition: async () => ({ winner: null, pot: 0, payoutTx: null }),
+    portfolioManagerStatus: async () => ({
+      enabled: false,
+      managerAgentId: null,
+      managerName: null,
+      mode: null,
+      llmCallsPerCycle: null,
+      maxAccountsPerCycle: null,
+      preparedPlan: null,
+    }),
+    preparePortfolioManager: async () => {
+      throw new Error("portfolio manager disabled");
+    },
+    executePortfolioManager: async () => {
+      throw new Error("portfolio manager disabled");
+    },
   };
 }
 

@@ -30,6 +30,7 @@ import type { AccountStore } from "./store/account-store";
 import type { CompetitionStore } from "./store/competition-store";
 import type { AgentActionsStore } from "./store/agent-actions-store";
 import { AdminService } from "./services/admin-service";
+import { PortfolioManagerService } from "./services/portfolio-manager-service";
 import type { AgentStore } from "./store/agent-store";
 import type { PaperWalletStore } from "./store/paper-wallet-store";
 import type { MandateStore } from "./store/mandate-store";
@@ -173,6 +174,7 @@ export interface App {
  */
 export function createApp(config: AppConfig): App {
   const paper = config.paper ?? new PaperService(config.startingEquity, config.accountStore);
+  const cache = new PriceCache();
   const competition = new CompetitionService(
     config.competitionStore,
     () => Date.now(),
@@ -215,10 +217,19 @@ export function createApp(config: AppConfig): App {
           ...(config.paperWalletAdmin !== undefined
             ? { walletAdmin: config.paperWalletAdmin }
             : {}),
+          ...(config.paperWalletStore !== undefined
+            ? {
+                portfolioManager: new PortfolioManagerService({
+                  paper,
+                  agents: config.agentStore,
+                  actions: config.agentActionsStore,
+                  wallets: config.paperWalletStore,
+                  getPrices: () => cache.current(),
+                }),
+              }
+            : {}),
         }
       : undefined;
-
-  const cache = new PriceCache();
   // Lignes de marché (watchlist) du dernier rafraîchissement en mode `markets`.
   let marketRows: readonly MarketRow[] = [];
 

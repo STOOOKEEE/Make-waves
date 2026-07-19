@@ -2369,3 +2369,22 @@ de XRP.
 
 **Vérifié.** Transaction `tesSUCCESS` et validée, issuer à 1,50 XRP, funder à
 environ 202 XRP. Tests ciblés, typecheck API/web, lint et build web verts.
+
+## 2026-07-19 — Un gestionnaire unique pour tous les wallets Paper
+
+**Architecture.** Les comptes custodiaux financés ne nécessitent plus un agent
+LLM par wallet. Un seul agent opérateur stable (`Tide Portfolio Manager`) prépare
+un cycle pouvant couvrir jusqu'à 300 wallets. La diversification des actifs,
+sens, leviers et tailles est déterministe et bornée : le coût est de **zéro appel
+LLM par cycle**, indépendamment du nombre de comptes.
+
+**Contrôle opérateur.** Le dashboard admin privé permet de préparer le lot, de
+relire chaque position puis de l'exécuter avec une phrase de confirmation exacte.
+Seuls les wallets déjà financés sont éligibles. Le funding, les NFT, le sweep et
+la suppression restent des actions admin séparées ; aucune opération financière
+ou aucun trade n'est lancé automatiquement au démarrage.
+
+**Traçabilité.** Chaque position ouverte est persistée par le moteur Paper sous
+le `userId` du wallet concerné et journalisée avec l'identifiant du gestionnaire
+unique. Le plan utilise les derniers prix serveur disponibles et ne manipule
+jamais les seeds XRPL.

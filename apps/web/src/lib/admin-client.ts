@@ -8,6 +8,9 @@ import {
   type AdminReclaimJobDto,
   type AdminCompetitionCloseDto,
   type AdminInactiveUserDeleteDto,
+  type AdminPortfolioManagerExecutionDto,
+  type AdminPortfolioManagerPlanDto,
+  type AdminPortfolioManagerStatusDto,
   type ApiRequest,
   type ApiTransport,
 } from "@tide/client";
@@ -156,6 +159,38 @@ export function createLocalAdminClient(
           path: `/admin/competitions/${encodeURIComponent(id)}/close`,
           method: "POST",
           headers: { "x-admin-token": token },
+        },
+        200,
+      ),
+    portfolioManagerStatus: (token) =>
+      expectBody<AdminPortfolioManagerStatusDto>(
+        transport,
+        {
+          path: "/admin/portfolio-manager/status",
+          method: "GET",
+          headers: { "x-admin-token": token },
+        },
+        200,
+      ),
+    preparePortfolioManager: (token, userIds) =>
+      expectBody<AdminPortfolioManagerPlanDto>(
+        transport,
+        {
+          path: "/admin/portfolio-manager/plan",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { userIds },
+        },
+        200,
+      ),
+    executePortfolioManager: (token, planId, confirmation) =>
+      expectBody<AdminPortfolioManagerExecutionDto>(
+        transport,
+        {
+          path: "/admin/portfolio-manager/execute",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { planId, confirmation },
         },
         200,
       ),
