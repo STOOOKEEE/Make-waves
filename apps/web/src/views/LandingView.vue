@@ -100,7 +100,7 @@ onMounted(async () => {
 <template>
   <section class="landing">
     <nav>
-      <a href="#/" class="brand"><span class="mark"><BrandMark /></span><b>TIDE</b></a>
+      <a href="#/landing" class="brand"><span class="mark"><BrandMark /></span><b>TIDE</b></a>
       <div><LangToggle /><button type="button" @click="wallet.connect">{{ t("wallet") }}</button></div>
     </nav>
 

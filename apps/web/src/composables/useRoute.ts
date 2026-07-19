@@ -2,7 +2,7 @@ import { computed, onMounted, onUnmounted, readonly, ref } from "vue";
 
 /** Chemins du site (landing + les écrans app). */
 const PUBLIC_ROUTES = [
-  "/",
+  "/landing",
   "/dashboard",
   "/portfolio",
   "/leaderboard",

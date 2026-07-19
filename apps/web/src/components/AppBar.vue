@@ -115,7 +115,7 @@ function go(path: string): void {
 
 <template>
   <header class="appbar">
-    <a class="brand" href="#/" @click.prevent="go('/')">
+    <a class="brand" href="#/landing" @click.prevent="go('/landing')">
       <span class="mk"><BrandMark /></span>TIDE
     </a>
     <nav class="tabs">

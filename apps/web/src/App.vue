@@ -30,10 +30,10 @@ const { current, competitionId, routeId, navigate } = useRoute();
 
 <template>
   <div class="grain"></div>
-  <AppBar v-if="current !== '/'" :current="current" :client="client" @navigate="navigate" />
+  <AppBar v-if="current !== '/landing'" :current="current" :client="client" @navigate="navigate" />
 
   <main id="main" tabindex="-1">
-    <LandingView v-if="current === '/'" :client="client" @navigate="navigate" />
+    <LandingView v-if="current === '/landing'" :client="client" @navigate="navigate" />
     <DashboardView v-else-if="current === '/dashboard'" :client="client" />
     <PortfolioView v-else-if="current === '/portfolio'" :client="client" />
     <LeaderboardView v-else-if="current === '/leaderboard'" :client="client" />
