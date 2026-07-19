@@ -19,7 +19,9 @@ export const ROUTES: readonly RoutePath[] = import.meta.env.DEV
   ? [...PUBLIC_ROUTES, "/admin"]
   : PUBLIC_ROUTES;
 
-const DEFAULT_ROUTE: RoutePath = "/";
+// Tide est un terminal de trading : arriver sans hash ouvre directement
+// l'interface bleue plutôt que la landing marketing.
+const DEFAULT_ROUTE: RoutePath = "/dashboard";
 
 export interface ParsedRoute {
   path: RoutePath;
@@ -28,7 +30,10 @@ export interface ParsedRoute {
 }
 
 function parseHash(hash: string): ParsedRoute {
-  const raw = hash.replace(/^#/, "") || "/";
+  const raw = hash.replace(/^#/, "");
+  if (!raw || raw === "/") {
+    return { path: DEFAULT_ROUTE };
+  }
   const [, first = "", second = ""] = raw.split("/");
   const candidate = `/${first}` as RoutePath;
   if (first === "competition") {
