@@ -241,7 +241,7 @@ describe("admin wallet operations", () => {
       payload: { userIds: ["visitor"] },
     });
     expect(prepared.statusCode).toBe(200);
-    expect(prepare).toHaveBeenCalledWith(["visitor"]);
+    expect(prepare).toHaveBeenCalledWith(["visitor"], "standard");
 
     const executed = await app.inject({
       method: "POST",

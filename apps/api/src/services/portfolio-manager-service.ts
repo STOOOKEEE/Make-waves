@@ -33,6 +33,7 @@ export interface PortfolioManagerPlan {
   readonly createdAt: number;
   readonly status: "prepared" | "executed";
   readonly llmCalls: 0;
+  readonly profile: "standard" | "high_risk";
   readonly confirmation: string;
   readonly trades: readonly PortfolioManagerTradePlan[];
 }
@@ -101,7 +102,10 @@ export class PortfolioManagerService {
     };
   }
 
-  async prepare(requestedUserIds: readonly string[]): Promise<PortfolioManagerPlan> {
+  async prepare(
+    requestedUserIds: readonly string[],
+    profile: "standard" | "high_risk" = "standard",
+  ): Promise<PortfolioManagerPlan> {
     await this.ensureManagerAgent();
     const wallets = await this.deps.wallets.list();
     const fundedUserIds = new Set(
@@ -115,6 +119,9 @@ export class PortfolioManagerService {
     if (requested.length === 0) throw new Error("Aucun wallet financé à gérer");
     if (requested.length > MAX_ACCOUNTS_PER_CYCLE) {
       throw new Error(`Maximum ${String(MAX_ACCOUNTS_PER_CYCLE)} wallets par cycle`);
+    }
+    if (profile === "high_risk" && requested.length > 2) {
+      throw new Error("Le profil high-risk est limité à 2 wallets par cycle");
     }
     for (const userId of requested) {
       if (!fundedUserIds.has(userId)) throw new Error(`Wallet non financé refusé: ${userId}`);
@@ -141,11 +148,13 @@ export class PortfolioManagerService {
       // Les centimes par bloc conservent une taille unique jusqu'à 300 comptes,
       // tout en bornant le notionnel sous 445 USD au lieu de le faire croître
       // linéairement avec la taille de la flotte.
-      const notionalUsd =
-        BASE_NOTIONAL_USD
-        + (index % NOTIONAL_VARIANTS) * NOTIONAL_STEP_USD
-        + Math.floor(index / NOTIONAL_VARIANTS) / 100;
-      const leverage = 1 + (slot % 3);
+      const highRiskMargin = index === 0 ? 5_000 : 3_500;
+      const leverage = profile === "high_risk" ? (index === 0 ? 15 : 12) : 1 + (slot % 3);
+      const notionalUsd = profile === "high_risk"
+        ? highRiskMargin * leverage
+        : BASE_NOTIONAL_USD
+          + (index % NOTIONAL_VARIANTS) * NOTIONAL_STEP_USD
+          + Math.floor(index / NOTIONAL_VARIANTS) / 100;
       return {
         userId,
         symbol,
@@ -154,7 +163,7 @@ export class PortfolioManagerService {
         notionalUsd,
         quantity: notionalUsd / entryPrice,
         entryPrice,
-        marginUsd: notionalUsd / leverage,
+        marginUsd: profile === "high_risk" ? highRiskMargin : notionalUsd / leverage,
       };
     });
     const id = this.newId();
@@ -165,6 +174,7 @@ export class PortfolioManagerService {
       createdAt: this.now(),
       status: "prepared",
       llmCalls: 0,
+      profile,
       confirmation,
       trades,
     };

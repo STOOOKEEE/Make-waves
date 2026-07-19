@@ -60,6 +60,21 @@ describe("PortfolioManagerService", () => {
     await expect(service.prepare(["paper:c"])).rejects.toThrow("Wallet non financé");
   });
 
+  it("borne le profil high-risk à deux wallets et différencie les expositions", async () => {
+    const { service } = await setup();
+    const plan = await service.prepare(["paper:a", "paper:b"], "high_risk");
+
+    expect(plan.profile).toBe("high_risk");
+    expect(plan.trades.map(({ leverage, marginUsd, notionalUsd }) => ({
+      leverage,
+      marginUsd,
+      notionalUsd,
+    }))).toEqual([
+      { leverage: 15, marginUsd: 5_000, notionalUsd: 75_000 },
+      { leverage: 12, marginUsd: 3_500, notionalUsd: 42_000 },
+    ]);
+  });
+
   it("exige la confirmation puis ouvre et audite une position par compte", async () => {
     const { actions, paper, service } = await setup();
     const plan = await service.prepare(["paper:a", "paper:b"]);

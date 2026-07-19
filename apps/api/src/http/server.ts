@@ -1146,8 +1146,14 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { error: "portfolio manager indisponible" };
     }
     try {
+      const requestedProfile = readStringField(request.body, "profile");
+      const profile = requestedProfile === "" ? "standard" : requestedProfile;
+      if (profile !== "standard" && profile !== "high_risk") {
+        throw new Error("Profil de portefeuille invalide");
+      }
       return await admin.portfolioManager.prepare(
         readStringArrayField(request.body, "userIds"),
+        profile,
       );
     } catch (error) {
       reply.code(409);
