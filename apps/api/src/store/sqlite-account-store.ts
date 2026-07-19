@@ -182,6 +182,17 @@ export class SqliteAccountStore implements AccountStore {
     });
   }
 
+  deleteAccount(userId: string): boolean {
+    if (!this.has(userId)) return false;
+    this.transaction(() => {
+      this.db.prepare("DELETE FROM positions WHERE user_id = ?").run(userId);
+      this.db.prepare("DELETE FROM orders WHERE user_id = ?").run(userId);
+      this.db.prepare("DELETE FROM balances WHERE user_id = ?").run(userId);
+      this.db.prepare("DELETE FROM accounts WHERE user_id = ?").run(userId);
+    });
+    return true;
+  }
+
   snapshots(): AccountSnapshotRow[] {
     return this.db
       .prepare("SELECT user_id FROM accounts ORDER BY rowid")

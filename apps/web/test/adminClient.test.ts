@@ -101,4 +101,29 @@ describe("client admin local", () => {
       },
     ]);
   });
+
+  it("transmet la confirmation de suppression des comptes inactifs", async () => {
+    let seen: ApiRequest | undefined;
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen = request;
+      return {
+        status: 200,
+        body: { requested: 2, deleted: 2, walletRowsDeleted: 0, userIds: ["paper:u1", "paper:u2"] },
+      };
+    };
+    const userIds = ["paper:u1", "paper:u2"];
+
+    await createLocalAdminClient(transport).deleteInactiveUsers(
+      "secret",
+      userIds,
+      "DELETE 2 INACTIVE PAPER ACCOUNTS",
+    );
+
+    expect(seen).toEqual({
+      path: "/admin/users/delete-inactive",
+      method: "POST",
+      headers: { "x-admin-token": "secret" },
+      body: { userIds, confirmation: "DELETE 2 INACTIVE PAPER ACCOUNTS" },
+    });
+  });
 });

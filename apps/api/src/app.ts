@@ -88,7 +88,7 @@ export interface AppConfig {
   /** Comptes classés "operator" dans la console admin (défaut : aucun). */
   readonly operatorUserIds?: readonly string[];
   /** Wallets Paper visibles dans la console locale, sans aucune seed. */
-  readonly paperWalletStore?: Pick<PaperWalletStore, "list">;
+  readonly paperWalletStore?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
   /** Etat du banc de charge Paper, visible seulement dans la console admin. */
   readonly simulation?: ArenaSimulationStatusReader;
   /** Distribution NFT et récupération des wallets depuis la console locale Mainnet. */

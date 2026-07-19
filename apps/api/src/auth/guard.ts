@@ -49,6 +49,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
   { method: "GET", url: "/admin/wallet-ops/status" },
+  { method: "POST", url: "/admin/users/delete-inactive" },
   { method: "POST", url: "/admin/wallets/provision" },
   { method: "POST", url: "/admin/wallets/create-for-users" },
   { method: "POST", url: "/admin/wallets/fund-for-users" },

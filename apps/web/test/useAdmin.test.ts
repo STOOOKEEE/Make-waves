@@ -79,6 +79,12 @@ function clientWithToken(
       funded: userIds.length,
       wallets: [],
     }),
+    deleteInactiveUsers: async (_token, userIds) => ({
+      requested: userIds.length,
+      deleted: userIds.length,
+      walletRowsDeleted: 0,
+      userIds,
+    }),
     grantWalletNft: async () => ({
       userId: "paper:u1",
       walletAddress: "rWallet",

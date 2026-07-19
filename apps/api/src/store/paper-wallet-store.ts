@@ -24,6 +24,8 @@ export interface PaperWalletStore {
   markFunded(userId: string, fundingTxHash: string, fundedAt: number): Promise<void>;
   markFundingFailed(userId: string): Promise<void>;
   markReclaimed(userId: string): Promise<void>;
+  /** Supprime uniquement une adresse locale jamais financée ni soumise. */
+  deleteUnfunded(userId: string): Promise<boolean>;
   countFunded(): Promise<number>;
   countFundedSince(timestamp: number): Promise<number>;
 }
@@ -67,6 +69,18 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
     const current = this.wallets.get(userId);
     if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
     this.wallets.set(userId, { ...current, status: "reclaimed" });
+  }
+
+  async deleteUnfunded(userId: string): Promise<boolean> {
+    const current = this.wallets.get(userId);
+    if (
+      current === undefined ||
+      current.status !== "pending_funding" ||
+      current.fundingTxHash !== null
+    ) {
+      return false;
+    }
+    return this.wallets.delete(userId);
   }
 
   async countFunded(): Promise<number> {

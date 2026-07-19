@@ -7,6 +7,7 @@ import type {
   AdminWalletProvisionDto,
   AdminCompetitionCloseDto,
   AdminCompetitionInput,
+  AdminInactiveUserDeleteDto,
 } from "@tide/client";
 import { TideApiError } from "@tide/client";
 import { errorMessage } from "./messages";
@@ -20,6 +21,7 @@ export interface AdminClient {
   provisionWallets(token: string, count: number): Promise<AdminWalletProvisionDto>;
   createUserWallets(token: string, userIds: readonly string[]): Promise<AdminWalletProvisionDto>;
   fundUserWallets(token: string, userIds: readonly string[], confirmation: string): Promise<AdminWalletProvisionDto>;
+  deleteInactiveUsers(token: string, userIds: readonly string[], confirmation: string): Promise<AdminInactiveUserDeleteDto>;
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
   grantWalletNftBatch(token: string, userIds: readonly string[], badgeCode: string): Promise<AdminBatchNftGrantDto>;
   reclaimWallet(token: string, userId: string): Promise<AdminReclaimJobDto>;
@@ -39,6 +41,7 @@ export function useAdmin(client: AdminClient) {
   const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
   const lastNftGrant = ref<AdminNftGrantDto | null>(null);
   const lastBatchNftGrant = ref<AdminBatchNftGrantDto | null>(null);
+  const lastInactiveDelete = ref<AdminInactiveUserDeleteDto | null>(null);
 
   function logout(): void {
     token.value = "";
@@ -119,6 +122,26 @@ export function useAdmin(client: AdminClient) {
     error.value = "";
     try {
       provisionResult.value = await client.fundUserWallets(token.value, userIds, confirmation);
+      await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      await load();
+      error.value = message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function deleteInactiveUsers(userIds: readonly string[], confirmation: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      lastInactiveDelete.value = await client.deleteInactiveUsers(
+        token.value,
+        userIds,
+        confirmation,
+      );
       await load();
     } catch (err) {
       const message = errorMessage(err);
@@ -222,11 +245,13 @@ export function useAdmin(client: AdminClient) {
     competitionPayout,
     lastNftGrant,
     lastBatchNftGrant,
+    lastInactiveDelete,
     load,
     refreshWalletJob,
     provisionWallets,
     createUserWallets,
     fundUserWallets,
+    deleteInactiveUsers,
     grantNft,
     grantNftBatch,
     reclaimOne,

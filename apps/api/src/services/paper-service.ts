@@ -112,6 +112,31 @@ export class PaperService {
     return true;
   }
 
+  /**
+   * Un compte est supprimable seulement s'il est strictement vierge : aucun
+   * ordre, aucune position et le solde initial intact. Le contrôle du solde
+   * évite d'effacer un compte qui aurait déjà fermé une position (donc 0
+   * position ouverte mais un PnL réalisé).
+   */
+  isInactiveAccount(userId: string): boolean {
+    const balances = this.store.getBalances(userId);
+    if (balances === undefined) return false;
+    if ((this.store.getOrders(userId)?.length ?? 0) !== 0) return false;
+    if ((this.store.getPositions(userId)?.length ?? 0) !== 0) return false;
+    const currencies = Object.keys(balances);
+    return (
+      currencies.length === 1 &&
+      currencies[0] === QUOTE_CURRENCY &&
+      balances[QUOTE_CURRENCY] === this.startingEquity
+    );
+  }
+
+  /** Suppression locale définitive d'un compte Paper strictement vierge. */
+  deleteInactiveAccount(userId: string): boolean {
+    if (!this.isInactiveAccount(userId)) return false;
+    return this.store.deleteAccount(userId);
+  }
+
   /** Applique un ordre marché spot et l'enregistre atomiquement. Retourne le fill. */
   placeOrder(userId: string, order: MarketOrderInput): Fill {
     const balances = this.requireBalances(userId);

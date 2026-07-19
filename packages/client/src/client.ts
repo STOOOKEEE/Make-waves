@@ -415,6 +415,13 @@ export interface AdminWalletProvisionDto {
   }[];
 }
 
+export interface AdminInactiveUserDeleteDto {
+  readonly requested: number;
+  readonly deleted: number;
+  readonly walletRowsDeleted: number;
+  readonly userIds: readonly string[];
+}
+
 export interface AdminCompetitionInput {
   readonly id: string;
   readonly nameEn: string;

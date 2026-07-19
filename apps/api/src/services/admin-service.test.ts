@@ -231,3 +231,52 @@ describe("AdminService.overview", () => {
     expect(overview.simulation).toMatchObject({ enabled: true, provisionedUsers: 2 });
   });
 });
+
+describe("AdminService.deleteInactiveUsers", () => {
+  it("supprime un compte vierge et son adresse locale non financée", async () => {
+    const { paper, paperWallets, service } = makeService([]);
+    paper.openAccount("paper:empty");
+    await paperWallets.create({
+      userId: "paper:empty",
+      address: "rEmpty",
+      encryptedSeed: "encrypted",
+      masterKeyId: "v1",
+      status: "pending_funding",
+      fundingTxHash: null,
+      fundedAt: null,
+      createdAt: 1,
+    });
+
+    await expect(service.deleteInactiveUsers(
+      ["paper:empty"],
+      "DELETE 1 INACTIVE PAPER ACCOUNTS",
+    )).resolves.toMatchObject({ deleted: 1, walletRowsDeleted: 1 });
+    expect(await paperWallets.get("paper:empty")).toBeNull();
+    expect(paper.leaderboard(PRICES)).toEqual([]);
+  });
+
+  it("refuse un compte ayant tradé, un wallet financé et un compte agent", async () => {
+    const { paper, agents, paperWallets, service } = makeService([]);
+    paper.openAccount("paper:traded");
+    paper.placeOrder("paper:traded", {
+      pair: { base: "XRP", quote: "RLUSD" }, side: "buy", amount: 1, price: 0.5,
+    });
+    paper.openAccount("paper:funded");
+    await paperWallets.create({
+      userId: "paper:funded", address: "rFunded", encryptedSeed: "encrypted",
+      masterKeyId: "v1", status: "funded", fundingTxHash: "HASH", fundedAt: 1, createdAt: 1,
+    });
+    paper.openAccount("paper:agent");
+    await agents.create(agent("a-delete", "paper:agent"));
+
+    await expect(service.deleteInactiveUsers(
+      ["paper:traded"], "DELETE 1 INACTIVE PAPER ACCOUNTS",
+    )).rejects.toThrow(/non vierge/);
+    await expect(service.deleteInactiveUsers(
+      ["paper:funded"], "DELETE 1 INACTIVE PAPER ACCOUNTS",
+    )).rejects.toThrow(/déjà actif/);
+    await expect(service.deleteInactiveUsers(
+      ["paper:agent"], "DELETE 1 INACTIVE PAPER ACCOUNTS",
+    )).rejects.toThrow(/lié à un agent/);
+  });
+});

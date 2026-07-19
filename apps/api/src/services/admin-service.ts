@@ -84,6 +84,13 @@ export interface AdminOverview {
   readonly simulation: ArenaSimulationStatus;
 }
 
+export interface AdminInactiveUserDeleteResult {
+  readonly requested: number;
+  readonly deleted: number;
+  readonly walletRowsDeleted: number;
+  readonly userIds: readonly string[];
+}
+
 export interface AdminServiceDeps {
   readonly paper: PaperService;
   readonly agents: AgentStore;
@@ -91,7 +98,7 @@ export interface AdminServiceDeps {
   readonly actions: AgentActionsStore;
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
-  readonly paperWallets?: Pick<PaperWalletStore, "list">;
+  readonly paperWallets?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
   readonly simulation?: ArenaSimulationStatusReader;
 }
 
@@ -120,6 +127,64 @@ export class AdminService {
       agents: agentRows,
       wallets,
       simulation: this.deps.simulation?.status() ?? disabledSimulationStatus(),
+    };
+  }
+
+  /**
+   * Supprime des comptes Paper locaux strictement vierges. Aucun compte XRPL
+   * actif n'est touché : une ligne wallet n'est effaçable que si elle est
+   * encore `pending_funding`, sans hash de Payment.
+   */
+  async deleteInactiveUsers(
+    userIds: readonly string[],
+    confirmation: string,
+  ): Promise<AdminInactiveUserDeleteResult> {
+    const ids = [...new Set(userIds.map((id) => id.trim()).filter((id) => id !== ""))];
+    if (ids.length === 0 || ids.length > 50) {
+      throw new Error("Sélection invalide (1 à 50 comptes requis)");
+    }
+    const expected = `DELETE ${String(ids.length)} INACTIVE PAPER ACCOUNTS`;
+    if (confirmation !== expected) throw new Error(`Confirmation requise: ${expected}`);
+
+    const agents = await this.deps.agents.list();
+    const agentOwners = new Set(agents.map((agent) => agent.userId));
+    const wallets = new Map<string, PaperWallet | null>();
+    for (const userId of ids) {
+      if (isTechnicalTestUserId(userId)) throw new Error(`Compte technique refusé: ${userId}`);
+      if (this.deps.operatorUserIds.has(userId)) throw new Error(`Compte opérateur refusé: ${userId}`);
+      if (agentOwners.has(userId)) throw new Error(`Compte lié à un agent refusé: ${userId}`);
+      if (!this.deps.paper.isInactiveAccount(userId)) {
+        throw new Error(`Compte non vierge refusé: ${userId}`);
+      }
+      const wallet = await this.deps.paperWallets?.get(userId) ?? null;
+      if (
+        wallet !== null &&
+        (wallet.status !== "pending_funding" || wallet.fundingTxHash !== null)
+      ) {
+        throw new Error(`Wallet déjà actif ou ambigu refusé: ${userId}`);
+      }
+      wallets.set(userId, wallet);
+    }
+
+    let walletRowsDeleted = 0;
+    const deletedIds: string[] = [];
+    for (const userId of ids) {
+      if (wallets.get(userId) !== null) {
+        if (!(await this.deps.paperWallets?.deleteUnfunded(userId))) {
+          throw new Error(`Suppression du wallet local refusée: ${userId}`);
+        }
+        walletRowsDeleted += 1;
+      }
+      if (!this.deps.paper.deleteInactiveAccount(userId)) {
+        throw new Error(`Le compte a changé pendant la suppression: ${userId}`);
+      }
+      deletedIds.push(userId);
+    }
+    return {
+      requested: ids.length,
+      deleted: deletedIds.length,
+      walletRowsDeleted,
+      userIds: deletedIds,
     };
   }
 

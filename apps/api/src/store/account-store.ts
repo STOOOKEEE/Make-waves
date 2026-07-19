@@ -28,6 +28,8 @@ export interface AccountStore {
   openPosition(userId: string, balances: Balances, position: Position): void;
   /** Atomique : remplace les soldes (PnL crédité) ET retire la position. */
   closePosition(userId: string, balances: Balances, positionId: string): void;
+  /** Supprime intégralement un compte que le service a déjà déclaré vierge. */
+  deleteAccount(userId: string): boolean;
   /** Tous les comptes (pour le leaderboard). */
   snapshots(): AccountSnapshotRow[];
 }
@@ -90,6 +92,10 @@ export class InMemoryAccountStore implements AccountStore {
     }
     account.balances = { ...balances };
     account.positions = account.positions.filter((p) => p.id !== positionId);
+  }
+
+  deleteAccount(userId: string): boolean {
+    return this.accounts.delete(userId);
   }
 
   snapshots(): AccountSnapshotRow[] {

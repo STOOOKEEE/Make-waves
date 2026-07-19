@@ -14,11 +14,13 @@ const {
   competitionPayout,
   lastNftGrant,
   lastBatchNftGrant,
+  lastInactiveDelete,
   load,
   refreshWalletJob,
   provisionWallets,
   createUserWallets,
   fundUserWallets,
+  deleteInactiveUsers,
   grantNft,
   grantNftBatch,
   reclaimOne,
@@ -97,6 +99,20 @@ const selectedFundableIds = computed(() => selectedRows.value
 const selectedFundedIds = computed(() => selectedRows.value
   .filter(({ wallet }) => wallet.status === "funded")
   .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
+const inactiveUserIds = computed(() => managedRows.value
+  .filter(({ wallet, user }) =>
+    user !== undefined &&
+    user.segment === "frontend" &&
+    user.orders === 0 &&
+    user.positions === 0 &&
+    Math.abs(user.pnl) < 1e-9 &&
+    (wallet.status === "not_created" || wallet.status === "pending_funding"),
+  )
+  .flatMap(({ wallet }) => wallet.userId === null ? [] : [wallet.userId]));
+const selectedInactiveIds = computed(() => {
+  const eligible = new Set(inactiveUserIds.value);
+  return selectedUserIds.value.filter((userId) => eligible.has(userId));
+});
 const allRowsSelected = computed(() =>
   managedRows.value.length > 0 &&
   managedRows.value.every(({ wallet }) => wallet.userId !== null && selectedUserIds.value.includes(wallet.userId)),
@@ -144,6 +160,10 @@ function selectFundedRows(): void {
   selectedUserIds.value = paperWallets.value
     .filter((wallet) => wallet.status === "funded")
     .flatMap((wallet) => wallet.userId === null ? [] : [wallet.userId]);
+}
+
+function selectInactiveRows(): void {
+  selectedUserIds.value = [...inactiveUserIds.value];
 }
 
 function statusLabel(status: AdminWalletDto["status"]): string {
@@ -199,6 +219,14 @@ async function sendSelectedNfts(): Promise<void> {
   if (ids.length === 0) return;
   if (!window.confirm(`Mint + envoyer ${String(ids.length)} NFT ${batchBadgeCode.value} ?`)) return;
   await grantNftBatch(ids, batchBadgeCode.value);
+}
+
+async function deleteInactive(ids: readonly string[]): Promise<void> {
+  if (ids.length === 0) return;
+  if (!window.confirm(`Supprimer définitivement ${String(ids.length)} compte(s) Paper vierge(s) ? Aucun wallet Mainnet actif ne sera touché.`)) return;
+  await deleteInactiveUsers(ids, `DELETE ${String(ids.length)} INACTIVE PAPER ACCOUNTS`);
+  const deleted = new Set(ids);
+  selectedUserIds.value = selectedUserIds.value.filter((userId) => !deleted.has(userId));
 }
 
 function confirmReclaim(userId: string, address: string | null): void {
@@ -301,6 +329,7 @@ async function submitCompetition(): Promise<void> {
         <div class="wallet-manager__toolbar">
           <button type="button" :disabled="loading" @click="toggleAllRows">{{ allRowsSelected ? "Tout désélectionner" : "Tout sélectionner" }}</button>
           <button type="button" :disabled="loading || fundedPaperWallets === 0" @click="selectFundedRows">Sélectionner les financés</button>
+          <button type="button" :disabled="loading || inactiveUserIds.length === 0" @click="selectInactiveRows">Sélectionner les inactifs</button>
           <button type="button" :disabled="loading || selectedUserIds.length === 0" @click="selectedUserIds = []">Effacer</button>
           <span class="toolbar-separator"></span>
           <button type="button" :disabled="loading || walletJob?.enabled !== true || selectedMissingIds.length === 0" @click="createSelectedWallets">
@@ -308,6 +337,9 @@ async function submitCompetition(): Promise<void> {
           </button>
           <button type="button" class="fund" :disabled="loading || walletJob?.enabled !== true || selectedFundableIds.length === 0" @click="fundSelectedWallets">
             Financer {{ selectedFundableIds.length }} éligible(s) · {{ (selectedFundableIds.length * PAPER_WALLET_FUNDING_XRP).toFixed(2) }} XRP
+          </button>
+          <button type="button" class="danger" :disabled="loading || selectedInactiveIds.length === 0" @click="deleteInactive(selectedInactiveIds)">
+            Supprimer {{ selectedInactiveIds.length }} inactif(s)
           </button>
         </div>
 
@@ -355,6 +387,7 @@ async function submitCompetition(): Promise<void> {
                 <td class="row-actions">
                   <button type="button" :disabled="loading || walletJob?.enabled !== true || row.wallet.status !== 'funded' || row.wallet.userId === null" @click="row.wallet.userId !== null && grantNft(row.wallet.userId, batchBadgeCode)">NFT</button>
                   <button type="button" class="danger" :disabled="walletJob?.enabled !== true || row.wallet.status !== 'funded' || loading || walletJob?.state === 'running' || row.wallet.userId === null" @click="row.wallet.userId !== null && confirmReclaim(row.wallet.userId, row.wallet.address)">Sweep</button>
+                  <button type="button" class="danger" :disabled="loading || row.wallet.userId === null || !inactiveUserIds.includes(row.wallet.userId)" @click="row.wallet.userId !== null && deleteInactive([row.wallet.userId])">Supprimer</button>
                 </td>
               </tr>
             </tbody>
@@ -369,6 +402,7 @@ async function submitCompetition(): Promise<void> {
             <li v-for="result in lastBatchNftGrant.results.filter((item) => item.status === 'failed')" :key="result.userId" class="admin__error">{{ result.userId }} · {{ result.status === "failed" ? result.error : "" }}</li>
           </ul>
         </div>
+        <p v-if="lastInactiveDelete" class="result">{{ lastInactiveDelete.deleted }} compte(s) Paper inactif(s) supprimé(s), dont {{ lastInactiveDelete.walletRowsDeleted }} adresse(s) locale(s) non financée(s).</p>
       </section>
 
       <section class="admin__competitions">

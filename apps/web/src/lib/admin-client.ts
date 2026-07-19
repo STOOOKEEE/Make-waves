@@ -7,6 +7,7 @@ import {
   type AdminWalletProvisionDto,
   type AdminReclaimJobDto,
   type AdminCompetitionCloseDto,
+  type AdminInactiveUserDeleteDto,
   type ApiRequest,
   type ApiTransport,
 } from "@tide/client";
@@ -76,6 +77,17 @@ export function createLocalAdminClient(
         transport,
         {
           path: "/admin/wallets/fund-for-users",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { userIds, confirmation },
+        },
+        200,
+      ),
+    deleteInactiveUsers: (token, userIds, confirmation) =>
+      expectBody<AdminInactiveUserDeleteDto>(
+        transport,
+        {
+          path: "/admin/users/delete-inactive",
           method: "POST",
           headers: { "x-admin-token": token },
           body: { userIds, confirmation },

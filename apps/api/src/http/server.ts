@@ -1114,6 +1114,23 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
     }
     return admin.service.overview(deps.getPrices());
   });
+  app.post("/admin/users/delete-inactive", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      return await admin.service.deleteInactiveUsers(
+        readStringArrayField(request.body, "userIds"),
+        readStringField(request.body, "confirmation"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return {
+        error: error instanceof Error ? error.message : "suppression des comptes refusée",
+      };
+    }
+  });
   app.post("/admin/competitions", (request, reply) => {
     if (!hasAdminToken(request, admin.token)) {
       reply.code(401);

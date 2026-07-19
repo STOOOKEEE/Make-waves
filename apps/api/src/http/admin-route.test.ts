@@ -102,6 +102,37 @@ describe("GET /admin/overview", () => {
     await app.close();
   });
 
+  it("supprime un compte Paper vierge avec token et confirmation exacte", async () => {
+    const app = buildAdminServer();
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/admin/users/delete-inactive",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { userIds: ["visitor"], confirmation: "wrong" },
+    });
+    expect(rejected.statusCode).toBe(409);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/admin/users/delete-inactive",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: {
+        userIds: ["visitor"],
+        confirmation: "DELETE 1 INACTIVE PAPER ACCOUNTS",
+      },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ deleted: 1, walletRowsDeleted: 0 });
+
+    const overview = await app.inject({
+      method: "GET",
+      url: "/admin/overview",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+    expect(overview.json().totals.users).toBe(0);
+    await app.close();
+  });
+
   it("exclut les profils de simulation du leaderboard public", async () => {
     const app = buildAdminServer();
     const res = await app.inject({ method: "GET", url: "/leaderboard" });

@@ -79,6 +79,16 @@ export class SqlitePaperWalletStore implements PaperWalletStore {
     this.db.prepare(`UPDATE ${this.table} SET status = 'reclaimed' WHERE user_id = ?`).run(userId);
   }
 
+  async deleteUnfunded(userId: string): Promise<boolean> {
+    const result = this.db
+      .prepare(
+        `DELETE FROM ${this.table}
+         WHERE user_id = ? AND status = 'pending_funding' AND funding_tx_hash IS NULL`,
+      )
+      .run(userId);
+    return result.changes === 1;
+  }
+
   async countFunded(): Promise<number> {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS count FROM ${this.table} WHERE funding_tx_hash IS NOT NULL`)

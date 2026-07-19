@@ -57,6 +57,37 @@ for (const { name, make } of stores) {
       expect(board[0]?.equity).toBe(1200);
     });
 
+    it("supprime seulement un compte Paper strictement vierge", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("empty");
+      service.openAccount("traded");
+      service.placeOrder("traded", buy(10, 0.5));
+
+      expect(service.deleteInactiveAccount("empty")).toBe(true);
+      expect(service.deleteInactiveAccount("traded")).toBe(false);
+      expect(service.leaderboard(PRICES).map((row) => row.userId)).toEqual(["traded"]);
+    });
+
+    it("ne supprime pas une position fermée dont le PnL a modifié le solde", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("closed");
+      const position = service.openPosition("closed", {
+        product: "perp",
+        symbol: "XRP",
+        side: "long",
+        qty: 10,
+        entry: 0.5,
+        leverage: 1,
+        margin: 5,
+        fee: 0,
+      });
+      service.closePosition("closed", position.id, { XRP: 0.6 });
+
+      expect(service.ordersOf("closed")).toHaveLength(0);
+      expect(service.positionsOf("closed")).toHaveLength(0);
+      expect(service.deleteInactiveAccount("closed")).toBe(false);
+    });
+
     it("ne fuit pas la référence des soldes", () => {
       const service = new PaperService(1000, make());
       service.openAccount("a");
