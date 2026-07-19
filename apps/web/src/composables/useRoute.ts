@@ -19,9 +19,9 @@ export const ROUTES: readonly RoutePath[] = import.meta.env.DEV
   ? [...PUBLIC_ROUTES, "/admin"]
   : PUBLIC_ROUTES;
 
-// Tide est un terminal de trading : arriver sans hash ouvre directement
-// l'interface bleue plutôt que la landing marketing.
-const DEFAULT_ROUTE: RoutePath = "/dashboard";
+// Le domaine nu accueille les visiteurs sur la landing ; le terminal reste
+// accessible depuis son CTA et via #/dashboard.
+const DEFAULT_ROUTE: RoutePath = "/landing";
 
 export interface ParsedRoute {
   path: RoutePath;
