@@ -393,8 +393,7 @@ async function main(): Promise<void> {
             try {
               return {
                 exists: true,
-                hasTraded:
-                  paper.ordersOf(userId).length > 0 || paper.positionsOf(userId).length > 0,
+                hasTraded: paper.tradeCountOf(userId) > 0,
               };
             } catch {
               return { exists: false, hasTraded: false };

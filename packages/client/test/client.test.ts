@@ -192,6 +192,12 @@ describe("TideClient", () => {
     expect(requests[0]).toEqual({ path: "/accounts/a/positions", method: "GET" });
   });
 
+  it("perpOrders -> GET /accounts/:id/perp-orders (200)", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: [] }));
+    expect(await client.perpOrders("a")).toEqual([]);
+    expect(requests[0]).toEqual({ path: "/accounts/a/perp-orders", method: "GET" });
+  });
+
   it("closePosition -> POST /accounts/:id/positions/:pid/close (200)", async () => {
     const result = {
       position: {

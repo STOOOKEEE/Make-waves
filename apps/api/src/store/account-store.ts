@@ -22,6 +22,8 @@ export interface AccountStore {
   getOrders(userId: string): readonly Fill[] | undefined;
   /** Positions ouvertes, `undefined` si le compte n'existe pas. */
   getPositions(userId: string): readonly Position[] | undefined;
+  /** Ordres perp historiques (une ligne persistante par ouverture). */
+  getPerpOrders(userId: string): readonly Position[] | undefined;
   /** Atomique : remplace les soldes ET ajoute le fill (cohérence garantie). */
   applyOrder(userId: string, balances: Balances, fill: Fill): void;
   /** Atomique : remplace les soldes (frais débités) ET ouvre la position. */
@@ -38,6 +40,7 @@ interface AccountRecord {
   balances: Balances;
   readonly orders: Fill[];
   positions: Position[];
+  readonly perpOrders: Position[];
 }
 
 /** Implémentation en mémoire (défaut, sans dépendance). */
@@ -49,7 +52,12 @@ export class InMemoryAccountStore implements AccountStore {
   }
 
   open(userId: string, balances: Balances): void {
-    this.accounts.set(userId, { balances: { ...balances }, orders: [], positions: [] });
+    this.accounts.set(userId, {
+      balances: { ...balances },
+      orders: [],
+      positions: [],
+      perpOrders: [],
+    });
   }
 
   getBalances(userId: string): Balances | undefined {
@@ -65,6 +73,11 @@ export class InMemoryAccountStore implements AccountStore {
   getPositions(userId: string): readonly Position[] | undefined {
     const account = this.accounts.get(userId);
     return account === undefined ? undefined : [...account.positions];
+  }
+
+  getPerpOrders(userId: string): readonly Position[] | undefined {
+    const account = this.accounts.get(userId);
+    return account === undefined ? undefined : [...account.perpOrders];
   }
 
   applyOrder(userId: string, balances: Balances, fill: Fill): void {
@@ -83,6 +96,7 @@ export class InMemoryAccountStore implements AccountStore {
     }
     account.balances = { ...balances };
     account.positions.push(position);
+    account.perpOrders.push(position);
   }
 
   closePosition(userId: string, balances: Balances, positionId: string): void {

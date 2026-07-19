@@ -452,6 +452,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     (request) => deps.paper.positionsOf(request.params.userId),
   );
 
+  app.get<{ Params: { userId: string } }>(
+    "/accounts/:userId/perp-orders",
+    (request) => deps.paper.perpOrdersOf(request.params.userId),
+  );
+
   app.post<{ Params: { userId: string } }>(
     "/accounts/:userId/positions",
     async (request, reply) => {

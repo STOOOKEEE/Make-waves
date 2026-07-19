@@ -132,6 +132,23 @@ for (const { name, make } of stores) {
       expect(realizedPnl).toBeCloseTo(100);
       expect(service.balancesOf("a")).toEqual({ RLUSD: 1100 });
       expect(service.positionsOf("a")).toHaveLength(0);
+      expect(service.perpOrdersOf("a")).toHaveLength(1);
+      expect(service.tradeCountOf("a")).toBe(1);
+    });
+
+    it("conserve l'ordre perp après une fermeture à PnL nul", () => {
+      const service = new PaperService(1000, make());
+      service.openAccount("a");
+      const pos = service.openPosition("a", {
+        product: "perp", symbol: "XRP", side: "long", qty: 10,
+        entry: 0.5, leverage: 1, margin: 5, fee: 0,
+      });
+      service.closePosition("a", pos.id, { XRP: 0.5 });
+
+      expect(service.balancesOf("a")).toEqual({ RLUSD: 1000 });
+      expect(service.positionsOf("a")).toEqual([]);
+      expect(service.perpOrdersOf("a")).toEqual([pos]);
+      expect(service.deleteInactiveAccount("a")).toBe(false);
     });
 
     it("plafonne la perte à la marge à la fermeture (isolated margin)", () => {

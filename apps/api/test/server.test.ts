@@ -173,6 +173,14 @@ describe("positions perp", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().realizedPnl).toBeCloseTo(20);
+
+    const [positions, perpOrders] = await Promise.all([
+      app.inject({ method: "GET", url: "/accounts/a/positions" }),
+      app.inject({ method: "GET", url: "/accounts/a/perp-orders" }),
+    ]);
+    expect(positions.json()).toEqual([]);
+    expect(perpOrders.json()).toHaveLength(1);
+    expect(perpOrders.json()[0]).toMatchObject({ id, symbol: "XRP" });
   });
 
   it("rejette un levier invalide (400)", async () => {

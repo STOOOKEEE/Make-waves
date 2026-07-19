@@ -122,13 +122,9 @@ export class PaperService {
     const balances = this.store.getBalances(userId);
     if (balances === undefined) return false;
     if ((this.store.getOrders(userId)?.length ?? 0) !== 0) return false;
+    if ((this.store.getPerpOrders(userId)?.length ?? 0) !== 0) return false;
     if ((this.store.getPositions(userId)?.length ?? 0) !== 0) return false;
-    const currencies = Object.keys(balances);
-    return (
-      currencies.length === 1 &&
-      currencies[0] === QUOTE_CURRENCY &&
-      balances[QUOTE_CURRENCY] === this.startingEquity
-    );
+    return this.hasInitialBalances(balances);
   }
 
   /** Suppression locale définitive d'un compte Paper strictement vierge. */
@@ -212,6 +208,31 @@ export class PaperService {
     return orders;
   }
 
+  /** Historique persistant des ouvertures de positions perp. */
+  perpOrdersOf(userId: string): readonly Position[] {
+    const orders = this.store.getPerpOrders(userId);
+    if (orders === undefined) {
+      throw new AccountNotFoundError(`Compte introuvable: ${userId}`);
+    }
+    return orders;
+  }
+
+  /**
+   * Nombre historique de trades : ordres spot + ouvertures perp. Pour les
+   * comptes créés avant l'historique perp, un solde modifié constitue une
+   * preuve certaine d'au moins une activité et vaut donc un minimum de 1.
+   */
+  tradeCountOf(userId: string): number {
+    const balances = this.requireBalances(userId);
+    const recorded =
+      (this.store.getOrders(userId)?.length ?? 0) +
+      (this.store.getPerpOrders(userId)?.length ?? 0);
+    if (recorded > 0) return recorded;
+    const openPositions = this.store.getPositions(userId)?.length ?? 0;
+    if (openPositions > 0) return openPositions;
+    return this.hasInitialBalances(balances) ? 0 : 1;
+  }
+
   /** Equity du compte (soldes spot + PnL des positions ouvertes). */
   equityOf(userId: string, prices: PriceMap): number {
     const balances = this.requireBalances(userId);
@@ -278,6 +299,15 @@ export class PaperService {
       throw new AccountNotFoundError(`Compte introuvable: ${userId}`);
     }
     return balances;
+  }
+
+  private hasInitialBalances(balances: Balances): boolean {
+    const currencies = Object.keys(balances);
+    return (
+      currencies.length === 1 &&
+      currencies[0] === QUOTE_CURRENCY &&
+      balances[QUOTE_CURRENCY] === this.startingEquity
+    );
   }
 }
 

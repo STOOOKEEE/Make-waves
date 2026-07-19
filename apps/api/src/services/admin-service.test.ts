@@ -137,6 +137,21 @@ describe("AdminService.overview", () => {
     expect(overview.totals.fundedWalletsWithNft).toBe(1);
   });
 
+  it("compte un ordre perp fermé tout en gardant zéro position ouverte", async () => {
+    const { paper, service } = makeService([]);
+    paper.openAccount("paper:perp");
+    const position = paper.openPosition("paper:perp", {
+      product: "perp", symbol: "XRP", side: "long", qty: 10,
+      entry: 0.5, leverage: 1, margin: 5, fee: 0,
+    });
+    paper.closePosition("paper:perp", position.id, { XRP: 0.6 });
+
+    const user = (await service.overview(PRICES)).users.find(
+      (row) => row.userId === "paper:perp",
+    );
+    expect(user).toMatchObject({ orders: 1, positions: 0 });
+  });
+
   it("expose le mandat actif et la dernière action d'un agent", async () => {
     const { paper, agents, mandates, actions, service } = makeService([]);
     paper.openAccount("owner");

@@ -213,7 +213,7 @@ export class AdminService {
       segment: this.classify(entry.userId, agentOwners),
       equity: entry.equity,
       pnl: entry.pnl,
-      orders: this.deps.paper.ordersOf(entry.userId).length,
+      orders: this.deps.paper.tradeCountOf(entry.userId),
       positions: this.deps.paper.positionsOf(entry.userId).length,
       rank: entry.rank,
     }));

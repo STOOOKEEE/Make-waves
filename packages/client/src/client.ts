@@ -560,6 +560,11 @@ export class TideClient {
     return this.call({ path: path("accounts", userId, "positions"), method: "GET" }, 200);
   }
 
+  /** Historique persistant des ouvertures de positions perp. */
+  async perpOrders(userId: string): Promise<readonly Position[]> {
+    return this.call({ path: path("accounts", userId, "perp-orders"), method: "GET" }, 200);
+  }
+
   /** Ouvre une position perp (marge réservée, frais débités du cash). */
   async openPosition(userId: string, input: OpenPositionInput): Promise<Position> {
     return this.call(

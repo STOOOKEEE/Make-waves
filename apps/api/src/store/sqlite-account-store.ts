@@ -80,6 +80,23 @@ export class SqliteAccountStore implements AccountStore {
         margin REAL NOT NULL,
         fee REAL NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS perp_orders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        product TEXT NOT NULL,
+        symbol TEXT NOT NULL,
+        side TEXT NOT NULL,
+        qty REAL NOT NULL,
+        entry REAL NOT NULL,
+        leverage REAL NOT NULL,
+        margin REAL NOT NULL,
+        fee REAL NOT NULL
+      );
+      INSERT OR IGNORE INTO perp_orders (
+        id, user_id, product, symbol, side, qty, entry, leverage, margin, fee
+      )
+      SELECT id, user_id, product, symbol, side, qty, entry, leverage, margin, fee
+      FROM positions;
     `);
   }
 
@@ -121,6 +138,11 @@ export class SqliteAccountStore implements AccountStore {
       return undefined;
     }
     return this.readPositions(userId);
+  }
+
+  getPerpOrders(userId: string): readonly Position[] | undefined {
+    if (!this.has(userId)) return undefined;
+    return this.readPerpOrders(userId);
   }
 
   applyOrder(userId: string, balances: Balances, fill: Fill): void {
@@ -167,6 +189,22 @@ export class SqliteAccountStore implements AccountStore {
           position.margin,
           position.fee,
         );
+      this.db
+        .prepare(
+          "INSERT INTO perp_orders (id, user_id, product, symbol, side, qty, entry, leverage, margin, fee) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          position.id,
+          userId,
+          position.product,
+          position.symbol,
+          position.side,
+          position.qty,
+          position.entry,
+          position.leverage,
+          position.margin,
+          position.fee,
+        );
     });
   }
 
@@ -186,6 +224,7 @@ export class SqliteAccountStore implements AccountStore {
     if (!this.has(userId)) return false;
     this.transaction(() => {
       this.db.prepare("DELETE FROM positions WHERE user_id = ?").run(userId);
+      this.db.prepare("DELETE FROM perp_orders WHERE user_id = ?").run(userId);
       this.db.prepare("DELETE FROM orders WHERE user_id = ?").run(userId);
       this.db.prepare("DELETE FROM balances WHERE user_id = ?").run(userId);
       this.db.prepare("DELETE FROM accounts WHERE user_id = ?").run(userId);
@@ -243,6 +282,15 @@ export class SqliteAccountStore implements AccountStore {
     return this.db
       .prepare(
         "SELECT id, product, symbol, side, qty, entry, leverage, margin, fee FROM positions WHERE user_id = ? ORDER BY rowid",
+      )
+      .all(userId)
+      .map(rowToPosition);
+  }
+
+  private readPerpOrders(userId: string): Position[] {
+    return this.db
+      .prepare(
+        "SELECT id, product, symbol, side, qty, entry, leverage, margin, fee FROM perp_orders WHERE user_id = ? ORDER BY rowid",
       )
       .all(userId)
       .map(rowToPosition);
