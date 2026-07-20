@@ -85,6 +85,11 @@ const createdPaperWallets = computed(() =>
 const fundedPaperWallets = computed(() =>
   paperWallets.value.filter((wallet) => wallet.status === "funded").length,
 );
+/** Les comptes opérateur restent une voie frontend dans le total produit. */
+const frontendActiveUsers = computed(() => {
+  const totals = overview.value?.totals.bySegment;
+  return (totals?.frontend ?? 0) + (totals?.operator ?? 0);
+});
 const usersById = computed(() => new Map(overview.value?.users.map((user) => [user.userId, user]) ?? []));
 const managedRows = computed(() => paperWallets.value.map((wallet) => ({
   wallet,
@@ -376,12 +381,11 @@ async function executePortfolioCycle(): Promise<void> {
 
       <div class="admin__totals">
         <div class="card">
-          <span class="card__label">Participants actifs</span>
+          <span class="card__label">Users actifs</span>
           <strong class="card__value">{{ overview.totals.users }}</strong>
           <ul class="segments">
-            <li>À moi : {{ overview.totals.bySegment.operator }} ({{ pct(overview.totals.bySegment.operator, overview.totals.users) }})</li>
-            <li>Via le front : {{ overview.totals.bySegment.frontend }} ({{ pct(overview.totals.bySegment.frontend, overview.totals.users) }})</li>
-            <li>Agents IA, dont techniques : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
+            <li>Via le frontend : {{ frontendActiveUsers }} ({{ pct(frontendActiveUsers, overview.totals.users) }})</li>
+            <li>Agents IA : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
           </ul>
         </div>
 
