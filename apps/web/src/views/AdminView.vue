@@ -376,12 +376,12 @@ async function executePortfolioCycle(): Promise<void> {
 
       <div class="admin__totals">
         <div class="card">
-          <span class="card__label">Utilisateurs</span>
+          <span class="card__label">Participants actifs</span>
           <strong class="card__value">{{ overview.totals.users }}</strong>
           <ul class="segments">
             <li>À moi : {{ overview.totals.bySegment.operator }} ({{ pct(overview.totals.bySegment.operator, overview.totals.users) }})</li>
             <li>Via le front : {{ overview.totals.bySegment.frontend }} ({{ pct(overview.totals.bySegment.frontend, overview.totals.users) }})</li>
-            <li>Agent IA : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
+            <li>Agents IA, dont techniques : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
           </ul>
         </div>
 
@@ -419,7 +419,7 @@ async function executePortfolioCycle(): Promise<void> {
       <section class="wallet-manager">
         <div class="wallet-manager__head">
           <div>
-            <h2>Utilisateurs & wallets Mainnet</h2>
+            <h2>Participants & wallets Mainnet</h2>
             <p>Les {{ paperWallets.length }} comptes Paper sont listés, même si leur adresse XRPL n’a pas encore été créée.</p>
           </div>
           <strong>{{ selectedUserIds.length }} sélectionné(s)</strong>

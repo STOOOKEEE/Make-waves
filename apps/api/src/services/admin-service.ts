@@ -3,7 +3,11 @@ import type { PaperService } from "./paper-service";
 import type { Agent, AgentStatus, AgentType, AgentStore } from "../store/agent-store";
 import type { MandateStore } from "../store/mandate-store";
 import type { AgentActionsStore } from "../store/agent-actions-store";
-import { isTechnicalTestUserId } from "../simulation/arena-ids";
+import {
+  isArenaSimulationUserId,
+  isTechnicalTestUserId,
+  MANAGED_WALLET_USER_PREFIX,
+} from "../simulation/arena-ids";
 import type { ArenaSimulationStatus, ArenaSimulationStatusReader } from "../simulation/arena-simulation-service";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 
@@ -198,7 +202,7 @@ export class AdminService {
     if (this.deps.operatorUserIds.has(userId)) {
       return "operator";
     }
-    if (agentOwners.has(userId)) {
+    if (agentOwners.has(userId) || userId.startsWith(MANAGED_WALLET_USER_PREFIX)) {
       return "agent";
     }
     return "frontend";
@@ -208,7 +212,9 @@ export class AdminService {
     prices: PriceMap,
     agentOwners: ReadonlySet<string>,
   ): AdminUserRow[] {
-    return this.deps.paper.leaderboard(prices, (userId) => !isTechnicalTestUserId(userId)).map((entry) => ({
+    // La console opérateur compte les wallets gérés comme participants agents.
+    // Seuls les profils synthétiques de l'arène de charge restent exclus.
+    return this.deps.paper.leaderboard(prices, (userId) => !isArenaSimulationUserId(userId)).map((entry) => ({
       userId: entry.userId,
       segment: this.classify(entry.userId, agentOwners),
       equity: entry.equity,

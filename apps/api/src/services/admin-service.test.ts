@@ -255,9 +255,10 @@ describe("AdminService.overview", () => {
     });
   });
 
-  it("sépare les profils de simulation des totaux humains", async () => {
+  it("exclut l'arène de charge mais compte les wallets gérés comme agents", async () => {
     const { paper, agents, mandates, actions } = makeService([]);
     paper.openAccount("visitor");
+    paper.openAccount("wallet:mainnet:managed-agent");
     const arena = new ArenaSimulationService(paper, {
       users: 2,
       tradesPerTick: 1,
@@ -276,8 +277,12 @@ describe("AdminService.overview", () => {
 
     const overview = await service.overview(PRICES);
 
-    expect(overview.totals.users).toBe(1);
-    expect(overview.users.map((user) => user.userId)).toEqual(["visitor"]);
+    expect(overview.totals.users).toBe(2);
+    expect(overview.totals.bySegment).toMatchObject({ agent: 1, frontend: 1 });
+    expect(overview.users.map((user) => user.userId).sort()).toEqual([
+      "visitor",
+      "wallet:mainnet:managed-agent",
+    ]);
     expect(overview.simulation).toMatchObject({ enabled: true, provisionedUsers: 2 });
   });
 });
