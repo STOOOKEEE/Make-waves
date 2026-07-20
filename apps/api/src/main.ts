@@ -388,6 +388,7 @@ async function main(): Promise<void> {
           rewards: paperBadgeRewardStore,
           wallets: paperRewardRuntime.wallets,
           provisioner: paperRewardRuntime.wallets,
+          ensurePaperAccount: (userId) => { paper.ensureAccount(userId); },
           paperUserActivity: (userId) => {
             if (isTechnicalTestUserId(userId)) return { exists: false, hasTraded: false };
             try {

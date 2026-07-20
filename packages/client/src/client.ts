@@ -463,7 +463,7 @@ export interface AdminPortfolioManagerPlanDto {
   readonly createdAt: number;
   readonly status: "prepared" | "executed";
   readonly llmCalls: 0;
-  readonly profile: "standard" | "high_risk";
+  readonly profile: "standard" | "high_risk" | "sized";
   readonly confirmation: string;
   readonly trades: readonly AdminPortfolioManagerTradeDto[];
 }

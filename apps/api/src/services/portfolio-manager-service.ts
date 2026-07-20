@@ -33,7 +33,7 @@ export interface PortfolioManagerPlan {
   readonly createdAt: number;
   readonly status: "prepared" | "executed";
   readonly llmCalls: 0;
-  readonly profile: "standard" | "high_risk";
+  readonly profile: "standard" | "high_risk" | "sized";
   readonly confirmation: string;
   readonly trades: readonly PortfolioManagerTradePlan[];
 }
@@ -104,7 +104,7 @@ export class PortfolioManagerService {
 
   async prepare(
     requestedUserIds: readonly string[],
-    profile: "standard" | "high_risk" = "standard",
+    profile: "standard" | "high_risk" | "sized" = "standard",
   ): Promise<PortfolioManagerPlan> {
     await this.ensureManagerAgent();
     const wallets = await this.deps.wallets.list();
@@ -148,10 +148,14 @@ export class PortfolioManagerService {
       // Les centimes par bloc conservent une taille unique jusqu'à 300 comptes,
       // tout en bornant le notionnel sous 445 USD au lieu de le faire croître
       // linéairement avec la taille de la flotte.
-      const highRiskMargin = index === 0 ? 5_000 : 3_500;
-      const leverage = profile === "high_risk" ? (index === 0 ? 15 : 12) : 1 + (slot % 3);
-      const notionalUsd = profile === "high_risk"
-        ? highRiskMargin * leverage
+      const sizedMargins = [5_000, 3_500, 2_500, 1_800, 3_000, 2_200] as const;
+      const sizedLeverages = [15, 12, 8, 5, 10, 7] as const;
+      const sizedMargin = sizedMargins[index % sizedMargins.length] ?? 2_000;
+      const sizedLeverage = sizedLeverages[index % sizedLeverages.length] ?? 5;
+      const leveragedProfile = profile === "high_risk" || profile === "sized";
+      const leverage = leveragedProfile ? sizedLeverage : 1 + (slot % 3);
+      const notionalUsd = leveragedProfile
+        ? sizedMargin * leverage
         : BASE_NOTIONAL_USD
           + (index % NOTIONAL_VARIANTS) * NOTIONAL_STEP_USD
           + Math.floor(index / NOTIONAL_VARIANTS) / 100;
@@ -163,7 +167,7 @@ export class PortfolioManagerService {
         notionalUsd,
         quantity: notionalUsd / entryPrice,
         entryPrice,
-        marginUsd: profile === "high_risk" ? highRiskMargin : notionalUsd / leverage,
+        marginUsd: leveragedProfile ? sizedMargin : notionalUsd / leverage,
       };
     });
     const id = this.newId();

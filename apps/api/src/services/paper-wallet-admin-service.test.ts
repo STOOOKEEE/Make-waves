@@ -84,11 +84,13 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
       return { ...wallet, status: "funded" as const, fundingTxHash: `fund-${userId}`, fundedAt: 2 };
     }),
   };
+  const ensurePaperAccount = vi.fn();
   const service = new PaperWalletAdminService({
     store,
     rewards,
     wallets: { decryptSeed: vi.fn(async () => "sTestSeed") },
     provisioner,
+    ensurePaperAccount,
     paperUserActivity: () => ({ exists: true, hasTraded: true }),
     issuer,
     recoveryAddress: ISSUER_ADDRESS,
@@ -97,12 +99,12 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     metadataBaseUrl: "https://api.test",
     sleep: async () => undefined,
   });
-  return { service, store, rewards, gateway, issuer, provisioner };
+  return { service, store, rewards, gateway, issuer, provisioner, ensurePaperAccount };
 }
 
 describe("PaperWalletAdminService", () => {
   it("crée et finance un lot borné de wallets techniques Mainnet", async () => {
-    const { service, provisioner } = await fixture();
+    const { service, provisioner, ensurePaperAccount } = await fixture();
 
     const result = await service.provision(2);
 
@@ -110,6 +112,7 @@ describe("PaperWalletAdminService", () => {
     expect(result.wallets).toHaveLength(2);
     expect(result.wallets.every((wallet) => wallet.userId.startsWith("wallet:mainnet:"))).toBe(true);
     expect(provisioner.ensureFunded).toHaveBeenCalledTimes(2);
+    expect(ensurePaperAccount).toHaveBeenCalledTimes(2);
   });
 
   it("refuse un provisioning trop large ou non entier", async () => {

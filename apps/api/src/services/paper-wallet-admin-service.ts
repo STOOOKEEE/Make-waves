@@ -98,6 +98,7 @@ export interface PaperWalletAdminServiceDeps {
   readonly rewards: PaperBadgeRewardStore;
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
   readonly provisioner: Pick<PaperWalletService, "ensureCreated" | "ensureFunded">;
+  readonly ensurePaperAccount: (userId: string) => void;
   readonly paperUserActivity: (userId: string) => PaperUserActivity;
   readonly issuer: NftIssuer;
   readonly recoveryAddress: string;
@@ -139,6 +140,7 @@ export class PaperWalletAdminService {
     const wallets: AdminWalletProvisionResult["wallets"][number][] = [];
     for (let index = 0; index < count; index += 1) {
       const userId = `wallet:${this.deps.network}:${randomUUID()}`;
+      this.deps.ensurePaperAccount(userId);
       const wallet = await this.deps.provisioner.ensureFunded(userId);
       wallets.push({
         userId: wallet.userId,

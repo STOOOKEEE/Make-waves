@@ -1148,7 +1148,7 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
     try {
       const requestedProfile = readStringField(request.body, "profile");
       const profile = requestedProfile === "" ? "standard" : requestedProfile;
-      if (profile !== "standard" && profile !== "high_risk") {
+      if (profile !== "standard" && profile !== "high_risk" && profile !== "sized") {
         throw new Error("Profil de portefeuille invalide");
       }
       return await admin.portfolioManager.prepare(
