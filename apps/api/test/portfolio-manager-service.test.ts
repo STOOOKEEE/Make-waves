@@ -85,8 +85,8 @@ describe("PortfolioManagerService", () => {
       marginUsd,
       notionalUsd,
     }))).toEqual([
-      { leverage: 15, marginUsd: 5_000, notionalUsd: 75_000 },
-      { leverage: 12, marginUsd: 3_500, notionalUsd: 42_000 },
+      { leverage: 20, marginUsd: 2_000, notionalUsd: 40_000 },
+      { leverage: 20, marginUsd: 2_100, notionalUsd: 42_000 },
     ]);
   });
 

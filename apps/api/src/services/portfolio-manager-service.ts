@@ -148,10 +148,16 @@ export class PortfolioManagerService {
       // Les centimes par bloc conservent une taille unique jusqu'à 300 comptes,
       // tout en bornant le notionnel sous 445 USD au lieu de le faire croître
       // linéairement avec la taille de la flotte.
-      const sizedMargins = [5_000, 3_500, 2_500, 1_800, 3_000, 2_200] as const;
-      const sizedLeverages = [15, 12, 8, 5, 10, 7] as const;
-      const sizedMargin = sizedMargins[index % sizedMargins.length] ?? 2_000;
-      const sizedLeverage = sizedLeverages[index % sizedLeverages.length] ?? 5;
+      const highRiskMargins = [5_000, 3_500] as const;
+      const highRiskLeverages = [15, 12] as const;
+      const clusteredMargins = [2_000, 2_100, 2_000, 2_100, 2_000, 2_100] as const;
+      const clusteredLeverages = [20, 20, 18, 20, 18, 20] as const;
+      const sizedMargin = profile === "high_risk"
+        ? highRiskMargins[index % highRiskMargins.length] ?? 3_500
+        : clusteredMargins[index % clusteredMargins.length] ?? 2_000;
+      const sizedLeverage = profile === "high_risk"
+        ? highRiskLeverages[index % highRiskLeverages.length] ?? 12
+        : clusteredLeverages[index % clusteredLeverages.length] ?? 20;
       const leveragedProfile = profile === "high_risk" || profile === "sized";
       const leverage = leveragedProfile ? sizedLeverage : 1 + (slot % 3);
       const notionalUsd = leveragedProfile
