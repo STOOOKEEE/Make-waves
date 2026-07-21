@@ -617,7 +617,7 @@ onUnmounted(() => {
 .rv.in { opacity: 1; transform: none; }
 
 /* ---------- TOP BAR ---------- */
-.bar { padding: 26px 0 22px; }
+.bar { padding: 16px 0 22px; }
 .bar-in { display: flex; align-items: flex-start; justify-content: space-between; gap: 30px; }
 .brand { display: flex; align-items: center; gap: 16px; flex-shrink: 0; }
 .mark { width: 42px; height: 42px; border: 2px solid #fff; border-radius: 11px; display: grid; place-items: center; }
