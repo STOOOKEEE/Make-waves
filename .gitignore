@@ -36,6 +36,7 @@ pnpm-debug.log*
 ._*
 .idea/
 .vscode/
+.history/
 
 # Caches Python (scripts de skills)
 __pycache__/
