@@ -937,6 +937,39 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       }
       return admin.service.overview(deps.getPrices());
     });
+
+    // Lecture seule, gardée par le même token admin : le log d'actions d'un agent
+    // arbitraire (sans le JWT owner que /api/agent-actions exige). Sert la couche
+    // growth (cf. growth/log/data-access.md) — matière pour les posts "Bot Diary".
+    // Absent si le store d'actions n'est pas câblé.
+    const adminActionsStore = deps.agentActionsStore;
+    if (adminActionsStore !== undefined) {
+      app.get<{ Querystring: { agentId?: string; limit?: string } }>(
+        "/admin/agent-actions",
+        async (request, reply) => {
+          const token = request.headers["x-admin-token"];
+          if (typeof token !== "string" || token !== admin.token) {
+            reply.code(401);
+            return { error: "unauthorized" };
+          }
+          const agentId = request.query.agentId;
+          if (agentId === undefined || agentId.trim() === "") {
+            reply.code(400);
+            return { error: "agentId required" };
+          }
+          const rawLimit = request.query.limit;
+          const limit =
+            rawLimit === undefined || rawLimit.trim() === ""
+              ? 100
+              : Math.trunc(Number(rawLimit));
+          if (!Number.isFinite(limit) || limit < 1 || limit > 200) {
+            reply.code(400);
+            return { error: "limit must be an integer in [1, 200]" };
+          }
+          return adminActionsStore.listByAgent(agentId, limit);
+        },
+      );
+    }
   }
 
   return app;

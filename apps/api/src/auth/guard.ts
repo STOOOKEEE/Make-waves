@@ -45,6 +45,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/badges/weekly_trade.svg" },
   // La console admin porte sa propre garde (`x-admin-token`), pas le JWT user.
   { method: "GET", url: "/admin/overview" },
+  { method: "GET", url: "/admin/agent-actions" },
   // Flux SSE agent : auto-gardé dans le handler (token en query + filtrage par
   // propriétaire) car EventSource ne peut pas poser de header Authorization.
   { method: "GET", url: "/api/agents/events" },
