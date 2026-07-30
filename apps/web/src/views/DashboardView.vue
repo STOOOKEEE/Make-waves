@@ -7,6 +7,7 @@ import { positionPnl as corePositionPnl, reservedMargin } from "@tide/core";
 import type { MarketOrderInput, Position } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
+import { useBadges } from "../composables/useBadges";
 import { useWallet } from "../composables/useWallet";
 import { useSession } from "../composables/useSession";
 import { useI18n } from "../i18n/useI18n";
@@ -90,6 +91,9 @@ const { t } = useI18n({
     virtualBalance: "Virtual balance",
     custodialWallet: "Custodial wallet",
     firstTradeNft: "First Trade NFT",
+    claimFirstTradeNft: "Claim First Trade NFT",
+    claimingFirstTradeNft: "Claiming NFT…",
+    firstTradeNftReady: "First Paper trade completed · NFT ready",
     paperSession: "Paper session",
     realBadge: "REAL FUNDS",
     connectToTrade: "Connect wallet",
@@ -171,6 +175,9 @@ const { t } = useI18n({
     virtualBalance: "Solde virtuel",
     custodialWallet: "Wallet custodial",
     firstTradeNft: "NFT First Trade",
+    claimFirstTradeNft: "Réclamer le NFT First Trade",
+    claimingFirstTradeNft: "Claim du NFT…",
+    firstTradeNftReady: "Premier trade Paper validé · NFT prêt",
     paperSession: "Session Paper",
     realBadge: "ARGENT RÉEL",
     connectToTrade: "Connecter le wallet",
@@ -183,6 +190,33 @@ const { t } = useI18n({
 const paper = usePaper(props.client);
 const wallet = useWallet(props.client);
 const session = useSession();
+const {
+  badges,
+  claiming: badgeClaiming,
+  load: loadBadges,
+  claim: runBadgeClaim,
+} = useBadges(props.client);
+
+/** Le premier badge débloqué devient claimable directement dans le terminal. */
+const firstTradeBadge = computed(() =>
+  badges.value.find(
+    (badge) => badge.code === "first_trade" && badge.earned && badge.status === "unclaimed",
+  ),
+);
+
+function claimFirstTradeBadge(): void {
+  const badge = firstTradeBadge.value;
+  const walletAddress = session.liveAddress.value;
+  if (badge === undefined || walletAddress === "") {
+    return;
+  }
+  void runBadgeClaim(
+    paper.userId.value,
+    badge.code,
+    walletAddress,
+    (acceptTx) => wallet.signBadgeAccept(acceptTx),
+  );
+}
 
 // Mode d'exécution : Paper (simulé) ou Live (swap réel XRPL signé Xaman/GemWallet).
 const mode = ref<"paper" | "live">("paper");
@@ -1646,6 +1680,9 @@ async function placePaperOrder(): Promise<void> {
       price: cur.value.p,
     };
     await paper.placeOrder(order);
+    // Le mérite est dérivé des fills serveur : recharge-le aussitôt pour faire
+    // apparaître le CTA NFT sans attendre un changement de page.
+    await loadBadges(paper.userId.value);
     recordTrade({
       id: newId("trade"),
       product: "spot",
@@ -1739,6 +1776,7 @@ async function initDashboard(): Promise<void> {
 
 async function reloadPaperIdentity(): Promise<void> {
   await paper.connect();
+  await loadBadges(paper.userId.value);
   loadPaperTerminal();
   await refreshPositions();
 }
@@ -1807,6 +1845,16 @@ onUnmounted(() => {
         </template>
         <template v-else>
           <span v-if="paperIdentityLabel()" class="badge">{{ paperIdentityLabel() }}</span>
+          <button
+            v-if="session.walletConnected.value && firstTradeBadge !== undefined"
+            class="nft-claim"
+            :disabled="badgeClaiming === firstTradeBadge.code"
+            :title="t('firstTradeNftReady')"
+            @click="claimFirstTradeBadge"
+          >
+            <span>✦</span>
+            {{ badgeClaiming === firstTradeBadge.code ? t('claimingFirstTradeNft') : t('claimFirstTradeNft') }}
+          </button>
           <span class="ctxlabel">{{ t('virtualBalance') }}</span>
           <span class="ctxval">{{ availLabel() }}</span>
         </template>
@@ -2212,6 +2260,30 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 157, 60, 0.5);
   border-radius: 7px;
   padding: 4px 9px;
+}
+.nft-claim {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--live);
+  border-radius: 8px;
+  background: rgba(255, 157, 60, 0.12);
+  color: var(--live);
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.nft-claim:hover:not(:disabled) {
+  background: rgba(255, 157, 60, 0.22);
+  transform: translateY(-1px);
+}
+.nft-claim:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 .wchip {
   display: inline-flex;
