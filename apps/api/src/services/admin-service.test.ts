@@ -52,6 +52,7 @@ function makeService(
   const mandates = new InMemoryMandateStore();
   const actions = new InMemoryAgentActionsStore();
   const paperWallets = new InMemoryPaperWalletStore();
+  const paperRewardWallets = new InMemoryPaperWalletStore();
   const service = new AdminService({
     paper,
     agents,
@@ -60,11 +61,12 @@ function makeService(
     prizePoolAddress: "rPrizePoolXXXXXXXXXXXXXXXXXXXXXXXXX",
     operatorUserIds: new Set(operatorUserIds),
     paperWallets,
+    paperRewardWallets,
     ...(addressesWithNfts === undefined
       ? {}
       : { paperWalletNftInventory: { addressesWithNfts } }),
   });
-  return { paper, agents, mandates, actions, paperWallets, service };
+  return { paper, agents, mandates, actions, paperWallets, paperRewardWallets, service };
 }
 
 describe("AdminService.overview", () => {
@@ -111,7 +113,7 @@ describe("AdminService.overview", () => {
 
   it("compte sur XRPL les wallets financés détenant au moins un NFT", async () => {
     const seen: string[][] = [];
-    const { paper, paperWallets, service } = makeService([], async (addresses) => {
+    const { paper, paperWallets, paperRewardWallets, service } = makeService([], async (addresses) => {
       seen.push([...addresses]);
       return new Set(["rWithNft"]);
     });
@@ -128,12 +130,24 @@ describe("AdminService.overview", () => {
         fundingTxHash: status === "funded" ? `fund-${address}` : null,
         fundedAt: status === "funded" ? 1 : null,
         createdAt: 1,
+        deleteTxHash: null,
       });
     }
+    await paperRewardWallets.create({
+      userId: "paper:with-nft",
+      address: "rRewardWithNft",
+      encryptedSeed: "encrypted",
+      masterKeyId: "v1",
+      status: "funded",
+      fundingTxHash: "linked-fund",
+      fundedAt: 2,
+      createdAt: 2,
+      deleteTxHash: null,
+    });
 
     const overview = await service.overview(PRICES);
 
-    expect(seen).toEqual([["rWithNft", "rWithoutNft"]]);
+    expect(seen).toEqual([["rWithNft", "rWithoutNft", "rRewardWithNft"]]);
     expect(overview.totals.fundedWalletsWithNft).toBe(1);
   });
 
@@ -192,6 +206,7 @@ describe("AdminService.overview", () => {
       fundingTxHash: null,
       fundedAt: null,
       createdAt: null,
+      deleteTxHash: null,
     });
   });
 
@@ -206,6 +221,7 @@ describe("AdminService.overview", () => {
       fundingTxHash: "ABC",
       fundedAt: 10,
       createdAt: 10,
+      deleteTxHash: null,
     });
 
     const { wallets } = await service.overview(PRICES);
@@ -221,6 +237,7 @@ describe("AdminService.overview", () => {
       fundingTxHash: "ABC",
       fundedAt: 10,
       createdAt: 10,
+      deleteTxHash: null,
     });
     expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
   });
@@ -238,6 +255,7 @@ describe("AdminService.overview", () => {
       fundingTxHash: "FUND_TX",
       fundedAt: 20,
       createdAt: 10,
+      deleteTxHash: null,
     });
 
     const { wallets } = await service.overview(PRICES);
@@ -300,6 +318,7 @@ describe("AdminService.deleteInactiveUsers", () => {
       fundingTxHash: null,
       fundedAt: null,
       createdAt: 1,
+      deleteTxHash: null,
     });
 
     await expect(service.deleteInactiveUsers(
@@ -319,7 +338,7 @@ describe("AdminService.deleteInactiveUsers", () => {
     paper.openAccount("paper:funded");
     await paperWallets.create({
       userId: "paper:funded", address: "rFunded", encryptedSeed: "encrypted",
-      masterKeyId: "v1", status: "funded", fundingTxHash: "HASH", fundedAt: 1, createdAt: 1,
+      masterKeyId: "v1", status: "funded", fundingTxHash: "HASH", fundedAt: 1, createdAt: 1, deleteTxHash: null
     });
     paper.openAccount("paper:agent");
     await agents.create(agent("a-delete", "paper:agent"));

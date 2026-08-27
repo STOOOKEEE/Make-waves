@@ -6,6 +6,7 @@ import {
   readOperatorUserIds,
   readPrivateAdminRuntimeConfig,
   readFirstTradeImageUri,
+  readExternalAuthConfig,
   readPaperWalletRuntimeConfig,
   readSessionSecret,
   readSessionTtlSeconds,
@@ -33,6 +34,8 @@ const KEYS = [
   "TIDE_PAPER_WALLET_RECOVERY_ADDRESS",
   "TIDE_PAPER_WALLET_MAX_WALLETS",
   "TIDE_PAPER_WALLET_MAX_DAILY",
+  "TIDE_AUTH_SUPABASE_URL",
+  "TIDE_AUTH_SUPABASE_PUBLISHABLE_KEY",
 ] as const;
 
 afterEach(() => {
@@ -60,6 +63,19 @@ describe("readAdminToken", () => {
         process.env["NODE_ENV"] = previousNodeEnv;
       }
     }
+  });
+});
+
+describe("readExternalAuthConfig", () => {
+  it("reste optionnelle et exige une configuration complète", () => {
+    expect(readExternalAuthConfig()).toBeUndefined();
+    process.env["TIDE_AUTH_SUPABASE_URL"] = "https://project.supabase.co";
+    expect(() => readExternalAuthConfig()).toThrow(/incomplète/);
+    process.env["TIDE_AUTH_SUPABASE_PUBLISHABLE_KEY"] = "publishable-key-long-enough";
+    expect(readExternalAuthConfig()).toEqual({
+      supabaseUrl: "https://project.supabase.co",
+      publishableKey: "publishable-key-long-enough",
+    });
   });
 });
 

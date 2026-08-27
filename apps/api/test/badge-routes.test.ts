@@ -9,6 +9,7 @@ import {
   type BadgeOrdersSource,
 } from "../src/services/badge-service";
 import { InMemoryBadgeStore } from "../src/store/badge-store";
+import type { XamanPayloadApi } from "../src/xaman/sign-request";
 
 const WALLET = "ra6hLorXqVpwb7jWfekgjPcPFRHrQqANZg";
 // Ids XRPL réalistes (64 hex) : buildBadgeAcceptOffer valide ce format.
@@ -60,6 +61,31 @@ describe("badge routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
+      sellOfferId: OFFER_ID,
+      nftTokenId: NFT_ID,
+      acceptTx: {
+        TransactionType: "NFTokenAcceptOffer",
+        Account: WALLET,
+        NFTokenSellOffer: OFFER_ID,
+        SourceTag: 2606210009,
+      },
+    });
+  });
+
+  it("POST /badges/:code/claim/resume reprend l'offre sans re-minter", async () => {
+    const app = buildServer(buildWithBadges(1));
+    await app.inject({
+      method: "POST",
+      url: "/badges/first_trade/claim",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    const resumed = await app.inject({
+      method: "POST",
+      url: "/badges/first_trade/claim/resume",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    expect(resumed.statusCode).toBe(200);
+    expect(resumed.json()).toEqual({
       sellOfferId: OFFER_ID,
       nftTokenId: NFT_ID,
       acceptTx: {
@@ -133,5 +159,85 @@ describe("badge routes", () => {
       payload: { userId: "u1", walletAddress: WALLET },
     });
     expect(claim.statusCode).toBe(503);
+  });
+});
+
+describe("badge claim via Xaman (/sign/badge-accept/:code)", () => {
+  function buildWithSign(): { deps: ServerDeps; createdTx: () => unknown } {
+    let createdTx: unknown;
+    const xaman: XamanPayloadApi = {
+      async create(payload) {
+        createdTx = payload.txjson;
+        return {
+          uuid: "uuid-badge",
+          next: { always: "https://xaman.example/sign" },
+          refs: { qr_png: "data:image/png;base64,AA==" },
+        };
+      },
+      async get() {
+        return { resolved: true, signed: true, account: WALLET, txid: "TXHASH" };
+      },
+    };
+    const deps = buildWithBadges(1);
+    return {
+      deps: {
+        ...deps,
+        sign: { api: xaman, sourceTag: 2606210009, prizePoolAddress: WALLET },
+      },
+      createdTx: () => createdTx,
+    };
+  }
+
+  it("crée le payload Xaman de l'accept taggé (201)", async () => {
+    const { deps, createdTx } = buildWithSign();
+    const app = buildServer(deps);
+    const res = await app.inject({
+      method: "POST",
+      url: "/sign/badge-accept/first_trade",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({
+      uuid: "uuid-badge",
+      signUrl: "https://xaman.example/sign",
+      qrPng: "data:image/png;base64,AA==",
+      sellOfferId: OFFER_ID,
+      nftTokenId: NFT_ID,
+    });
+    // L'accept présenté à Xaman porte le SourceTag Tide : le user signe une tx
+    // attribuée (compte actif) sans jamais soumettre la tx lui-même.
+    expect(createdTx()).toMatchObject({
+      TransactionType: "NFTokenAcceptOffer",
+      Account: WALLET,
+      NFTokenSellOffer: OFFER_ID,
+      SourceTag: 2606210009,
+    });
+  });
+
+  it("reprend une offre offer_pending (claim déjà initié, pas de second mint)", async () => {
+    const { deps } = buildWithSign();
+    const app = buildServer(deps);
+    await app.inject({
+      method: "POST",
+      url: "/badges/first_trade/claim",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    const res = await app.inject({
+      method: "POST",
+      url: "/sign/badge-accept/first_trade",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().sellOfferId).toBe(OFFER_ID);
+  });
+
+  it("sans XUMM configuré, la route n'est pas montée (404)", async () => {
+    const app = buildServer(buildWithBadges(1));
+    const res = await app.inject({
+      method: "POST",
+      url: "/sign/badge-accept/first_trade",
+      payload: { userId: "u1", walletAddress: WALLET },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

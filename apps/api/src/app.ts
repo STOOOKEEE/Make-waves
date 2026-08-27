@@ -3,6 +3,7 @@ import type { PriceMap } from "@tide/core";
 import { PaperService } from "./services/paper-service";
 import { CompetitionService } from "./services/competition-service";
 import { BadgeService } from "./services/badge-service";
+import { BADGE_CODES } from "./badges/catalog";
 import type { WeeklyRewardService } from "./services/weekly-reward-service";
 import type { NftIssuer } from "@tide/xrpl";
 import type { BadgeStore } from "./store/badge-store";
@@ -90,6 +91,8 @@ export interface AppConfig {
   readonly operatorUserIds?: readonly string[];
   /** Wallets Paper visibles dans la console locale, sans aucune seed. */
   readonly paperWalletStore?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
+  /** Wallets NFT secondaires, utilisés pour l'inventaire on-chain opérateur. */
+  readonly paperRewardWalletStore?: Pick<PaperWalletStore, "list">;
   /** Etat du banc de charge Paper, visible seulement dans la console admin. */
   readonly simulation?: ArenaSimulationStatusReader;
   /** Distribution NFT et récupération des wallets depuis la console locale Mainnet. */
@@ -121,12 +124,21 @@ export interface AppConfig {
   readonly nftIssuer?: NftIssuer;
   /** Store des claims de badges (SQLite en prod). Requis avec `nftIssuer`. */
   readonly badgeStore?: BadgeStore;
-  /** Programme « trade de la semaine » : wallet Paper financé + claim NFT. */
+  /** Programme « trade de la semaine » : claim NFT sur le wallet secondaire. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Wallet Mainnet + badge automatique du premier trade. */
+  /** Funnel wallet initial → premier trade → wallet NFT secondaire. */
   readonly firstTradeRewards?: import("./services/first-trade-reward-service").FirstTradeRewardService;
-  /** Génère l'adresse custodiale à l'ouverture, sans la financer. */
-  readonly paperWallets?: Pick<import("./services/paper-wallet-service").PaperWalletService, "ensureCreated">;
+  /** Option B : garde anti-farming du claim First Trade sur wallet connecté. */
+  readonly firstTradeExternalGuard?: (
+    userId: string,
+    walletAddress: string,
+    code: string,
+  ) => Promise<void>;
+  /** Claim explicite et garde de trading du wallet initial. */
+  readonly paperWallets?: Pick<
+    import("./services/paper-wallet-service").PaperWalletService,
+    "ensureFunded" | "requireFunded"
+  >;
   /** SourceTag d'attribution des mints. Requis avec `nftIssuer`. */
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées NFT. */
@@ -191,6 +203,12 @@ export function createApp(config: AppConfig): App {
           store: config.badgeStore,
           ...(config.nftIssuer !== undefined ? { issuer: config.nftIssuer } : {}),
           ...(config.sourceTag !== undefined ? { sourceTag: config.sourceTag } : {}),
+          ...(config.firstTradeRewards !== undefined
+            ? { managedClaimCodes: new Set<string>([BADGE_CODES.FIRST_TRADE]) }
+            : {}),
+          ...(config.firstTradeExternalGuard !== undefined
+            ? { managedExternalGuard: config.firstTradeExternalGuard }
+            : {}),
           metadataBaseUrl: config.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL,
         })
       : undefined;
@@ -211,6 +229,7 @@ export function createApp(config: AppConfig): App {
             prizePoolAddress: config.prizePoolAddress ?? null,
             operatorUserIds: new Set(config.operatorUserIds ?? []),
             paperWallets: config.paperWalletStore,
+            paperRewardWallets: config.paperRewardWalletStore,
             paperWalletNftInventory: config.paperWalletNftInventory,
             simulation: config.simulation,
           }),

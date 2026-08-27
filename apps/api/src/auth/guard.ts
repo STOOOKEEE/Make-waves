@@ -69,6 +69,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "POST", url: "/auth/challenge" },
   { method: "POST", url: "/auth/paper" },
   { method: "POST", url: "/auth/paper/refresh" },
+  { method: "POST", url: "/auth/external" },
   { method: "POST", url: "/auth/verify" },
   { method: "POST", url: "/sign/connect" },
   { method: "GET", url: "/sign/status/:uuid" },
@@ -168,6 +169,16 @@ export async function authorize(
   // walletAddress doivent être soi (sinon un attaquant fait minter l'issuer vers
   // une adresse arbitraire).
   if (routeUrl === "/badges/:code/claim") {
+    return ensure(body.userId === me && body.walletAddress === me);
+  }
+  // Reprise d'un claim déjà minté : mêmes contraintes d'identité que le claim
+  // initial, sans quoi une session pourrait reprendre l'offre d'un autre user.
+  if (routeUrl === "/badges/:code/claim/resume") {
+    return ensure(body.userId === me && body.walletAddress === me);
+  }
+  // Le parcours Xaman reprend le même claim depuis une route distincte :
+  // l'accept signé ne doit jamais être préparé pour une autre adresse.
+  if (routeUrl === "/sign/badge-accept/:code") {
     return ensure(body.userId === me && body.walletAddress === me);
   }
   // Confirmation d'un claim : le compte doit être soi.

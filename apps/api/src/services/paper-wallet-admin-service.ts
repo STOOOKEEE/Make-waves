@@ -94,7 +94,9 @@ export interface PaperUserActivity {
 }
 
 export interface PaperWalletAdminServiceDeps {
-  readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed">;
+  readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed" | "eraseSeed">;
+  /** Wallets secondaires qui détiennent les NFT du nouveau funnel. */
+  readonly rewardStore?: Pick<PaperWalletStore, "get" | "list" | "markReclaimed" | "eraseSeed">;
   readonly rewards: PaperBadgeRewardStore;
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
   readonly provisioner: Pick<PaperWalletService, "ensureCreated" | "ensureFunded">;
@@ -262,13 +264,26 @@ export class PaperWalletAdminService {
 
   async startReclaimOne(userId: string, confirmation: string): Promise<ReclaimJobStatus> {
     if (confirmation !== userId) throw new Error("Confirmation wallet incorrecte");
-    const wallet = await this.requireFundedWallet(userId);
-    return this.startJob([wallet]);
+    const [starter, reward] = await Promise.all([
+      this.deps.store.get(userId),
+      this.deps.rewardStore?.get(userId) ?? null,
+    ]);
+    // Le wallet NFT passe en premier dans le journal opérateur ; les deux sont
+    // récupérés lors d'une seule confirmation utilisateur.
+    const wallets = [reward, starter].filter(
+      (wallet): wallet is PaperWallet => wallet?.status === "funded",
+    );
+    if (wallets.length === 0) throw new Error("Aucun wallet financé à récupérer");
+    return this.startJob(wallets);
   }
 
   async startReclaimAll(confirmation: string): Promise<ReclaimJobStatus> {
     if (confirmation !== this.deleteConfirmation()) throw new Error("Confirmation globale incorrecte");
-    const wallets = (await this.deps.store.list()).filter((wallet) => wallet.status === "funded");
+    const [starters, rewards] = await Promise.all([
+      this.deps.store.list(),
+      this.deps.rewardStore?.list() ?? [],
+    ]);
+    const wallets = [...rewards, ...starters].filter((wallet) => wallet.status === "funded");
     if (wallets.length === 0) throw new Error("Aucun wallet financé à récupérer");
     return this.startJob(wallets);
   }
@@ -357,7 +372,7 @@ export class PaperWalletAdminService {
       this.deps.recoveryAddress,
       snapshot.deleteFeeDrops,
     );
-    await this.deps.store.markReclaimed(wallet.userId);
+    await this.markReclaimed(wallet);
     const feeXrp = Number(snapshot.deleteFeeDrops) / 1_000_000;
     return {
       ...queuedResult(wallet),
@@ -381,10 +396,24 @@ export class PaperWalletAdminService {
   }
 
   private async requireFundedWallet(userId: string): Promise<PaperWallet> {
-    const wallet = await this.deps.store.get(userId);
+    const rewardWallet = await this.deps.rewardStore?.get(userId);
+    const wallet = rewardWallet?.status === "funded"
+      ? rewardWallet
+      : await this.deps.store.get(userId);
     if (wallet === null) throw new Error("Wallet Paper introuvable");
     if (wallet.status !== "funded") throw new Error(`Wallet non disponible (${wallet.status})`);
     return wallet;
+  }
+
+  private async markReclaimed(wallet: PaperWallet): Promise<void> {
+    const reward = await this.deps.rewardStore?.get(wallet.userId);
+    if (reward?.address === wallet.address) {
+      await this.deps.rewardStore?.markReclaimed(wallet.userId);
+      await this.deps.rewardStore?.eraseSeed(wallet.userId);
+      return;
+    }
+    await this.deps.store.markReclaimed(wallet.userId);
+    await this.deps.store.eraseSeed(wallet.userId);
   }
 
   private validatePaperUsers(userIds: readonly string[], requireTrade: boolean): string[] {

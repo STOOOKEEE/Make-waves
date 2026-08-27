@@ -28,7 +28,7 @@ export interface WeeklyRewardDto {
 
 export interface WeeklyRewardServiceDeps {
   readonly store: WeeklyRewardStore;
-  readonly wallets: Pick<PaperWalletService, "ensureFunded" | "decryptSeed">;
+  readonly wallets: Pick<PaperWalletService, "requireRewardFunded" | "decryptSeed">;
   readonly issuer: NftIssuer;
   readonly gateway: Pick<XrplCustodialWalletGateway, "acceptNft">;
   readonly metadataBaseUrl: string;
@@ -57,11 +57,6 @@ export class WeeklyRewardService {
     });
   }
 
-  /** Provision asynchrone : ne retarde jamais le fill Paper rendu au terminal. */
-  async provisionWallet(userId: string): Promise<void> {
-    await this.deps.wallets.ensureFunded(userId);
-  }
-
   async list(userId: string): Promise<readonly WeeklyRewardDto[]> {
     const rewards = await this.deps.store.list(userId);
     return rewards.map((reward) => this.toDto(reward));
@@ -84,7 +79,9 @@ export class WeeklyRewardService {
     const reward = await this.deps.store.get(userId, week);
     if (reward === null) throw new WeeklyRewardNotEligibleError();
     if (reward.status === "claimed") throw new WeeklyRewardAlreadyClaimedError();
-    const wallet = await this.deps.wallets.ensureFunded(userId);
+    // Toutes les preuves NFT vivent dans le compte secondaire. Son claim First
+    // Trade explicite doit donc avoir eu lieu avant une récompense hebdomadaire.
+    const wallet = await this.deps.wallets.requireRewardFunded(userId);
 
     let pending = reward;
     if (pending.status === "eligible") {

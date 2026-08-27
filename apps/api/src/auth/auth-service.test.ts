@@ -4,6 +4,7 @@ import { deriveKeypair, sign } from "ripple-keypairs";
 import { AuthError, AuthService, XamanNotConfiguredError } from "./auth-service";
 import { InMemoryChallengeStore } from "./challenge-store";
 import type { XamanPayloadApi } from "../xaman/sign-request";
+import { InMemoryExternalIdentityStore } from "../store/external-identity-store";
 
 const ROOT_SEED = "snoPBrXtMeMyMHUVTgbuqAfg1SUTb";
 const ROOT_ADDRESS = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
@@ -62,6 +63,53 @@ describe("AuthService — JWT", () => {
     expect(() => svc.refreshPaperSession(`Bearer ${svc.issueToken(ROOT_ADDRESS)}`)).toThrow(
       AuthError,
     );
+  });
+});
+
+describe("AuthService — email/social", () => {
+  it("rattache une identité au compte Paper puis le retrouve sans cookie Tide", async () => {
+    const identities = new InMemoryExternalIdentityStore();
+    const verifier = {
+      verify: async () => ({
+        issuer: "https://project.supabase.co",
+        subject: "subject-1",
+        provider: "email",
+        email: "alice@example.com",
+      }),
+    };
+    const svc = new AuthService({
+      secret: SECRET,
+      ttlSeconds: 3600,
+      challenges: new InMemoryChallengeStore(300_000),
+      external: { verifier, identities },
+    });
+
+    const first = await svc.loginExternal("external-access-token-long", "paper:original");
+    const returning = await svc.loginExternal("external-access-token-long", null);
+
+    expect(first.userId).toBe("paper:original");
+    expect(returning.userId).toBe("paper:original");
+    expect(svc.verifyToken(`Bearer ${returning.token}`)).toBe("paper:original");
+  });
+
+  it("refuse une nouvelle identité sans session Paper à lier", async () => {
+    const svc = new AuthService({
+      secret: SECRET,
+      ttlSeconds: 3600,
+      challenges: new InMemoryChallengeStore(300_000),
+      external: {
+        verifier: {
+          verify: async () => ({
+            issuer: "https://project.supabase.co",
+            subject: "new-subject",
+            provider: "x",
+            email: null,
+          }),
+        },
+        identities: new InMemoryExternalIdentityStore(),
+      },
+    });
+    await expect(svc.loginExternal("external-access-token-long", null)).rejects.toThrow(AuthError);
   });
 });
 

@@ -10,11 +10,25 @@ export interface BadgeClient {
     code: string,
     walletAddress: string,
   ): Promise<ClaimBadgeResult>;
+  resumeBadgeClaim?: (
+    userId: string,
+    code: string,
+    walletAddress: string,
+  ) => Promise<ClaimBadgeResult>;
   confirmBadgeClaim(userId: string, code: string, txHash?: string): Promise<void>;
 }
 
+/** Contexte d'un claim transmis à la signature (Xaman en a besoin pour créer le payload). */
+export interface BadgeClaimContext {
+  /** Accept construit par le serveur (signature GemWallet). */
+  readonly acceptTx: BadgeAcceptTx;
+  readonly userId: string;
+  readonly code: string;
+  readonly walletAddress: string;
+}
+
 /** Signature de l'accept (tx taggée) par le user : hash de tx, ou null si annulé. */
-export type SignAccept = (acceptTx: BadgeAcceptTx) => Promise<string | null>;
+export type SignAccept = (claim: BadgeClaimContext) => Promise<string | null>;
 
 /**
  * Badges de l'utilisateur : chargement du statut + claim NFT (mint serveur +
@@ -52,8 +66,15 @@ export function useBadges(client: BadgeClient) {
     claiming.value = code;
     error.value = "";
     try {
-      const { acceptTx } = await client.claimBadge(userId, code, walletAddress);
-      const txHash = await sign(acceptTx);
+      const pending = badges.value.find(
+        (badge) => badge.code === code && badge.status === "offer_pending",
+      );
+      const claim =
+        pending !== undefined && client.resumeBadgeClaim !== undefined
+          ? await client.resumeBadgeClaim(userId, code, walletAddress)
+          : await client.claimBadge(userId, code, walletAddress);
+      const { acceptTx } = claim;
+      const txHash = await sign({ acceptTx, userId, code, walletAddress });
       if (txHash === null) {
         // Signature annulée : le badge reste en offer_pending côté serveur.
         return;

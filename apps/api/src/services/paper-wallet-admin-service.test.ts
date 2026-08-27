@@ -21,6 +21,7 @@ const WALLET: PaperWallet = {
   fundingTxHash: "funding",
   fundedAt: 1,
   createdAt: 1,
+  deleteTxHash: null,
 };
 
 function snapshot(overrides: Partial<WalletLedgerSnapshot> = {}): WalletLedgerSnapshot {
@@ -43,6 +44,7 @@ async function waitForJob(service: PaperWalletAdminService): Promise<void> {
 
 async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]) {
   const store = new InMemoryPaperWalletStore();
+  const rewardStore = new InMemoryPaperWalletStore();
   await store.create(WALLET);
   let snapshotIndex = 0;
   const gateway: PaperWalletAdminGateway = {
@@ -72,6 +74,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
       fundingTxHash: null,
       fundedAt: null,
       createdAt: 2,
+      deleteTxHash: null,
     };
     await store.create(wallet);
     return wallet;
@@ -87,6 +90,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
   const ensurePaperAccount = vi.fn();
   const service = new PaperWalletAdminService({
     store,
+    rewardStore,
     rewards,
     wallets: { decryptSeed: vi.fn(async () => "sTestSeed") },
     provisioner,
@@ -99,7 +103,7 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     metadataBaseUrl: "https://api.test",
     sleep: async () => undefined,
   });
-  return { service, store, rewards, gateway, issuer, provisioner, ensurePaperAccount };
+  return { service, store, rewardStore, rewards, gateway, issuer, provisioner, ensurePaperAccount };
 }
 
 describe("PaperWalletAdminService", () => {
@@ -166,6 +170,25 @@ describe("PaperWalletAdminService", () => {
 
     expect(result).toMatchObject({ requested: 2, succeeded: 2, failed: 0 });
     expect(result.results.map((item) => item.userId)).toEqual([USER_ID, "paper:second"]);
+  });
+
+  it("cible et récupère le wallet NFT secondaire lorsqu'il existe", async () => {
+    const { service, store, rewardStore, issuer } = await fixture();
+    const rewardWallet = { ...WALLET, address: "rRewardWallet", fundingTxHash: "linked" };
+    await rewardStore.create(rewardWallet);
+
+    const grant = await service.grantBadge(USER_ID, "first_trade");
+    expect(grant.walletAddress).toBe(rewardWallet.address);
+    expect(issuer.issueBadge).toHaveBeenCalledWith(expect.objectContaining({
+      destination: rewardWallet.address,
+    }));
+
+    await service.startReclaimOne(USER_ID, USER_ID);
+    await waitForJob(service);
+    expect(service.status()).toMatchObject({ state: "succeeded", total: 2, completed: 2 });
+    expect((await rewardStore.get(USER_ID))?.status).toBe("reclaimed");
+    expect((await store.get(USER_ID))?.status).toBe("reclaimed");
+    expect((await store.get(USER_ID))?.encryptedSeed).toBe("");
   });
 
   it("brûle les NFT puis supprime le compte vers l'issuer", async () => {

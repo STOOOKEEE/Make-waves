@@ -10,6 +10,7 @@ const BADGE: BadgeDto = {
   earned: true,
   status: "unclaimed",
   nftTokenId: null,
+  claimMode: "external_wallet",
 };
 
 function fakeClient(overrides: Partial<BadgeClient> = {}): {
@@ -63,7 +64,7 @@ describe("useBadges", () => {
     const { client, calls } = fakeClient();
     const b = useBadges(client);
     let signedOffer = "";
-    await b.claim("u1", "first_trade", "rWallet", async (acceptTx) => {
+    await b.claim("u1", "first_trade", "rWallet", async ({ acceptTx }) => {
       signedOffer = acceptTx.NFTokenSellOffer;
       return "HASH";
     });
@@ -77,5 +78,36 @@ describe("useBadges", () => {
     const b = useBadges(client);
     await b.claim("u1", "first_trade", "rWallet", async () => null);
     expect(calls).toEqual(["claimBadge"]);
+  });
+
+  it("reprend une offre déjà mintée sans repasser par le mint initial", async () => {
+    const { client, calls } = fakeClient({
+      async badges() {
+        calls.push("badges");
+        return [{ ...BADGE, status: "offer_pending" }];
+      },
+      async resumeBadgeClaim() {
+        calls.push("resumeBadgeClaim");
+        return {
+          sellOfferId: "OFF1",
+          nftTokenId: "NFT1",
+          acceptTx: {
+            TransactionType: "NFTokenAcceptOffer" as const,
+            Account: "rWallet",
+            NFTokenSellOffer: "OFF1",
+            SourceTag: 2606210009,
+          },
+        };
+      },
+    });
+    const b = useBadges(client);
+    await b.load("u1");
+    await b.claim("u1", "first_trade", "rWallet", async () => "HASH");
+    expect(calls).toEqual([
+      "badges",
+      "resumeBadgeClaim",
+      "confirmBadgeClaim",
+      "badges",
+    ]);
   });
 });

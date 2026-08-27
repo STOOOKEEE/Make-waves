@@ -24,6 +24,7 @@ async function setup() {
       fundingTxHash: index === 2 ? null : `hash-${String(index)}`,
       fundedAt: index === 2 ? null : 1,
       createdAt: index,
+      deleteTxHash: null,
     });
   }
   let nextId = 0;

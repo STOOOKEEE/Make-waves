@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_API_BASE?: string;
   readonly VITE_ADMIN_API_BASE?: string;
+  readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
   /** Domaine déclaré dans Plausible, ex. tidetrade.xyz. */
   readonly VITE_PLAUSIBLE_DOMAIN?: string;
   /** URL du script fournie par Plausible Cloud ou l'instance auto-hébergée. */

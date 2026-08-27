@@ -2388,3 +2388,141 @@ ou aucun trade n'est lancé automatiquement au démarrage.
 le `userId` du wallet concerné et journalisée avec l'identifiant du gestionnaire
 unique. Le plan utilise les derniers prix serveur disponibles et ne manipule
 jamais les seeds XRPL.
+
+## 2026-08-26 — Funnel Mainnet à deux wallets : claim → trade → compte NFT
+
+**Dynamique produit.** Le wallet XRPL n'est plus créé silencieusement par
+`POST /accounts/ensure` ni financé par le premier fill. À l'arrivée dans le
+terminal, l'utilisateur réclame explicitement le wallet 1. Une garde backend
+refuse les ordres spot/perp Paper tant que ce compte n'est pas financé. Le
+premier trade ne fait ensuite que débloquer une récompense mystère ; le second
+claim crée le wallet 2 et lui remet le NFT `First Trade`.
+
+**Chemin on-chain.** Le funder Tide verse 2,22 XRP au wallet 1. Le wallet 1
+signe ensuite lui-même un `Payment` taggé de 1,21 XRP vers le wallet 2 : le
+funder ne finance jamais directement ce second compte. Le wallet 2 accepte
+l'offre NFT avec sa propre seed. Les deux seeds restent chiffrées AES-256-GCM
+dans deux tables SQLite distinctes et ne sont déchiffrées qu'en mémoire.
+
+**Surface.** Nouvelles routes
+`POST /accounts/:userId/paper-wallet/claim` et
+`POST /accounts/:userId/paper-wallet/reward/claim`, DTO de statut étendu,
+méthodes `@tide/client`, gate bilingue dans le terminal et CTA caché révélé
+après le premier trade. L'ancien claim générique de `first_trade` vers une
+adresse libre est réservé/désactivé lorsque ce funnel est actif, ce qui évite
+un double mint hors du wallet 2. Les claims sont protégés par le `:userId` authentifié,
+idempotents et gelés en cas de résultat réseau ambigu.
+
+**Exploitation.** La migration ajoute `paper_reward_wallets_mainnet`. La
+console de récupération traite les deux comptes et les distributions admin
+ciblent le wallet NFT secondaire. Le script CLI accepte
+`--wallet=starter|reward`. Le calcul d'inventaire NFT inclut les wallets 2.
+
+**Vérification.** Un test HTTP couvre toute la séquence, y compris les refus
+avant chaque déblocage et l'absence de double funding/mint. Un test du gateway
+vérifie que l'`Account` du second `Payment` est bien le wallet 1. Réserves
+Mainnet confirmées dans la documentation XRPL officielle : 1 XRP de base et
+0,2 XRP par objet propriétaire.
+
+## 2026-08-27 — Login : libellé « Log in or create a wallet » + vérif prod connecter/déconnecter
+
+**Quoi.** Le point d'entrée de connexion déconnecté affiche désormais
+« Log in or create a wallet » / « Se connecter ou créer un wallet » : bouton de
+l'`AppBar` (max-width `.account` 180→250 px pour le libellé long) et titre de
+l'`AccountModal` quand aucun compte n'est connecté. Une ligne explicative
+bilingue précise dans la modale que le compte Paper est créé automatiquement et
+que le wallet XRPL se réclame depuis le terminal. Demande d'Armand : au login,
+l'utilisateur doit comprendre qu'il se connecte OU qu'un wallet sera créé.
+
+**Pourquoi.** Réponse produit à sa question « est-ce qu'un autre compte est
+créé quand je login Xaman + claim NFT ? » : oui, plusieurs identités coexistent
+— (1) le compte applicatif (`paper:*` anonyme ou lié email/social, ou adresse
+XRPL quand un wallet est connecté : `setWallet` bascule le `userId` actif),
+(2) les deux wallets custodiaux du funnel (wallet 1 financé 2,22 XRP au claim,
+wallet 2 qui reçoit le NFT First Trade, financé par le wallet 1). Le NFT ne va
+jamais dans le wallet Xaman de l'utilisateur ; le Xaman sert d'identité Live.
+Le libellé de login rend cette création explicite au lieu de la cacher.
+
+**Vérification en production** (Chromium headless, aucun clic sur les claims —
+0 XRP dépensé) : modale wallet « Connect wallet » (Xaman QR / GemWallet) OK ;
+déconnexion OK (« Se déconnecter » → confirmation pour compte Paper anonyme →
+purge `tide.paperSessionToken`/`tide.paperUserId` + redirection `#/landing`) ;
+gate « Réclame ton compte XRPL » visible pour une session neuve ;
+`/accounts/:id/paper-wallet` sans token → 401 ; bundle prod
+`index-DopVMARq.js` contient bien tous les libellés logout/claim.
+
+**Vérification locale** (vite dev + API prod en lecture) : libellés FR/EN
+rendus dans l'AppBar et la modale, bascule de langue OK. Tests web 77/77,
+`vue-tsc` OK, eslint 0 erreur sur les deux composants. **Pas de commit** —
+laissé dans le working tree avec le WIP existant (convention du handoff
+2026-08-27).
+
+**Suite possible (décision produit).** Unifier les deux boutons AppBar
+(compte + wallet) en un seul point d'entrée « Log in or create a wallet »,
+et/ou lier le login Xaman au compte Paper existant au lieu de basculer
+l'identité sur l'adresse XRPL (aujourd'hui, connecter Xaman après avoir tradé
+en anonyme montre un compte vide distinct).
+
+## 2026-08-27 — Point d'entrée unique Connect Wallet et claim externe First Trade
+
+**Produit.** Le dashboard propose désormais un seul point d'entrée **Connect
+Wallet** : créer un wallet Paper custodial financé à 4 XRP, ou connecter un
+wallet personnel Xaman/GemWallet. L'identité Paper est préparée avant le login
+wallet afin de relier le parcours anti-farming ; une fois connecté, l'adresse
+XRPL devient l'identité de trading Paper active.
+
+**Option A.** Le premier claim finance le wallet 1 avec 4 XRP. Le premier fill
+Paper ne déclenche aucune transaction XRPL et rend seulement le NFT First Trade
+éligible. Le second claim finance le wallet 2 depuis le wallet 1 à hauteur de
+1,21 XRP, fait accepter le NFT par le wallet 2, puis clôture le wallet 1 avec
+un `AccountDelete` taggé au coût spécial actuel de 0,2 XRP ; le reliquat est
+envoyé au wallet 2. Une reprise d'un claim déjà `claimed` ne re-mint ni ne
+ré-accepte le NFT : elle retente uniquement la clôture si elle était restée
+en attente.
+
+**Option B.** Après un premier fill Paper sous l'adresse connectée, le bouton
+de claim générique mint l'offre First Trade vers cette même adresse ; Xaman ou
+GemWallet signe ensuite l'`NFTokenAcceptOffer`. Les routes de claim, de reprise
+et de signature vérifient toutes que l'identité et la destination correspondent
+au JWT authentifié.
+
+**Anti-farming.** Les liaisons wallet ↔ session Paper sont immuables, validées
+par le JWT Paper courant et consultées sur toutes les adresses liées. Un wallet
+lié à une session qui a déjà utilisé le funnel ou reçu la récompense est refusé ;
+un plafond quotidien de claims externes ajoute une borne globale.
+
+**Volume / traçabilité.** Les transactions du funnel restent taggées avec le
+SourceTag. La réception d'un NFT n'est pas un volume de trading ; aucun
+`OfferCreate` auto-généré n'a été ajouté, car il pourrait constituer du volume
+self-generated/wash trading sans confirmation de l'organisateur. Un vrai swap
+Live reste signé par l'utilisateur.
+## 2026-08-27 — Effacement local des seeds après clôture XRPL
+
+Après un `AccountDelete` validé (`tesSUCCESS`), la seed chiffrée du wallet
+concerné est maintenant effacée du champ `encrypted_seed` dans SQLite. La ligne
+reste volontairement comme tombstone avec l'adresse, le statut et le hash de
+clôture : le dashboard et l'anti-farming conservent leur historique, mais le
+backend ne peut plus déchiffrer ni resigner ce compte. Le funder, son seed et
+les comptes encore actifs ne sont jamais touchés.
+
+Le script de récupération traite aussi les wallets déjà `deleted`/`reclaimed`
+sans nouvelle soumission XRPL. Tests SQLite et tests du funnel couvrent
+l'effacement idempotent.
+## 2026-08-27 — Récupération finale vers la réserve froide
+
+Le script CLI de récupération Paper utilise désormais
+`TIDE_PAPER_WALLET_RECOVERY_ADDRESS` comme destination de l'`AccountDelete`, au
+lieu du hot funder. Le funder reste réservé au financement initial ; le
+dashboard admin et la récupération globale utilisent déjà l'adresse froide.
+
+## 2026-08-27 — Funding du double wallet ramené au minimum pratique
+
+La décision temporaire de financer le wallet 1 avec 4 XRP est remplacée par
+un funding de **2,22 XRP**. Ce montant conserve la réserve de base du wallet 1
+pendant le Payment de 1,21 XRP vers le wallet 2, qui reçoit toujours sa page
+NFT et sa marge de frais. Le wallet 1 est ensuite clôturé par `AccountDelete` ;
+le coût spécial de 0,2 XRP reste inchangé.
+
+Le dashboard et les textes de création affichent désormais 2,22 XRP. Cette
+modification réduit le capital immobilisé sans changer le coût final de
+clôture des deux comptes (environ 0,4 XRP par utilisateur, hors frais réseau).

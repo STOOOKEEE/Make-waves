@@ -22,6 +22,7 @@ export interface BadgeStatus {
   readonly earned: boolean;
   readonly status: BadgeUiStatus;
   readonly nftTokenId: string | null;
+  readonly claimMode: "external_wallet" | "paper_reward";
 }
 
 /** Code de badge inconnu (→ 404). */
@@ -45,6 +46,14 @@ export class BadgeClaimUnavailableError extends Error {
   constructor() {
     super("Claim on-chain indisponible (issuer NFT non configuré)");
     this.name = "BadgeClaimUnavailableError";
+  }
+}
+
+/** Ce badge appartient au funnel custodial à deux wallets. */
+export class BadgeClaimManagedError extends Error {
+  constructor(code: string) {
+    super(`Le badge ${code} se réclame depuis le compte NFT du terminal Paper`);
+    this.name = "BadgeClaimManagedError";
   }
 }
 
@@ -72,6 +81,17 @@ export interface BadgeServiceDeps {
   readonly sourceTag?: number;
   /** Base publique des URI de métadonnées (sans slash final). */
   readonly metadataBaseUrl?: string;
+  /** Badges réclamés sur le wallet NFT secondaire, jamais vers une adresse libre. */
+  readonly managedClaimCodes?: ReadonlySet<string>;
+  /**
+   * Option B : lève si le claim d'un badge managed vers le wallet connecté est
+   * refusé (anti-farming). Absent → les badges managed restent funnel-only.
+   */
+  readonly managedExternalGuard?: (
+    userId: string,
+    walletAddress: string,
+    code: string,
+  ) => Promise<void>;
 }
 
 /**
@@ -81,6 +101,34 @@ export interface BadgeServiceDeps {
  */
 export class BadgeService {
   constructor(private readonly deps: BadgeServiceDeps) {}
+
+  /** Valide le mérite et les règles de routage avant tout mint ou reprise. */
+  private async validateClaim(
+    userId: string,
+    walletAddress: string,
+    code: string,
+  ): Promise<{ issuer: NftIssuer; sourceTag: number; badge: NonNullable<ReturnType<typeof badgeByCode>> }> {
+    const { issuer, sourceTag } = this.deps;
+    if (issuer === undefined || sourceTag === undefined) {
+      throw new BadgeClaimUnavailableError();
+    }
+    assertValidAddress(walletAddress, "walletAddress");
+    const badge = badgeByCode(code);
+    if (!badge) {
+      throw new BadgeUnknownError(code);
+    }
+    if (this.deps.managedClaimCodes?.has(code)) {
+      if (this.deps.managedExternalGuard === undefined) {
+        throw new BadgeClaimManagedError(code);
+      }
+      await this.deps.managedExternalGuard(userId, walletAddress, code);
+    }
+    const earned = new Set(earnedCodes(this.activityOf(userId)));
+    if (!earned.has(code)) {
+      throw new BadgeNotEarnedError(code);
+    }
+    return { issuer, sourceTag, badge };
+  }
 
   private activityOf(userId: string): BadgeActivity {
     const competitionCount = this.deps.competition
@@ -117,6 +165,9 @@ export class BadgeService {
         earned: earned.has(badge.code),
         status: claim ? claim.status : ("unclaimed" as BadgeUiStatus),
         nftTokenId: claim ? claim.nftTokenId : null,
+        claimMode: this.deps.managedClaimCodes?.has(badge.code)
+          ? "paper_reward" as const
+          : "external_wallet" as const,
       };
     });
   }
@@ -134,19 +185,11 @@ export class BadgeService {
     nftTokenId: string;
     acceptTx: NFTokenAcceptOffer;
   }> {
-    const { issuer, sourceTag } = this.deps;
-    if (issuer === undefined || sourceTag === undefined) {
-      throw new BadgeClaimUnavailableError();
-    }
-    assertValidAddress(walletAddress, "walletAddress");
-    const badge = badgeByCode(code);
-    if (!badge) {
-      throw new BadgeUnknownError(code);
-    }
-    const earned = new Set(earnedCodes(this.activityOf(userId)));
-    if (!earned.has(code)) {
-      throw new BadgeNotEarnedError(code);
-    }
+    const { issuer, sourceTag, badge } = await this.validateClaim(
+      userId,
+      walletAddress,
+      code,
+    );
     const existing = await this.deps.store.get(userId, code);
     if (existing) {
       throw new BadgeAlreadyClaimedError(userId, code);
@@ -183,6 +226,42 @@ export class BadgeService {
       nftTokenId: issued.nftTokenId,
       acceptTx,
     };
+  }
+
+  /**
+   * Variante du claim pour la signature Xaman (`/sign/badge-accept/:code`) :
+   * résume une offre `offer_pending` déjà émise (signature abandonnée → on ne
+   * re-mint pas) et ne lève que si le badge est déjà claimé. Le mint et la
+   * sell-offer restent pilotés par `claim` ; ici on ne fait que reconstruire
+   * l'accept à présenter au signataire.
+   */
+  async claimForSign(
+    userId: string,
+    walletAddress: string,
+    code: string,
+  ): Promise<{
+    sellOfferId: string;
+    nftTokenId: string;
+    acceptTx: NFTokenAcceptOffer;
+  }> {
+    const { sourceTag } = await this.validateClaim(userId, walletAddress, code);
+    const existing = await this.deps.store.get(userId, code);
+    if (existing !== null) {
+      if (existing.status === "claimed") {
+        throw new BadgeAlreadyClaimedError(userId, code);
+      }
+      // offer_pending : l'offre existe déjà, on la reprend telle quelle.
+      return {
+        sellOfferId: existing.sellOfferId,
+        nftTokenId: existing.nftTokenId,
+        acceptTx: buildBadgeAcceptOffer({
+          account: walletAddress,
+          sellOfferId: existing.sellOfferId,
+          sourceTag,
+        }),
+      };
+    }
+    return this.claim(userId, walletAddress, code);
   }
 
   /** Confirme le claim (le user a signé l'accept) → statut `claimed`. */

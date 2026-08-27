@@ -1,6 +1,6 @@
 import { beforeEach, describe, it, expect } from "vitest";
 import { TideClient } from "@tide/client";
-import type { ApiResponse, ApiTransport } from "@tide/client";
+import type { ApiRequest, ApiResponse, ApiTransport } from "@tide/client";
 import { usePaper } from "../src/composables/usePaper";
 import { useLeaderboard } from "../src/composables/useLeaderboard";
 import { useCompetitions } from "../src/composables/useCompetitions";
@@ -32,6 +32,10 @@ function clientWith(routes: Record<string, ApiResponse>): TideClient {
           walletAddress: null,
           walletStatus: "not_created",
           fundingTxHash: null,
+          rewardWalletAddress: null,
+          rewardWalletStatus: "not_created",
+          rewardFundingTxHash: null,
+          rewardFundingSourceAddress: null,
           rewardStatus: "not_earned",
           nftTokenId: null,
           claimTxHash: null,
@@ -41,6 +45,30 @@ function clientWith(routes: Record<string, ApiResponse>): TideClient {
     return Promise.resolve({ status: 404, body: { error: "introuvable" } });
   };
   return new TideClient(transport);
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
+}
+
+function sessionToken(subject: string): string {
+  const encode = (value: object): string =>
+    globalThis
+      .btoa(JSON.stringify(value))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+    sub: subject,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.signature`;
 }
 
 const FILL = {
@@ -101,6 +129,71 @@ describe("usePaper", () => {
     expect(paper.connected.value).toBe(true);
     expect(paper.userId.value).toBe(userId);
     expect(paper.balances.value).toEqual({ RLUSD: 10_000 });
+  });
+
+  it("conserve le wallet si sa connexion aboutit pendant l'initialisation Paper", async () => {
+    const walletAddress = "rWalletRace111111111111111111111111111";
+    const walletToken = sessionToken(walletAddress);
+    const authPaper = deferred<ApiResponse>();
+    const protectedRequests: ApiRequest[] = [];
+    const transport: ApiTransport = (request) => {
+      if (request.method === "POST" && request.path === "/auth/paper") {
+        return authPaper.promise;
+      }
+      protectedRequests.push(request);
+      if (request.method === "POST" && request.path === "/accounts/ensure") {
+        return Promise.resolve({ status: 200, body: { userId: walletAddress, created: true } });
+      }
+      if (request.path.endsWith("/balances")) {
+        return Promise.resolve({ status: 200, body: { RLUSD: 10_000 } });
+      }
+      if (request.path.endsWith("/orders")) {
+        return Promise.resolve({ status: 200, body: [] });
+      }
+      if (request.path.endsWith("/portfolio")) {
+        return Promise.resolve({
+          status: 200,
+          body: { balances: {}, holdings: [], equity: 10_000, pnl: 0 },
+        });
+      }
+      if (request.path.endsWith("/paper-wallet")) {
+        return Promise.resolve({
+          status: 200,
+          body: {
+            walletAddress: null,
+            walletStatus: "not_created",
+            fundingTxHash: null,
+            rewardWalletAddress: null,
+            rewardWalletStatus: "not_created",
+            rewardFundingTxHash: null,
+            rewardFundingSourceAddress: null,
+            rewardStatus: "not_earned",
+            nftTokenId: null,
+            claimTxHash: null,
+          },
+        });
+      }
+      return Promise.resolve({ status: 404, body: { error: "introuvable" } });
+    };
+    const paper = usePaper(new TideClient(transport));
+
+    const connecting = paper.connect();
+    localStorage.setItem("tide.sessionToken", walletToken);
+    useSession().setWallet(walletAddress, "xaman");
+    authPaper.resolve({
+      status: 200,
+      body: { token: "paper-jwt-arrived-late", userId: "paper:late" },
+    });
+    await connecting;
+
+    expect(paper.userId.value).toBe(walletAddress);
+    expect(paper.connected.value).toBe(true);
+    expect(protectedRequests).not.toHaveLength(0);
+    expect(
+      protectedRequests.every(
+        (request) => request.headers?.authorization === `Bearer ${walletToken}`,
+      ),
+    ).toBe(true);
   });
 
   it("place un ordre puis rafraîchit", async () => {

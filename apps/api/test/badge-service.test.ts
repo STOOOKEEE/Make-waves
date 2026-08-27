@@ -3,6 +3,7 @@ import type { NftIssuer } from "@tide/xrpl";
 import {
   BadgeService,
   BadgeClaimUnavailableError,
+  BadgeClaimManagedError,
   BadgeNotEarnedError,
   BadgeUnknownError,
   type BadgeCompetitionSource,
@@ -139,6 +140,24 @@ describe("BadgeService sans issuer (affichage off-chain gratuit)", () => {
 });
 
 describe("BadgeService.claim (erreurs)", () => {
+  it("réserve First Trade au wallet NFT secondaire quand le funnel est actif", async () => {
+    const issuer = new FakeIssuer();
+    const svc = new BadgeService({
+      paper: new FakeOrders(1),
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+      issuer,
+      sourceTag: SOURCE_TAG,
+      managedClaimCodes: new Set(["first_trade"]),
+    });
+    const firstTrade = (await svc.statusFor("u1")).find((badge) => badge.code === "first_trade");
+    expect(firstTrade?.claimMode).toBe("paper_reward");
+    await expect(svc.claim("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeClaimManagedError,
+    );
+    expect(issuer.calls).toBe(0);
+  });
+
   it("refuse un badge non mérité", async () => {
     const { svc } = makeService(0);
     await expect(svc.claim("u1", WALLET, "first_trade")).rejects.toThrow(
@@ -165,5 +184,50 @@ describe("BadgeService.claim (erreurs)", () => {
       BadgeAlreadyClaimedError,
     );
     expect(issuer.calls).toBe(1);
+  });
+});
+
+describe("BadgeService.claimForSign (signature Xaman)", () => {
+  it("fait le claim complet si aucune offre n'existe", async () => {
+    const { svc, issuer } = makeService(1);
+    const res = await svc.claimForSign("u1", WALLET, "first_trade");
+    expect(res.sellOfferId).toBe(OFFER_ID);
+    expect(res.acceptTx).toEqual({
+      TransactionType: "NFTokenAcceptOffer",
+      Account: WALLET,
+      NFTokenSellOffer: OFFER_ID,
+      SourceTag: SOURCE_TAG,
+    });
+    expect(issuer.calls).toBe(1);
+  });
+
+  it("reprend une offre offer_pending sans re-mint", async () => {
+    const { svc, issuer } = makeService(1);
+    await svc.claim("u1", WALLET, "first_trade");
+    expect(issuer.calls).toBe(1);
+    const res = await svc.claimForSign("u1", WALLET, "first_trade");
+    expect(res.sellOfferId).toBe(OFFER_ID);
+    expect(res.nftTokenId).toBe(NFT_ID);
+    expect(issuer.calls).toBe(1);
+  });
+
+  it("refuse un badge déjà claimé", async () => {
+    const { svc } = makeService(1);
+    await svc.claim("u1", WALLET, "first_trade");
+    await svc.confirmClaim("u1", "first_trade", "HASH");
+    await expect(svc.claimForSign("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeAlreadyClaimedError,
+    );
+  });
+
+  it("sans issuer → BadgeClaimUnavailableError", async () => {
+    const svc = new BadgeService({
+      paper: new FakeOrders(1),
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+    });
+    await expect(svc.claimForSign("u1", WALLET, "first_trade")).rejects.toThrow(
+      BadgeClaimUnavailableError,
+    );
   });
 });

@@ -51,7 +51,7 @@ const BADGES = [
   { code: "ten_trades", label: "Ten Trades" },
   { code: "first_competition", label: "First Competition" },
 ] as const;
-const PAPER_WALLET_FUNDING_XRP = 1.21;
+const PAPER_WALLET_FUNDING_XRP = 2.22;
 const paperWallets = computed<AdminWalletDto[]>(() => {
   if (overview.value === null) return [];
   const stored = overview.value.wallets.filter((wallet) => wallet.kind === "paper");
@@ -208,9 +208,10 @@ function statusLabel(status: AdminWalletDto["status"]): string {
     not_created: "Non créé",
     pending_funding: "Créé · non financé",
     funding_in_progress: "Funding en cours",
-    funded: "Financé · 1,21 XRP",
+    funded: "Financé · 2,22 XRP",
     funding_failed: "Funding à vérifier",
     reclaimed: "Supprimé · récupéré",
+    deleted: "Fermé · solde renvoyé",
   };
   return status === null ? "—" : labels[status];
 }
@@ -220,6 +221,7 @@ function statusClass(status: AdminWalletDto["status"]): string {
   if (status === "funding_failed") return "status status--failed";
   if (status === "funding_in_progress") return "status status--pending";
   if (status === "reclaimed") return "status status--reclaimed";
+  if (status === "deleted") return "status status--reclaimed";
   return "status";
 }
 
@@ -229,6 +231,20 @@ function shortHash(hash: string): string {
 
 function explorerTx(hash: string): string {
   return `https://xrpscan.com/tx/${encodeURIComponent(hash)}`;
+}
+
+/**
+ * Une adresse XRPL utilisée directement comme userId vient d'un wallet
+ * personnel connecté au front. Ce wallet est non-custodial : Tide ne doit ni
+ * le financer, ni tenter de signer à sa place.
+ */
+function connectedWalletAddress(userId: string | null): string | null {
+  if (userId === null) return null;
+  return /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(userId) ? userId : null;
+}
+
+function explorerAccount(address: string): string {
+  return `https://xrpscan.com/account/${encodeURIComponent(address)}`;
 }
 
 function formatDate(timestamp: number): string {
@@ -303,7 +319,7 @@ async function deleteInactive(ids: readonly string[]): Promise<void> {
 
 function confirmReclaim(userId: string, address: string | null): void {
   if (address === null) return;
-  if (window.confirm(`Brûler les NFT, supprimer ${address} et envoyer le solde à l'issuer ?`)) {
+  if (window.confirm(`Brûler les NFT, supprimer ${address} et envoyer le solde restant à l'adresse froide de récupération ?`)) {
     void reclaimOne(userId);
   }
 }
@@ -402,7 +418,7 @@ async function submitCompetition(): Promise<void> {
         <div class="wallet-manager__head">
           <div>
             <h2>Participants & wallets Mainnet</h2>
-            <p>Les {{ paperWallets.length }} comptes Paper sont listés, même si leur adresse XRPL n’a pas encore été créée.</p>
+            <p>Chaque ligne distingue le wallet personnel connecté au front du wallet Paper custodial créé et financé par Tide.</p>
           </div>
           <strong>{{ selectedUserIds.length }} sélectionné(s)</strong>
         </div>
@@ -449,7 +465,7 @@ async function submitCompetition(): Promise<void> {
             <thead>
               <tr>
                 <th><input type="checkbox" :checked="allRowsSelected" :indeterminate="someRowsSelected" aria-label="Sélectionner tous les wallets" @change="updateAllRows" /></th>
-                <th>Utilisateur</th><th>Activité</th><th>Wallet</th><th>Funding</th><th>Transaction</th><th>Actions</th>
+                <th>Utilisateur</th><th>Activité</th><th>Wallet connecté</th><th>Wallet Tide</th><th>Funding Tide</th><th>Transaction</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -462,6 +478,16 @@ async function submitCompetition(): Promise<void> {
                 <td>
                   <span v-if="row.user">{{ row.user.orders }} ordre(s) · {{ row.user.positions }} position(s)</span>
                   <span v-else>—</span>
+                </td>
+                <td>
+                  <a
+                    v-if="connectedWalletAddress(row.wallet.userId)"
+                    :href="explorerAccount(connectedWalletAddress(row.wallet.userId) ?? '')"
+                    class="wallet-address"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ connectedWalletAddress(row.wallet.userId) }}</a>
+                  <span v-else class="muted">Identité Paper</span>
                 </td>
                 <td>
                   <code v-if="row.wallet.address" class="wallet-address">{{ row.wallet.address }}</code>
@@ -477,7 +503,7 @@ async function submitCompetition(): Promise<void> {
                 </td>
                 <td class="row-actions">
                   <button type="button" :disabled="loading || walletJob?.enabled !== true || row.wallet.status !== 'funded' || row.wallet.userId === null" @click="row.wallet.userId !== null && grantNft(row.wallet.userId, batchBadgeCode)">NFT</button>
-                  <button type="button" class="danger" :disabled="walletJob?.enabled !== true || row.wallet.status !== 'funded' || loading || walletJob?.state === 'running' || row.wallet.userId === null" @click="row.wallet.userId !== null && confirmReclaim(row.wallet.userId, row.wallet.address)">Sweep</button>
+                  <button type="button" class="danger" :disabled="walletJob?.enabled !== true || row.wallet.status !== 'funded' || loading || walletJob?.state === 'running' || row.wallet.userId === null" @click="row.wallet.userId !== null && confirmReclaim(row.wallet.userId, row.wallet.address)">Récupérer</button>
                   <button type="button" class="danger" :disabled="loading || row.wallet.userId === null || !inactiveUserIds.includes(row.wallet.userId)" @click="row.wallet.userId !== null && deleteInactive([row.wallet.userId])">Supprimer</button>
                 </td>
               </tr>

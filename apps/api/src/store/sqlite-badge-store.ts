@@ -78,6 +78,15 @@ export class SqliteBadgeStore implements BadgeStore {
     return rows.map(toBadgeClaim);
   }
 
+  async countByCodeSince(badgeCode: string, since: number): Promise<number> {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM badge_claims WHERE badge_code = ? AND claimed_at >= ?`,
+      )
+      .get(badgeCode, since) as { readonly count: number };
+    return Number(row.count);
+  }
+
   async markClaimed(
     userId: string,
     badgeCode: string,

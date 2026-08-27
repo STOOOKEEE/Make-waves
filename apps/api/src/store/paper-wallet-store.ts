@@ -1,18 +1,22 @@
+export type PaperWalletStatus =
+  | "pending_funding"
+  | "funding_in_progress"
+  | "funded"
+  | "funding_failed"
+  | "reclaimed"
+  | "deleted";
+
 /** Wallet XRPL custodial dédié à un compte Paper. La seed ne sort jamais chiffrée. */
 export interface PaperWallet {
   readonly userId: string;
   readonly address: string;
   readonly encryptedSeed: string;
   readonly masterKeyId: string;
-  readonly status:
-    | "pending_funding"
-    | "funding_in_progress"
-    | "funded"
-    | "funding_failed"
-    | "reclaimed";
+  readonly status: PaperWalletStatus;
   readonly fundingTxHash: string | null;
   readonly fundedAt: number | null;
   readonly createdAt: number;
+  readonly deleteTxHash: string | null;
 }
 
 export interface PaperWalletStore {
@@ -24,6 +28,10 @@ export interface PaperWalletStore {
   markFunded(userId: string, fundingTxHash: string, fundedAt: number): Promise<void>;
   markFundingFailed(userId: string): Promise<void>;
   markReclaimed(userId: string): Promise<void>;
+  /** Wallet 1 fermé par AccountDelete après le claim du wallet 2. */
+  markDeleted(userId: string, deleteTxHash: string): Promise<void>;
+  /** Efface irréversiblement la seed après confirmation on-chain de la clôture. */
+  eraseSeed(userId: string): Promise<boolean>;
   /** Supprime uniquement une adresse locale jamais financée ni soumise. */
   deleteUnfunded(userId: string): Promise<boolean>;
   countFunded(): Promise<number>;
@@ -69,6 +77,22 @@ export class InMemoryPaperWalletStore implements PaperWalletStore {
     const current = this.wallets.get(userId);
     if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
     this.wallets.set(userId, { ...current, status: "reclaimed" });
+  }
+
+  async markDeleted(userId: string, deleteTxHash: string): Promise<void> {
+    const current = this.wallets.get(userId);
+    if (!current) throw new Error(`Paper wallet introuvable: ${userId}`);
+    this.wallets.set(userId, { ...current, status: "deleted", deleteTxHash });
+  }
+
+  async eraseSeed(userId: string): Promise<boolean> {
+    const current = this.wallets.get(userId);
+    if (current === undefined || (current.status !== "deleted" && current.status !== "reclaimed")) {
+      return false;
+    }
+    if (current.encryptedSeed === "") return false;
+    this.wallets.set(userId, { ...current, encryptedSeed: "" });
+    return true;
   }
 
   async deleteUnfunded(userId: string): Promise<boolean> {

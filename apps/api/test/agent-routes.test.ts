@@ -9,6 +9,8 @@ import { MandateService } from "../src/services/mandate-service";
 import { InMemoryAgentStore } from "../src/store/agent-store";
 import { InMemoryMandateStore } from "../src/store/mandate-store";
 import type { MandateXamanApi } from "../src/services/mandate-service";
+import { AuthService } from "../src/auth/auth-service";
+import { InMemoryChallengeStore } from "../src/auth/challenge-store";
 
 /** Faux Xaman : tout payload est créé instantanément, tout callback est signé. */
 const fakeXaman: MandateXamanApi = {
@@ -31,6 +33,57 @@ function depsWith(services: { agent: AgentService; mandate: MandateService }): S
 }
 
 describe("agent routes", () => {
+  it("crée un agent Paper avec un JWT dont le sujet correspond au userId", async () => {
+    const agents = new InMemoryAgentStore();
+    const mandates = new InMemoryMandateStore();
+    const service = new AuthService({
+      secret: "agent-route-auth-secret",
+      ttlSeconds: 3600,
+      challenges: new InMemoryChallengeStore(300_000),
+      paperSessionId: () => "agent-owner",
+    });
+    const app = buildServer({
+      ...depsWith({
+        agent: new AgentService(agents, mandates),
+        mandate: new MandateService(mandates, fakeXaman),
+      }),
+      auth: {
+        service,
+        resolvers: {
+          agentOwner: async (id) => (await agents.get(id))?.userId ?? null,
+          mandateOwner: async (id) => (await mandates.get(id))?.userId ?? null,
+        },
+      },
+    });
+    const session = await app.inject({ method: "POST", url: "/auth/paper" });
+    const { token, userId } = session.json<{ token: string; userId: string }>();
+
+    const unauthenticated = await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      payload: { userId, name: "Paper bot", type: "integrated" },
+    });
+    expect(unauthenticated.statusCode).toBe(401);
+
+    const wrongOwner = await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { userId: "paper:someone-else", name: "Paper bot", type: "integrated" },
+    });
+    expect(wrongOwner.statusCode).toBe(403);
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/agents",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { userId, name: "Paper bot", type: "integrated" },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().userId).toBe("paper:agent-owner");
+    await app.close();
+  });
+
   it("POST /api/agents crée un agent (201)", async () => {
     const agents = new InMemoryAgentStore();
     const mandates = new InMemoryMandateStore();

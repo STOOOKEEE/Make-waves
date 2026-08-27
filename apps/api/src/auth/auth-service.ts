@@ -4,6 +4,9 @@ import type { JwtPayload } from "jsonwebtoken";
 import { addressFromPublicKey, assertValidAddress, verifyMessageSignature } from "@tide/xrpl";
 import type { ChallengeStore } from "./challenge-store";
 import type { XamanPayloadApi } from "../xaman/sign-request";
+import type { ExternalIdentityStore } from "../store/external-identity-store";
+import type { WalletLinkStore } from "../store/wallet-link-store";
+import type { ExternalIdentityVerifier } from "./external-auth";
 
 /** Échec d'authentification (challenge/signature/token invalides) → 401. */
 export class AuthError extends Error {
@@ -29,8 +32,15 @@ export interface AuthServiceDeps {
   readonly challenges: ChallengeStore;
   /** API Xaman (si XUMM configuré) pour l'auth via payload SignIn. */
   readonly xaman?: XamanPayloadApi;
+  /** Login email/social optionnel. La liaison reste dans la DB privée Tide. */
+  readonly external?: {
+    readonly verifier: ExternalIdentityVerifier;
+    readonly identities: ExternalIdentityStore;
+  };
   /** Fabrique injectable pour les identités Paper anonymes (tests déterministes). */
   readonly paperSessionId?: () => string;
+  /** Liaison déclarative wallet ↔ identité Paper (anti-farming option B). */
+  readonly walletLinks?: WalletLinkStore;
 }
 
 export interface GemVerifyInput {
@@ -62,9 +72,48 @@ function challengeMessage(address: string, nonce: string): string {
 export class AuthService {
   constructor(private readonly deps: AuthServiceDeps) {}
 
+  /**
+   * Enregistre la liaison déclarative wallet ↔ compte Paper du navigateur.
+   * Best-effort : un échec ne bloque jamais le login (le plafond journalier de
+   * mints reste le frein dur ; la liaison borne les flux honnêtes).
+   */
+  async recordWalletLink(address: string, paperUserId: string): Promise<void> {
+    if (this.deps.walletLinks === undefined) return;
+    if (!paperUserId.startsWith("paper:")) return;
+    await this.deps.walletLinks.link(address, paperUserId, Date.now());
+  }
+
   /** Vrai si l'auth Xaman est disponible (clés XUMM câblées). */
   get xamanEnabled(): boolean {
     return this.deps.xaman !== undefined;
+  }
+
+  get externalEnabled(): boolean {
+    return this.deps.external !== undefined;
+  }
+
+  /**
+   * Lie la première connexion externe à la session Paper courante. Aux connexions
+   * suivantes, l'identité externe retrouve le même `paper:*`, donc les mêmes
+   * trades et le même wallet custodial, y compris depuis un autre navigateur.
+   */
+  async loginExternal(
+    accessToken: string,
+    currentUserId: string | null,
+  ): Promise<{ token: string; userId: string; provider: string; email: string | null }> {
+    if (this.deps.external === undefined) throw new AuthError("login email/social non configuré");
+    const identity = await this.deps.external.verifier.verify(accessToken);
+    const proposed = currentUserId?.startsWith("paper:") === true ? currentUserId : null;
+    const linked = await this.deps.external.identities.bindOrResolve(identity, proposed, Date.now());
+    if (linked === null) {
+      throw new AuthError("ouvre d'abord une session Paper Tide avant de créer ce compte");
+    }
+    return {
+      token: this.issueToken(linked.userId),
+      userId: linked.userId,
+      provider: linked.provider,
+      email: linked.email,
+    };
   }
 
   /**

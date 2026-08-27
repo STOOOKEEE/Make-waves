@@ -4,6 +4,7 @@ import { readMasterKey, decryptPrivateKey, type EncryptedPayload } from "@tide/m
 import * as env from "../config/env";
 import { openDatabase } from "../store/sqlite";
 import { SqlitePaperWalletStore } from "../store/sqlite-paper-wallet-store";
+import { SqlitePaperRewardWalletStore } from "../store/sqlite-paper-reward-wallet-store";
 
 const ACCOUNT_DELETE_LEDGER_DELAY = 255;
 
@@ -14,6 +15,15 @@ function readUserId(argv: readonly string[]): string {
     throw new Error("Usage: pnpm --filter @tide/api paper-wallet:reclaim -- --user-id=paper:...");
   }
   return userId;
+}
+
+function readWalletRole(argv: readonly string[]): "starter" | "reward" {
+  const arg = argv.find((value) => value.startsWith("--wallet="));
+  const role = arg?.slice("--wallet=".length).trim() ?? "starter";
+  if (role !== "starter" && role !== "reward") {
+    throw new Error("--wallet doit valoir starter ou reward");
+  }
+  return role;
 }
 
 function assertSuccess(meta: unknown, operation: string): void {
@@ -45,12 +55,25 @@ async function main(): Promise<void> {
     throw new Error("Configuration wallet Paper Mainnet incomplète");
   }
 
-  const userId = readUserId(process.argv.slice(2));
-  const store = new SqlitePaperWalletStore(openDatabase(env.readDbPath()));
+  const args = process.argv.slice(2);
+  const userId = readUserId(args);
+  const walletRole = readWalletRole(args);
+  const db = openDatabase(env.readDbPath());
+  const store = walletRole === "reward"
+    ? new SqlitePaperRewardWalletStore(db)
+    : new SqlitePaperWalletStore(db);
   const record = await store.get(userId);
   if (record === null) throw new Error(`Aucun wallet Paper pour ${userId}`);
-  if (record.status === "reclaimed") {
-    console.log(JSON.stringify({ userId, status: "already_reclaimed" }));
+  if (record.status === "reclaimed" || record.status === "deleted") {
+    if (record.encryptedSeed !== "") {
+      await store.eraseSeed(userId);
+    }
+    console.log(JSON.stringify({
+      userId,
+      walletRole,
+      status: record.status === "reclaimed" ? "already_reclaimed" : "already_deleted",
+      seedErased: true,
+    }));
     return;
   }
 
@@ -60,7 +83,9 @@ async function main(): Promise<void> {
   if (wallet.classicAddress !== record.address) {
     throw new Error("La seed déchiffrée ne correspond pas à l'adresse persistée");
   }
-  const destination = Wallet.fromSeed(runtime.funderSeed).classicAddress;
+  // Les récupérations de fin de campagne vont vers l'adresse froide dédiée,
+  // jamais vers le hot funder qui sert uniquement à financer les wallets.
+  const destination = runtime.recoveryAddress;
   const client = new Client(runtime.serverUrl);
   await client.connect();
   try {
@@ -89,6 +114,7 @@ async function main(): Promise<void> {
       });
       console.log(JSON.stringify({
         userId,
+        walletRole,
         address: wallet.classicAddress,
         status: "nfts_burned_wait_before_delete",
         burnTxHashes: burns,
@@ -115,6 +141,7 @@ async function main(): Promise<void> {
     if (ledger.result.ledger_current_index < eligibleLedger) {
       console.log(JSON.stringify({
         userId,
+        walletRole,
         address: wallet.classicAddress,
         status: "waiting",
         currentLedger: ledger.result.ledger_current_index,
@@ -138,10 +165,12 @@ async function main(): Promise<void> {
       true,
     );
     await store.markReclaimed(userId);
+    await store.eraseSeed(userId);
     const balanceBefore = Number(info.Balance) / 1_000_000;
     const feeXrp = Number(feeDrops) / 1_000_000;
     console.log(JSON.stringify({
       userId,
+      walletRole,
       address: wallet.classicAddress,
       status: "reclaimed",
       destination,

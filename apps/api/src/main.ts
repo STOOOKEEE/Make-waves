@@ -4,6 +4,7 @@ import type { XrplClient } from "@tide/xrpl";
 import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { AuthService } from "./auth/auth-service";
 import { InMemoryChallengeStore } from "./auth/challenge-store";
+import { SupabaseIdentityVerifier } from "./auth/external-auth";
 import type { AuthzResolvers } from "./auth/guard";
 import { createApp } from "./app";
 import * as env from "./config/env";
@@ -38,17 +39,24 @@ import { SqliteAgentStore } from "./store/sqlite-agent-store";
 import { SqliteMandateStore } from "./store/sqlite-mandate-store";
 import { SqliteBadgeStore } from "./store/sqlite-badge-store";
 import { SqlitePaperWalletStore } from "./store/sqlite-paper-wallet-store";
+import { SqlitePaperRewardWalletStore } from "./store/sqlite-paper-reward-wallet-store";
 import { SqliteWeeklyRewardStore } from "./store/sqlite-weekly-reward-store";
 import { SqlitePaperBadgeRewardStore } from "./store/sqlite-paper-badge-reward-store";
 import { SqliteAgentActionsStore } from "./store/sqlite-agent-actions-store";
 import { SqliteAccountStore } from "./store/sqlite-account-store";
 import { SqliteAttributionStore } from "./store/attribution-store";
 import { SqliteCompetitionStore } from "./store/sqlite-competition-store";
+import { SqliteExternalIdentityStore } from "./store/sqlite-external-identity-store";
 import { openDatabase } from "./store/sqlite";
 import { migrateAgentTables } from "./store/migrations/2026-07-05-agent-tables";
 import { migrateBadgeTables } from "./store/migrations/2026-07-13-badge-tables";
 import { migratePaperWalletRewardTables } from "./store/migrations/2026-07-16-paper-wallet-rewards";
 import { removeLegacyDemoAccounts } from "./store/migrations/2026-07-18-remove-demo-data";
+import { migrateExternalIdentityTables } from "./store/migrations/2026-07-22-external-identities";
+import { migrateWalletDeleteColumns } from "./store/migrations/2026-08-27-wallet-delete";
+import { migrateWalletLinkTables } from "./store/migrations/2026-08-27-wallet-links";
+import { SqliteWalletLinkStore } from "./store/sqlite-wallet-link-store";
+import { createFirstTradeExternalGuard } from "./services/first-trade-external-guard";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
 import { isTechnicalTestUserId } from "./simulation/arena-ids";
@@ -280,6 +288,9 @@ async function main(): Promise<void> {
   migrateAgentTables(db);
   migrateBadgeTables(db);
   migratePaperWalletRewardTables(db);
+  migrateExternalIdentityTables(db);
+  migrateWalletDeleteColumns(db);
+  migrateWalletLinkTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
@@ -303,6 +314,7 @@ async function main(): Promise<void> {
   // seed issuer + un nœud XRPL + un SourceTag sont configurés (sinon OFF ; les
   // métadonnées statiques /nft-metadata restent servies dans tous les cas).
   const badgeStore = new SqliteBadgeStore(db);
+  const walletLinks = new SqliteWalletLinkStore(db);
   const issuerSeed = env.readNftIssuerSeed();
   const nftIssuer =
     issuerSeed !== undefined && wsUrl !== undefined && sourceTag !== undefined
@@ -311,6 +323,7 @@ async function main(): Promise<void> {
   const paperWalletRuntime = env.readPaperWalletRuntimeConfig();
   const firstTradeImageUri = env.readFirstTradeImageUri();
   const paperWalletStore = new SqlitePaperWalletStore(db);
+  const paperRewardWalletStore = new SqlitePaperRewardWalletStore(db);
   const paperRewardRuntime =
     paperWalletRuntime === undefined
       ? undefined
@@ -340,6 +353,7 @@ async function main(): Promise<void> {
           }
           const wallets = new PaperWalletService({
             store: paperWalletStore,
+            rewardStore: paperRewardWalletStore,
             gateway,
             masterKeyHex: paperWalletRuntime.masterKeyHex,
             masterKeyId: paperWalletRuntime.masterKeyId,
@@ -385,6 +399,7 @@ async function main(): Promise<void> {
       ? undefined
       : new PaperWalletAdminService({
           store: paperWalletStore,
+          rewardStore: paperRewardWalletStore,
           rewards: paperBadgeRewardStore,
           wallets: paperRewardRuntime.wallets,
           provisioner: paperRewardRuntime.wallets,
@@ -479,11 +494,24 @@ async function main(): Promise<void> {
   // aucun démarrage sans secret de session. L'auth Xaman réutilise l'API XUMM si
   // câblée ; le garde résout la propriété agent/mandat via les stores locaux.
   const CHALLENGE_TTL_MS = 5 * 60_000;
+  const externalAuthConfig = env.readExternalAuthConfig();
   const authService = new AuthService({
     secret: env.readSessionSecret(),
     ttlSeconds: env.readSessionTtlSeconds(),
     challenges: new InMemoryChallengeStore(CHALLENGE_TTL_MS),
+    walletLinks,
     ...(sign !== undefined ? { xaman: sign.api } : {}),
+    ...(externalAuthConfig !== undefined
+      ? {
+          external: {
+            verifier: new SupabaseIdentityVerifier({
+              baseUrl: externalAuthConfig.supabaseUrl,
+              publishableKey: externalAuthConfig.publishableKey,
+            }),
+            identities: new SqliteExternalIdentityStore(db),
+          },
+        }
+      : {}),
   });
   const authResolvers: AuthzResolvers = {
     agentOwner: async (id) => (await agentStore.get(id))?.userId ?? null,
@@ -506,6 +534,23 @@ async function main(): Promise<void> {
           (userId) => authService.issueToken(userId),
         );
 
+  // Option B : le claim First Trade sur wallet connecté est disponible dès que
+  // le funnel Paper Mainnet est câblé ; la garde anti-farming l'encadre.
+  const firstTradeExternalGuard =
+    firstTradeRewards === undefined
+      ? undefined
+      : createFirstTradeExternalGuard({
+          links: walletLinks,
+          firstTradeRows: paperBadgeRewardStore,
+          starters: paperWalletStore,
+          badgeClaims: badgeStore,
+        });
+  // Le runtime Paper possède déjà l'issuer dédié du programme First Trade.
+  // On le réutilise pour les claims sur wallet externe si aucun issuer badge
+  // générique n'est configuré ; sinon l'installation historique garde la
+  // priorité. Même logique pour le SourceTag.
+  const badgeIssuer = nftIssuer ?? paperRewardRuntime?.issuer;
+  const badgeSourceTag = sourceTag ?? paperWalletRuntime?.sourceTag;
   const { app, cache, refreshPrices, privateAdmin } = createApp({
     markets: {
       baseUrl: env.readCexBaseUrl(),
@@ -528,12 +573,15 @@ async function main(): Promise<void> {
     mandateService,
     agentActionsStore,
     agentChatCtx,
-    nftIssuer,
+    nftIssuer: badgeIssuer,
     badgeStore,
     weeklyRewards,
     firstTradeRewards,
+    ...(firstTradeExternalGuard !== undefined
+      ? { firstTradeExternalGuard }
+      : {}),
     paperWallets: paperRewardRuntime?.wallets,
-    sourceTag,
+    sourceTag: badgeSourceTag,
     metadataBaseUrl: env.readPublicBaseUrl(),
     firstTradeImageUri,
     ...(publicAdminToken !== undefined || privateAdminRuntime !== undefined
@@ -542,6 +590,7 @@ async function main(): Promise<void> {
     exposeAdminOnPublicServer: publicAdminToken !== undefined,
     operatorUserIds: env.readOperatorUserIds(),
     paperWalletStore,
+    paperRewardWalletStore,
     simulation: arenaSimulation,
     paperWalletAdmin,
     paperWalletNftInventory: paperWalletAdminGateway,

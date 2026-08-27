@@ -9,6 +9,7 @@ import { useI18n } from "../../i18n/useI18n";
  * court sur succès. */
 
 const props = defineProps<{ client: TideClient; agentId: string }>();
+const emit = defineEmits<{ killed: [agentId: string] }>();
 
 const { t } = useI18n({
   en: {
@@ -29,7 +30,7 @@ const { t } = useI18n({
   },
 });
 
-const { kill } = useAgent(props.client);
+const { kill, error } = useAgent(props.client);
 
 const confirming = ref(false);
 const done = ref(false);
@@ -37,9 +38,11 @@ const submitting = ref(false);
 
 async function confirmKill(): Promise<void> {
   submitting.value = true;
-  await kill(props.agentId);
+  const killed = await kill(props.agentId);
   submitting.value = false;
   confirming.value = false;
+  if (!killed) return;
+  emit("killed", props.agentId);
   done.value = true;
   // Le toast s'efface tout seul après 2.5 s.
   setTimeout(() => {
@@ -54,6 +57,7 @@ async function confirmKill(): Promise<void> {
       ⚠ {{ t('label') }}
     </button>
     <span v-if="done" class="ok">✓ {{ t('done') }}</span>
+    <span v-if="error" class="kill-error">{{ error }}</span>
 
     <div v-if="confirming" class="ov" @click.self="confirming = false">
       <div class="modal">
@@ -97,6 +101,10 @@ async function confirmKill(): Promise<void> {
   color: var(--up, #bff6ce);
   font-size: 12.5px;
   font-weight: 700;
+}
+.kill-error {
+  color: var(--down, #ffb9ac);
+  font-size: 12.5px;
 }
 .ov {
   position: fixed;

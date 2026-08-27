@@ -12,6 +12,7 @@ function rowToWallet(row: unknown): PaperWallet {
     fundingTxHash: value["funding_tx_hash"] === null ? null : String(value["funding_tx_hash"]),
     fundedAt: value["funded_at"] === null ? null : Number(value["funded_at"]),
     createdAt: Number(value["created_at"]),
+    deleteTxHash: value["delete_tx_hash"] === null ? null : String(value["delete_tx_hash"]),
   };
 }
 
@@ -75,6 +76,24 @@ export class SqlitePaperWalletStore implements PaperWalletStore {
       .run(userId);
   }
 
+  async markDeleted(userId: string, deleteTxHash: string): Promise<void> {
+    this.db
+      .prepare(
+        `UPDATE ${this.table} SET status = 'deleted', delete_tx_hash = ? WHERE user_id = ?`,
+      )
+      .run(deleteTxHash, userId);
+  }
+
+  async eraseSeed(userId: string): Promise<boolean> {
+    const result = this.db
+      .prepare(
+        `UPDATE ${this.table} SET encrypted_seed = ''
+         WHERE user_id = ? AND status IN ('deleted', 'reclaimed') AND encrypted_seed <> ''`,
+      )
+      .run(userId);
+    return result.changes === 1;
+  }
+
   async markReclaimed(userId: string): Promise<void> {
     this.db.prepare(`UPDATE ${this.table} SET status = 'reclaimed' WHERE user_id = ?`).run(userId);
   }
@@ -109,7 +128,8 @@ function parseStatus(value: string): PaperWallet["status"] {
     value === "funded" ||
     value === "funding_failed" ||
     value === "funding_in_progress" ||
-    value === "reclaimed"
+    value === "reclaimed" ||
+    value === "deleted"
   ) {
     return value;
   }

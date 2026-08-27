@@ -3,11 +3,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, h, inject, type InjectionKey } from "vue";
 import { mount } from "@vue/test-utils";
 import { TideClient } from "@tide/client";
-import type { AgentActionDto, AgentDto, ApiResponse, ApiTransport, TideClient as TideClientType } from "@tide/client";
+import type {
+  AgentActionDto,
+  AgentDto,
+  ApiResponse,
+  ApiTransport,
+  MandateDto,
+  TideClient as TideClientType,
+} from "@tide/client";
 import { useAgent } from "../src/composables/useAgent";
 import { useSession } from "../src/composables/useSession";
 
 const XRP_ACCOUNT = "rPaperUser11111111111111111111111111111";
+const SECOND_ACCOUNT = "paper:second-agent-owner";
+
+function sessionToken(subject: string): string {
+  const encode = (value: object): string =>
+    globalThis
+      .btoa(JSON.stringify(value))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+    sub: subject,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.signature`;
+}
 
 const CLIENT_KEY: InjectionKey<TideClientType> = Symbol("tide-client");
 
@@ -35,6 +56,17 @@ function clientWith(routes: Record<string, ApiResponse>): TideClient {
       },
     );
   return new TideClient(transport);
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
 }
 
 /** Monte un composant qui appelle `useAgent` avec un client injectable. */
@@ -71,6 +103,7 @@ const baseAgent: AgentDto = {
 const killedAgent: AgentDto = { ...baseAgent, status: "stopped" };
 
 beforeEach(() => {
+  localStorage.clear();
   useSession().disconnectWallet();
 });
 
@@ -100,6 +133,37 @@ describe("useAgent", () => {
     expect(composed.agents.value).toEqual([baseAgent]);
     expect(composed.loading.value).toBe(false);
     expect(composed.error.value).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("ignore une ancienne liste arrivée après un changement d'identité", async () => {
+    const first = deferred<ApiResponse>();
+    const second = deferred<ApiResponse>();
+    const secondAgent: AgentDto = {
+      ...baseAgent,
+      id: "agent-2",
+      userId: SECOND_ACCOUNT,
+      name: "Second owner agent",
+    };
+    const transport: ApiTransport = (request) => {
+      if (request.path.includes(encodeURIComponent(SECOND_ACCOUNT))) {
+        return second.promise;
+      }
+      return first.promise;
+    };
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
+    const wrapper = mountAgent(new TideClient(transport));
+    const composed = ctxOf(wrapper);
+
+    const firstRefresh = composed.refresh();
+    useSession().userId.value = SECOND_ACCOUNT;
+    const secondRefresh = composed.refresh();
+    second.resolve({ status: 200, body: [secondAgent] });
+    expect(await secondRefresh).toBe(true);
+    first.resolve({ status: 200, body: [baseAgent] });
+    expect(await firstRefresh).toBe(false);
+
+    expect(composed.agents.value).toEqual([secondAgent]);
     wrapper.unmount();
   });
 
@@ -163,8 +227,81 @@ describe("useAgent", () => {
     wrapper.unmount();
   });
 
+  it("ignore les anciens détails arrivés après une nouvelle sélection", async () => {
+    useSession().setWallet(XRP_ACCOUNT, "xaman");
+    const actionsA = deferred<ApiResponse>();
+    const actionsB = deferred<ApiResponse>();
+    const mandatesA = deferred<ApiResponse>();
+    const mandatesB = deferred<ApiResponse>();
+    const actionA: AgentActionDto = {
+      id: "action-a",
+      agentId: "agent-a",
+      userId: XRP_ACCOUNT,
+      toolName: "get_market_price",
+      toolParams: "{}",
+      result: "A",
+      error: null,
+      idempotencyKey: null,
+      executedAt: 1,
+    };
+    const actionB: AgentActionDto = { ...actionA, id: "action-b", agentId: "agent-b", result: "B" };
+    const mandateA: MandateDto = {
+      id: "mandate-a",
+      agentId: "agent-a",
+      userId: XRP_ACCOUNT,
+      capitalMax: 100,
+      perteMaxJour: 10,
+      maxTradesPerDay: 5,
+      maxLeverage: 2,
+      pairesAutorisees: ["XRP"],
+      style: null,
+      validUntil: Date.now() + 60_000,
+      signedAt: 1,
+      signature: "sig-a",
+      status: "active",
+    };
+    const mandateB: MandateDto = {
+      ...mandateA,
+      id: "mandate-b",
+      agentId: "agent-b",
+      signature: "sig-b",
+      signedAt: 2,
+    };
+    const transport: ApiTransport = (request) => {
+      if (request.path === "/api/agent-actions?agentId=agent-a") return actionsA.promise;
+      if (request.path === "/api/agent-actions?agentId=agent-b") return actionsB.promise;
+      if (request.path === "/api/mandates?agentId=agent-a") return mandatesA.promise;
+      if (request.path === "/api/mandates?agentId=agent-b") return mandatesB.promise;
+      return Promise.resolve({ status: 404, body: { error: "introuvable" } });
+    };
+    const wrapper = mountAgent(new TideClient(transport));
+    const composed = ctxOf(wrapper);
+
+    const oldLoads = Promise.all([
+      composed.loadActions("agent-a"),
+      composed.loadActiveMandate("agent-a"),
+    ]);
+    composed.clearDetails();
+    const currentLoads = Promise.all([
+      composed.loadActions("agent-b"),
+      composed.loadActiveMandate("agent-b"),
+    ]);
+    actionsB.resolve({ status: 200, body: [actionB] });
+    mandatesB.resolve({ status: 200, body: [mandateB] });
+    expect(await currentLoads).toEqual([true, true]);
+    actionsA.resolve({ status: 200, body: [actionA] });
+    mandatesA.resolve({ status: 200, body: [mandateA] });
+    expect(await oldLoads).toEqual([false, false]);
+
+    expect(composed.actions.value).toEqual([actionB]);
+    expect(composed.activeMandate.value).toEqual(mandateB);
+    wrapper.unmount();
+  });
+
   it("connectSse ouvre EventSource et réagit aux events agent_killed", async () => {
     useSession().setWallet(XRP_ACCOUNT, "xaman");
+    const token = sessionToken(XRP_ACCOUNT);
+    localStorage.setItem("tide.sessionToken", token);
     const instances: FakeEventSource[] = [];
     const FakeCtor = function (url: string) {
       const instance = new FakeEventSource(url);
@@ -187,6 +324,7 @@ describe("useAgent", () => {
     composed.connectSse();
     const es = instances[0];
     expect(es?.url).toContain("/api/agents/events");
+    expect(es?.url).toContain(`token=${encodeURIComponent(token)}`);
 
     // Déclenche le handler interne en simulant un message SSE
     es?.dispatch(JSON.stringify({ type: "agent_killed", agentId: "agent-1" }));

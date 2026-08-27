@@ -1,7 +1,7 @@
-// Polyfill globalThis.localStorage for environments where Node 25+ ships an
-// experimental stub without the Storage interface. Loaded as a vitest
-// setupFile so it runs before any test (and before module imports trigger
-// production code that touches `window.localStorage`).
+// Polyfill globalThis.localStorage / sessionStorage for environments where
+// Node 25+ ships an experimental stub without the Storage interface. Loaded as
+// a vitest setupFile so it runs before any test (and before module imports
+// trigger production code that touches `window.localStorage`).
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -45,23 +45,30 @@ const isWorking = (s: unknown): s is StorageLike =>
   s !== null &&
   typeof (s as { getItem?: unknown }).getItem === "function";
 
-if (!isWorking(globalThis.localStorage)) {
-  const storage = new MemoryStorage();
-  Object.defineProperty(globalThis, "localStorage", {
-    configurable: true,
-    writable: true,
-    value: storage,
-  });
+const makeStorage = (): MemoryStorage => new MemoryStorage();
+
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  if (!isWorking(globalThis[name])) {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      writable: true,
+      value: makeStorage(),
+    });
+  }
 }
 
 interface WindowHost {
-  window?: { localStorage?: unknown } | null;
+  window?: { localStorage?: unknown; sessionStorage?: unknown } | null;
 }
 const win = (globalThis as unknown as WindowHost).window;
-if (win && !isWorking(win.localStorage)) {
-  Object.defineProperty(win, "localStorage", {
-    configurable: true,
-    writable: true,
-    value: globalThis.localStorage,
-  });
+if (win) {
+  for (const name of ["localStorage", "sessionStorage"] as const) {
+    if (!isWorking(win[name])) {
+      Object.defineProperty(win, name, {
+        configurable: true,
+        writable: true,
+        value: globalThis[name],
+      });
+    }
+  }
 }

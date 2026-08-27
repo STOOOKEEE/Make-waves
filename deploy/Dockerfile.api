@@ -13,9 +13,9 @@ COPY . .
 # global n'est donc pas strictement satisfait. On laisse pnpm résoudre.
 RUN pnpm install --filter @tide/api...
 
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV TIDE_DB_PATH=/data/tide.db
+ENV NODE_ENV=production \
+    PORT=3000 \
+    TIDE_DB_PATH=/data/tide.db
 RUN mkdir -p /data && chown node:node /data && chmod 700 /data
 USER node
 WORKDIR /app/apps/api

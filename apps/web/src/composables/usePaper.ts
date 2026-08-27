@@ -7,8 +7,8 @@ import { useSession } from "./useSession";
 
 /** Logique du terminal paper : connexion, soldes, ordres. État réactif Vue. */
 export function usePaper(client: TideClient) {
-  // L'identifiant vit dans la session partagée et correspond à l'adresse XRPL
-  // connectée. Portfolio et compétitions ciblent donc le même wallet comptable.
+  // L'identifiant vit dans la session partagée : identité `paper:*` anonyme par
+  // défaut, ou adresse XRPL authentifiée lorsqu'un wallet est connecté.
   const session = useSession();
   const auth = useAuth(client);
   const { userId } = session;
@@ -24,7 +24,16 @@ export function usePaper(client: TideClient) {
       userId.value = session.liveAddress.value;
       return userId.value;
     }
-    userId.value = await auth.ensurePaperSession();
+    const paperUserId = await auth.ensurePaperSession();
+    // Une connexion wallet peut aboutir pendant le renouvellement Paper. Dans
+    // ce cas, l'adresse + son JWT gagnent : on ne doit jamais réécrire le
+    // `userId` global ni laisser le token Paper actif après le SIWX.
+    if (session.walletConnected.value && session.liveAddress.value.trim() !== "") {
+      auth.restore(session.liveAddress.value);
+      userId.value = session.liveAddress.value;
+      return userId.value;
+    }
+    userId.value = paperUserId;
     return userId.value;
   }
 
@@ -69,6 +78,26 @@ export function usePaper(client: TideClient) {
     }
   }
 
+  async function claimWallet(): Promise<void> {
+    error.value = "";
+    try {
+      walletReward.value = await client.claimPaperWallet(await resolveUserId());
+    } catch (e) {
+      error.value = errorMessage(e);
+      throw e;
+    }
+  }
+
+  async function claimRewardWallet(): Promise<void> {
+    error.value = "";
+    try {
+      walletReward.value = await client.claimPaperRewardWallet(await resolveUserId());
+    } catch (e) {
+      error.value = errorMessage(e);
+      throw e;
+    }
+  }
+
   return {
     userId,
     connected,
@@ -80,5 +109,7 @@ export function usePaper(client: TideClient) {
     connect,
     refresh,
     placeOrder,
+    claimWallet,
+    claimRewardWallet,
   };
 }

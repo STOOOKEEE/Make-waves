@@ -24,6 +24,8 @@ export interface BadgeStore {
     badgeCode: string,
     txHash: string | null,
   ): Promise<void>;
+  /** Nombre de claims d'un badge depuis un timestamp (plafond journalier). */
+  countByCodeSince(badgeCode: string, since: number): Promise<number>;
 }
 
 export class BadgeAlreadyClaimedError extends Error {
@@ -54,6 +56,12 @@ export class InMemoryBadgeStore implements BadgeStore {
       throw new BadgeAlreadyClaimedError(claim.userId, claim.badgeCode);
     }
     this.claims.set(key, claim);
+  }
+
+  async countByCodeSince(badgeCode: string, since: number): Promise<number> {
+    return [...this.claims.values()].filter(
+      (claim) => claim.badgeCode === badgeCode && claim.claimedAt >= since,
+    ).length;
   }
 
   async get(userId: string, badgeCode: string): Promise<BadgeClaim | null> {

@@ -17,6 +17,16 @@ export function migratePaperWalletRewardTables(db: DatabaseSync): void {
       funded_at INTEGER,
       created_at INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS paper_reward_wallets_mainnet (
+      user_id TEXT PRIMARY KEY,
+      address TEXT NOT NULL UNIQUE,
+      encrypted_seed TEXT NOT NULL,
+      master_key_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      funding_tx_hash TEXT,
+      funded_at INTEGER,
+      created_at INTEGER NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS weekly_rewards_mainnet (
       user_id TEXT NOT NULL,
       week TEXT NOT NULL,

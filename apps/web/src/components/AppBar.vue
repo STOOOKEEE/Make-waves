@@ -6,8 +6,10 @@ import type { RoutePath } from "../composables/useRoute";
 import type { TideClient } from "@tide/client";
 import { useSession } from "../composables/useSession";
 import { useWallet } from "../composables/useWallet";
+import { useWalletEntry } from "../composables/useWalletEntry";
 import { fmtNum } from "../data/markets";
 import { useI18n } from "../i18n/useI18n";
+import { useAccountAuth } from "../composables/useAccountAuth";
 
 /* App-bar des écrans app (posée sur le bleu). Wordmark + onglets pills + rang
  * + équité + identité, branchés sur le compte de session (valeurs réelles). */
@@ -19,14 +21,18 @@ const emit = defineEmits<{ navigate: [path: string] }>();
 
 const { userId, connected, liveAddress, walletConnected } = useSession();
 const wallet = useWallet(props.client);
+const walletEntry = useWalletEntry();
+const account = useAccountAuth(props.client);
 
 function shorten(addr: string): string {
   return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
 }
 function onWallet(): void {
-  if (!walletConnected.value) {
-    void wallet.connect();
+  if (walletConnected.value) {
+    wallet.disconnect();
+    return;
   }
+  walletEntry.show();
 }
 
 const { t } = useI18n({
@@ -42,6 +48,7 @@ const { t } = useI18n({
     equity: "Paper equity",
     connect: "Connect",
     connectWallet: "Connect wallet",
+    account: "Log in or create a wallet",
   },
   fr: {
     trading: "Trading",
@@ -55,6 +62,7 @@ const { t } = useI18n({
     equity: "Equity Paper",
     connect: "Se connecter",
     connectWallet: "Connecter le wallet",
+    account: "Se connecter ou créer un wallet",
   },
 });
 
@@ -97,6 +105,9 @@ const rankLabel = computed(() => (rank.value === null ? "—" : "#" + rank.value
 const walletLabel = computed(() =>
   walletConnected.value ? shorten(liveAddress.value) : t("connectWallet"),
 );
+const accountLabel = computed(() =>
+  account.canLogout.value ? account.label.value : t("account"),
+);
 
 const tabs = computed<{ path: RoutePath; label: string }[]>(() => [
   { path: "/dashboard", label: t("trading") },
@@ -135,6 +146,18 @@ function go(path: string): void {
       <div class="v">{{ equityLabel }}</div>
       <div class="l">{{ t("equity") }}</div>
     </div>
-    <button class="wallet" @click="onWallet"><span class="dot"></span> {{ walletLabel }}</button>
+    <button class="wallet account" @click="account.open(null)">
+      {{ accountLabel }}
+    </button>
+    <button class="wallet" :title="walletConnected ? 'Disconnect wallet' : t('connectWallet')" @click="onWallet"><span class="dot"></span> {{ walletLabel }}</button>
   </header>
 </template>
+
+<style scoped>
+.account {
+  max-width: 250px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

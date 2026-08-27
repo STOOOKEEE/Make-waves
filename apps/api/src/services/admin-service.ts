@@ -56,6 +56,7 @@ export interface AdminWalletRow {
   readonly fundingTxHash: string | null;
   readonly fundedAt: number | null;
   readonly createdAt: number | null;
+  readonly deleteTxHash: string | null;
 }
 
 export interface AdminSegmentTotals {
@@ -105,6 +106,7 @@ export interface AdminServiceDeps {
   readonly prizePoolAddress: string | null;
   readonly operatorUserIds: ReadonlySet<string>;
   readonly paperWallets?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
+  readonly paperRewardWallets?: Pick<PaperWalletStore, "list">;
   readonly paperWalletNftInventory?: {
     addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>>;
   };
@@ -273,6 +275,7 @@ export class AdminService {
         fundingTxHash: null,
         fundedAt: null,
         createdAt: null,
+        deleteTxHash: null,
       }));
     const paperWallets = await this.deps.paperWallets?.list() ?? [];
     const paperWalletByUser = new Map(paperWallets.map((wallet) => [wallet.userId, wallet]));
@@ -290,6 +293,7 @@ export class AdminService {
         fundingTxHash: wallet?.fundingTxHash ?? null,
         fundedAt: wallet?.fundedAt ?? null,
         createdAt: wallet?.createdAt ?? null,
+        deleteTxHash: wallet?.deleteTxHash ?? null,
       };
     }));
     wallets.push(...paperWallets.filter((wallet) => !userIds.has(wallet.userId)).map((wallet) => ({
@@ -303,6 +307,7 @@ export class AdminService {
       fundingTxHash: wallet.fundingTxHash,
       fundedAt: wallet.fundedAt,
       createdAt: wallet.createdAt,
+      deleteTxHash: wallet.deleteTxHash,
     })));
     if (this.deps.prizePoolAddress !== null) {
       wallets.push({
@@ -316,6 +321,7 @@ export class AdminService {
         fundingTxHash: null,
         fundedAt: null,
         createdAt: null,
+        deleteTxHash: null,
       });
     }
     return wallets;
@@ -351,11 +357,15 @@ export class AdminService {
   ): Promise<number | null> {
     const reader = this.deps.paperWalletNftInventory;
     if (reader === undefined) return null;
-    const addresses = wallets.flatMap((wallet) =>
+    const starterAddresses = wallets.flatMap((wallet) =>
       wallet.kind === "paper" && wallet.status === "funded" && wallet.address !== null
         ? [wallet.address]
         : [],
     );
+    const rewardAddresses = (await this.deps.paperRewardWallets?.list() ?? [])
+      .filter((wallet) => wallet.status === "funded")
+      .map((wallet) => wallet.address);
+    const addresses = [...new Set([...starterAddresses, ...rewardAddresses])];
     if (addresses.length === 0) return 0;
     try {
       return (await reader.addressesWithNfts(addresses)).size;

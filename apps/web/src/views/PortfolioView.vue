@@ -16,7 +16,7 @@ import { errorMessage } from "../composables/messages";
 import { useI18n } from "../i18n/useI18n";
 
 const props = defineProps<{ client: TideClient }>();
-const { userId, connected } = useSession();
+const { userId, connected, walletConnected } = useSession();
 const {
   badges: badgeList,
   claiming: badgeClaiming,
@@ -33,8 +33,12 @@ const wallet = useWallet(props.client);
 
 /** Réclame un badge : mint serveur → le user signe l'accept (wallet = userId). */
 function claimBadge(code: string): void {
-  void runClaim(userId.value, code, userId.value, (acceptTx) =>
-    wallet.signBadgeAccept(acceptTx),
+  void runClaim(userId.value, code, userId.value, ({ acceptTx }) =>
+    wallet.signBadgeAccept(acceptTx, {
+      userId: userId.value,
+      code,
+      walletAddress: userId.value,
+    }),
   );
 }
 
@@ -86,6 +90,7 @@ const { t } = useI18n({
     badgeClaimed: "On-chain ✓",
     badgePending: "Pending",
     badgeLocked: "Locked",
+    badgeInTerminal: "Claim in terminal",
     weeklyRewards: "Weekly trade proofs",
     weeklySubtitle: "One claimable NFT for every active Paper trading week.",
     weeklyClaim: "Claim weekly NFT",
@@ -134,6 +139,7 @@ const { t } = useI18n({
     badgeClaimed: "On-chain ✓",
     badgePending: "En attente",
     badgeLocked: "À débloquer",
+    badgeInTerminal: "À réclamer dans le terminal",
     weeklyRewards: "Preuves de trade hebdomadaires",
     weeklySubtitle: "Un NFT claimable pour chaque semaine Paper active.",
     weeklyClaim: "Claim le NFT hebdo",
@@ -318,6 +324,9 @@ onMounted(() => {
           <div class="bact">
             <span v-if="b.status === 'claimed'" class="bpill ok">{{ t("badgeClaimed") }}</span>
             <span v-else-if="b.status === 'offer_pending'" class="bpill">{{ t("badgePending") }}</span>
+            <span v-else-if="b.earned && b.claimMode === 'paper_reward' && !walletConnected" class="bpill">
+              {{ t("badgeInTerminal") }}
+            </span>
             <button
               v-else-if="b.earned"
               class="bbtn"

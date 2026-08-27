@@ -8,7 +8,15 @@ const NETWORK_ERROR: Record<Locale, string> = {
 
 /** Message d'erreur exploitable pour l'UI (erreur API typée ou réseau). */
 export function errorMessage(error: unknown): string {
-  return error instanceof TideApiError
-    ? error.message
-    : NETWORK_ERROR[locale.value];
+  // Vitest/Vite peuvent charger deux instances du package workspace : le
+  // contrôle structurel conserve alors le vrai message API même si
+  // `instanceof` (et parfois le realm de `Error`) traverse cette frontière.
+  if (error instanceof TideApiError) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const record = error as Record<string, unknown>;
+    if (record["name"] === "TideApiError" && typeof record["message"] === "string") {
+      return record["message"];
+    }
+  }
+  return NETWORK_ERROR[locale.value];
 }

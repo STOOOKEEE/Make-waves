@@ -3,8 +3,12 @@ import { defineAsyncComponent } from "vue";
 import { createClient } from "./lib/client";
 import { useRoute } from "./composables/useRoute";
 import { useAuth } from "./composables/useAuth";
+import { useSession } from "./composables/useSession";
 import AppBar from "./components/AppBar.vue";
 import SignModal from "./components/SignModal.vue";
+import AccountModal from "./components/AccountModal.vue";
+import WalletEntryModal from "./components/WalletEntryModal.vue";
+import { bootstrapAccountAuth } from "./composables/useAccountAuth";
 import LandingView from "./views/LandingView.vue";
 import DashboardView from "./views/DashboardView.vue";
 import PortfolioView from "./views/PortfolioView.vue";
@@ -23,8 +27,16 @@ const LocalAdminView = import.meta.env.DEV
   : null;
 
 const client = createClient();
-// Réinjecte un éventuel token de session persisté dès le démarrage (avant tout appel API).
-useAuth(client).restore();
+bootstrapAccountAuth(client);
+// Réinjecte une session cohérente avant tout appel API. Une adresse wallet
+// persistée sans JWT wallet valide ne doit jamais rester affichée comme
+// « connectée » : on revient alors à l'identité Paper et la reconnexion reste
+// accessible depuis la barre d'app.
+const session = useSession();
+const restoredSession = useAuth(client).restore(session.liveAddress.value);
+if (session.walletConnected.value && restoredSession !== "wallet") {
+  session.disconnectWallet();
+}
 const { current, competitionId, routeId, navigate } = useRoute();
 </script>
 
@@ -68,6 +80,8 @@ const { current, competitionId, routeId, navigate } = useRoute();
   </main>
 
   <SignModal :client="client" />
+  <WalletEntryModal :client="client" />
+  <AccountModal :client="client" @logged-out="navigate('/landing')" />
 </template>
 
 <style scoped>

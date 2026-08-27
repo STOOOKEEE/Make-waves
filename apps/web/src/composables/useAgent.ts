@@ -2,7 +2,7 @@ import { ref, onUnmounted } from "vue";
 import type { AgentActionDto, AgentDto, MandateDto, TideClient } from "@tide/client";
 import { errorMessage } from "./messages";
 import { useSession } from "./useSession";
-import { readSessionToken } from "./useAuth";
+import { readTokenForUser } from "./useAuth";
 import { API_BASE } from "../lib/client";
 
 /** Borne haute du buffer d'actions en mémoire (évite la croissance non bornée). */
@@ -17,23 +17,40 @@ export function useAgent(client: TideClient) {
   const loading = ref(false);
   const error = ref<string | null>(null);
   let events: EventSource | null = null;
+  let refreshRequest = 0;
+  let mandateRequest = 0;
+  let actionsRequest = 0;
 
-  async function refresh(): Promise<void> {
-    if (!userId.value) return;
+  async function refresh(): Promise<boolean> {
+    if (!userId.value) return false;
+    const requestedUserId = userId.value;
+    const request = ++refreshRequest;
     error.value = null;
     loading.value = true;
     try {
-      agents.value = await client.agents(userId.value);
+      const next = await client.agents(requestedUserId);
+      if (request !== refreshRequest || userId.value !== requestedUserId) {
+        return false;
+      }
+      agents.value = next;
+      return true;
     } catch (e) {
-      error.value = errorMessage(e);
+      if (request === refreshRequest && userId.value === requestedUserId) {
+        error.value = errorMessage(e);
+      }
+      return false;
     } finally {
-      loading.value = false;
+      if (request === refreshRequest) {
+        loading.value = false;
+      }
     }
   }
 
   /** Récupère le mandat ACTIF (signé, non expiré) de l'agent, sinon `null`. */
-  async function loadActiveMandate(agentId: string): Promise<void> {
-    if (!userId.value) return;
+  async function loadActiveMandate(agentId: string): Promise<boolean> {
+    if (!userId.value) return false;
+    const requestedUserId = userId.value;
+    const request = ++mandateRequest;
     try {
       const list = await client.mandates(agentId);
       const now = Date.now();
@@ -41,37 +58,80 @@ export function useAgent(client: TideClient) {
       const actives = list
         .filter((m) => m.status === "active" && m.validUntil > now)
         .sort((a, b) => (b.signedAt ?? 0) - (a.signedAt ?? 0));
-      activeMandate.value = actives[0] ?? null;
+      if (request === mandateRequest && userId.value === requestedUserId) {
+        activeMandate.value = actives[0] ?? null;
+        return true;
+      }
+      return false;
     } catch (e) {
-      error.value = errorMessage(e);
+      if (request === mandateRequest && userId.value === requestedUserId) {
+        error.value = errorMessage(e);
+      }
+      return false;
     }
   }
 
-  async function loadActions(agentId: string): Promise<void> {
-    if (!userId.value) return;
-    error.value = null;
+  async function loadActions(agentId: string): Promise<boolean> {
+    if (!userId.value) return false;
+    const requestedUserId = userId.value;
+    const request = ++actionsRequest;
     try {
-      actions.value = await client.agentActions(agentId);
+      const next = await client.agentActions(agentId);
+      if (request === actionsRequest && userId.value === requestedUserId) {
+        actions.value = next;
+        return true;
+      }
+      return false;
     } catch (e) {
-      error.value = errorMessage(e);
+      if (request === actionsRequest && userId.value === requestedUserId) {
+        error.value = errorMessage(e);
+      }
+      return false;
     }
   }
 
-  async function kill(agentId: string): Promise<void> {
-    if (!userId.value) return;
+  /** Invalide les lectures de détail en vol lors d'un changement d'agent. */
+  function clearMandate(): void {
+    mandateRequest += 1;
+    activeMandate.value = null;
+  }
+
+  function clearActions(): void {
+    actionsRequest += 1;
+    actions.value = [];
+  }
+
+  function clearDetails(): void {
+    clearMandate();
+    clearActions();
+  }
+
+  /** Invalide tout l'état en vol lors d'un changement d'identité. */
+  function clearState(): void {
+    refreshRequest += 1;
+    loading.value = false;
+    error.value = null;
+    agents.value = [];
+    clearDetails();
+  }
+
+  async function kill(agentId: string): Promise<boolean> {
+    if (!userId.value) return false;
     error.value = null;
     try {
       await client.killAgent(agentId);
       await refresh();
+      return true;
     } catch (e) {
       error.value = errorMessage(e);
+      return false;
     }
   }
 
   function connectSse(): void {
     if (events) return;
     // EventSource ne pose pas de header → le token de session passe en query.
-    const token = readSessionToken();
+    const token = readTokenForUser(userId.value);
     const url = token
       ? `${API_BASE}/api/agents/events?token=${encodeURIComponent(token)}`
       : `${API_BASE}/api/agents/events`;
@@ -113,6 +173,9 @@ export function useAgent(client: TideClient) {
     refresh,
     loadActiveMandate,
     loadActions,
+    clearMandate,
+    clearDetails,
+    clearState,
     kill,
     connectSse,
     disconnectSse,

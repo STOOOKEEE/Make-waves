@@ -3,7 +3,14 @@ import { TideApiError } from "@tide/client";
 import type { ExecSide, SignRequest, TideClient } from "@tide/client";
 import { getAddress, getPublicKey, isInstalled, signMessage, submitTransaction } from "@gemwallet/api";
 import type { BadgeAcceptTx } from "@tide/client";
+import type { BadgeClaimContext } from "./useBadges";
 import { useSession } from "./useSession";
+
+/** Contexte de claim nécessaire à la signature (sans l'accept, déjà passé). */
+type BadgeClaimSignCtx = Pick<
+  BadgeClaimContext,
+  "userId" | "code" | "walletAddress"
+>;
 import { useAuth } from "./useAuth";
 import { errorMessage } from "./messages";
 
@@ -20,15 +27,37 @@ const title = ref("");
 const signRequest = ref<SignRequest | null>(null);
 const error = ref("");
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
 let pollCount = 0;
+let flowGeneration = 0;
 
 function stopPolling(): void {
   if (pollTimer !== undefined) {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = undefined;
   }
   pollCount = 0;
+}
+
+/** Invalide tout retour asynchrone appartenant au flux de signature précédent. */
+function beginFlow(): number {
+  stopPolling();
+  flowGeneration += 1;
+  return flowGeneration;
+}
+
+function isCurrentFlow(generation: number): boolean {
+  return generation === flowGeneration;
+}
+
+/** Identité Paper anonyme du navigateur, pour la liaison déclarative anti-farming. */
+function currentPaperUserId(): string | undefined {
+  try {
+    const value = localStorage.getItem("tide.paperUserId");
+    return value !== null && value.startsWith("paper:") ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -40,15 +69,16 @@ export function useWallet(client: TideClient) {
   const auth = useAuth(client);
 
   function close(): void {
+    beginFlow();
     open.value = false;
     phase.value = "idle";
     signRequest.value = null;
     error.value = "";
-    stopPolling();
   }
 
   /** Ouvre le choix du wallet (Xaman / GemWallet). */
   function connect(): void {
+    beginFlow();
     title.value = "Connect wallet";
     error.value = "";
     signRequest.value = null;
@@ -58,6 +88,7 @@ export function useWallet(client: TideClient) {
 
   /** Déconnexion : retire le wallet ET purge le token de session. */
   function disconnect(): void {
+    beginFlow();
     session.disconnectWallet();
     auth.clear();
   }
@@ -65,9 +96,16 @@ export function useWallet(client: TideClient) {
   // ---- Xaman (QR + polling) ----
 
   async function poll(
+    generation: number,
     uuid: string,
-    onSigned: (account: string | null, uuid: string, txid: string | null) => void,
+    onSigned: (
+      account: string | null,
+      uuid: string,
+      txid: string | null,
+      isCurrent: () => boolean,
+    ) => void | Promise<void>,
   ): Promise<void> {
+    if (!isCurrentFlow(generation)) return;
     pollCount += 1;
     if (pollCount > POLL_MAX) {
       stopPolling();
@@ -75,38 +113,67 @@ export function useWallet(client: TideClient) {
     }
     try {
       const status = await client.signStatus(uuid);
+      if (!isCurrentFlow(generation)) return;
       if (!status.resolved) {
+        schedulePoll(generation, uuid, onSigned);
         return;
       }
       stopPolling();
       if (status.signed) {
+        await onSigned(
+          status.account,
+          uuid,
+          status.txid,
+          () => isCurrentFlow(generation),
+        );
+        if (!isCurrentFlow(generation)) return;
         phase.value = "signed";
-        onSigned(status.account, uuid, status.txid);
       } else {
         phase.value = "rejected";
       }
     } catch (e) {
+      if (!isCurrentFlow(generation)) return;
       stopPolling();
       phase.value = "error";
       error.value = errorMessage(e);
     }
   }
 
+  function schedulePoll(
+    generation: number,
+    uuid: string,
+    onSigned: (
+      account: string | null,
+      uuid: string,
+      txid: string | null,
+      isCurrent: () => boolean,
+    ) => void | Promise<void>,
+  ): void {
+    if (!isCurrentFlow(generation)) return;
+    pollTimer = setTimeout(() => void poll(generation, uuid, onSigned), POLL_MS);
+  }
+
   async function startXaman(
     titleText: string,
     create: () => Promise<SignRequest>,
-    onSigned: (account: string | null, uuid: string, txid: string | null) => void,
+    onSigned: (
+      account: string | null,
+      uuid: string,
+      txid: string | null,
+      isCurrent: () => boolean,
+    ) => void | Promise<void>,
   ): Promise<void> {
+    const generation = beginFlow();
     title.value = titleText;
     error.value = "";
     phase.value = "pending";
     signRequest.value = null;
     open.value = true;
-    stopPolling();
     let request: SignRequest;
     try {
       request = await create();
     } catch (e) {
+      if (!isCurrentFlow(generation)) return;
       phase.value = "error";
       error.value =
         e instanceof TideApiError && e.status === HTTP_NOT_FOUND
@@ -114,23 +181,31 @@ export function useWallet(client: TideClient) {
           : errorMessage(e);
       return;
     }
+    if (!isCurrentFlow(generation)) return;
     signRequest.value = request;
     pollCount = 0;
-    pollTimer = setInterval(() => void poll(request.uuid, onSigned), POLL_MS);
+    schedulePoll(generation, request.uuid, onSigned);
   }
 
   async function chooseXaman(): Promise<void> {
     await startXaman(
       "Connect with Xaman",
       () => client.connectWallet(),
-      (account, uuid) => {
-        if (account !== null) {
-          session.setWallet(account, "xaman");
-          // Le payload SignIn (uuid) prouve la possession → échange contre un JWT.
-          void auth.loginXaman(uuid).catch((e) => {
-            error.value = errorMessage(e);
-          });
+      async (account, uuid, _txid, isCurrent) => {
+        if (account === null) {
+          throw new Error("Xaman n'a renvoyé aucun compte signé.");
         }
+        // Le wallet ne devient visible qu'après l'échange réussi contre un JWT
+        // portant la même adresse. Cela supprime la fenêtre 401/403 du parcours
+        // Agent (et évite de persister une fausse connexion si l'auth échoue).
+        const authenticated = await auth.loginXaman(
+          uuid,
+          account,
+          isCurrent,
+          currentPaperUserId(),
+        );
+        if (!authenticated || !isCurrent()) return;
+        session.setWallet(account, "xaman");
       },
     );
   }
@@ -138,24 +213,30 @@ export function useWallet(client: TideClient) {
   // ---- GemWallet (extension) ----
 
   async function chooseGem(): Promise<void> {
+    const generation = beginFlow();
     title.value = "Connect with GemWallet";
     error.value = "";
     phase.value = "pending";
+    signRequest.value = null;
+    open.value = true;
     try {
       const installed = await isInstalled();
+      if (!isCurrentFlow(generation)) return;
       if (!installed.result.isInstalled) {
         phase.value = "error";
         error.value = "GemWallet n'est pas installé (extension navigateur).";
         return;
       }
       const response = await getAddress();
+      if (!isCurrentFlow(generation)) return;
       const address = response.result?.address;
       if (address === undefined) {
         phase.value = "rejected";
         return;
       }
       // Signe le challenge serveur pour prouver le contrôle de l'adresse (SIWX).
-      await auth.loginGem(address, async (message) => {
+      const linkPaperUserId = currentPaperUserId();
+      const authenticated = await auth.loginGem(address, async (message) => {
         const signed = await signMessage(message);
         const pub = await getPublicKey();
         const signature = signed.result?.signedMessage;
@@ -164,10 +245,12 @@ export function useWallet(client: TideClient) {
           throw new Error("Signature GemWallet incomplète.");
         }
         return { signature, publicKey };
-      });
+      }, () => isCurrentFlow(generation), linkPaperUserId);
+      if (!authenticated || !isCurrentFlow(generation)) return;
       session.setWallet(address, "gem");
       phase.value = "signed";
     } catch (e) {
+      if (!isCurrentFlow(generation)) return;
       phase.value = "error";
       error.value = errorMessage(e);
     }
@@ -185,21 +268,24 @@ export function useWallet(client: TideClient) {
     amountBase: number,
     slippageTolerance: number,
   ): Promise<void> {
+    const generation = beginFlow();
     title.value = "Live swap";
     error.value = "";
     signRequest.value = null;
     phase.value = "pending";
     open.value = true;
-    stopPolling();
     try {
       const plan = await client.planLiveOffer(account, base, side, amountBase, slippageTolerance);
+      if (!isCurrentFlow(generation)) return;
       // GemWallet attend un objet de transaction xrpl ; le plan serveur en est un
       // (OfferCreate taggé, montants bornés). Cast localisé via unknown.
       const result = await submitTransaction({
         transaction: plan.offer as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
       });
+      if (!isCurrentFlow(generation)) return;
       phase.value = result.result?.hash !== undefined ? "signed" : "rejected";
     } catch (e) {
+      if (!isCurrentFlow(generation)) return;
       phase.value = "error";
       error.value = errorMessage(e);
     }
@@ -214,6 +300,7 @@ export function useWallet(client: TideClient) {
   ): Promise<void> {
     const account = session.liveAddress.value;
     if (account === "") {
+      beginFlow();
       title.value = "Live swap";
       phase.value = "error";
       error.value = "Connecte d'abord ton wallet.";
@@ -237,6 +324,7 @@ export function useWallet(client: TideClient) {
     competitionId: string,
     account: string,
   ): Promise<void> {
+    const generation = beginFlow();
     title.value = "Competition entry";
     error.value = "";
     signRequest.value = null;
@@ -244,17 +332,21 @@ export function useWallet(client: TideClient) {
     open.value = true;
     try {
       const payment = await client.competitionEntryPayment(competitionId, account);
+      if (!isCurrentFlow(generation)) return;
       const result = await submitTransaction({
         transaction: payment as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
       });
+      if (!isCurrentFlow(generation)) return;
       const hash = result.result?.hash;
       if (hash === undefined) {
         phase.value = "rejected";
         return;
       }
       await client.joinCompetition(competitionId, account, hash);
+      if (!isCurrentFlow(generation)) return;
       phase.value = "signed";
     } catch (e) {
+      if (!isCurrentFlow(generation)) return;
       phase.value = "error";
       error.value = errorMessage(e);
     }
@@ -274,34 +366,112 @@ export function useWallet(client: TideClient) {
     await startXaman(
       "Competition entry",
       () => client.signCompetitionEntry(competitionId, account),
-      (signedAccount, _uuid, txid) => {
+      async (signedAccount, _uuid, txid, isCurrent) => {
         if (signedAccount !== account || txid === null) {
-          phase.value = "error";
-          error.value = "Le ticket signé ne correspond pas au wallet connecté.";
-          return;
+          throw new Error("Le ticket signé ne correspond pas au wallet connecté.");
         }
+        if (!isCurrent()) return;
         // Le nœud peut mettre quelques secondes à rendre la transaction via
         // `tx`; l'erreur reste visible et un refresh permet de réessayer.
-        void client
-          .joinCompetition(competitionId, account, txid)
-          .then(() => {
-            phase.value = "signed";
-          })
-          .catch((e: unknown) => {
-            phase.value = "error";
-            error.value = errorMessage(e);
-          });
+        await client.joinCompetition(competitionId, account, txid);
       },
     );
   }
 
   // ---- Claim de badge NFT ----
   // Le serveur a minté le badge + créé une sell-offer à 0 vers le wallet du user.
-  // Ici le user signe l'`NFTokenAcceptOffer` pour recevoir le NFT (preuve humaine).
+  // Ici le user signe l'`NFTokenAcceptOffer` pour recevoir le NFT (preuve humaine) :
+  // - GemWallet : l'accept construit par le serveur (déjà taggé) est soumis tel quel ;
+  // - Xaman : le serveur crée le payload XUMM de l'accept, le user le signe dans
+  //   l'app mobile, on suit la signature par polling `/sign/status/:uuid`.
+
+  function pollBadgeAccept(
+    generation: number,
+    uuid: string,
+    resolve: (txid: string | null) => void,
+  ): void {
+    if (!isCurrentFlow(generation)) {
+      resolve(null);
+      return;
+    }
+    pollCount += 1;
+    if (pollCount > POLL_MAX) {
+      stopPolling();
+      resolve(null);
+      return;
+    }
+    void client
+      .signStatus(uuid)
+      .then((status) => {
+        if (!isCurrentFlow(generation)) {
+          resolve(null);
+          return;
+        }
+        if (!status.resolved) {
+          pollTimer = setTimeout(
+            () => pollBadgeAccept(generation, uuid, resolve),
+            POLL_MS,
+          );
+          return;
+        }
+        stopPolling();
+        if (status.signed) {
+          phase.value = "signed";
+          resolve(status.txid);
+        } else {
+          phase.value = "rejected";
+          resolve(null);
+        }
+      })
+      .catch((e) => {
+        if (!isCurrentFlow(generation)) {
+          resolve(null);
+          return;
+        }
+        stopPolling();
+        phase.value = "error";
+        error.value = errorMessage(e);
+        resolve(null);
+      });
+  }
+
+  async function badgeAcceptXaman(
+    generation: number,
+    claim: BadgeClaimSignCtx,
+  ): Promise<string | null> {
+    title.value = "Claim badge";
+    error.value = "";
+    signRequest.value = null;
+    phase.value = "pending";
+    open.value = true;
+    let request: SignRequest;
+    try {
+      // Le serveur fait le claim (mint + sell-offer, repris si déjà offer_pending)
+      // puis crée le payload Xaman de l'accept taggé.
+      request = await client.signBadgeAcceptXaman(
+        claim.userId,
+        claim.code,
+        claim.walletAddress,
+      );
+    } catch (e) {
+      if (!isCurrentFlow(generation)) return null;
+      phase.value = "error";
+      error.value = errorMessage(e);
+      return null;
+    }
+    if (!isCurrentFlow(generation)) return null;
+    signRequest.value = request;
+    pollCount = 0;
+    return await new Promise<string | null>((resolve) => {
+      pollBadgeAccept(generation, request.uuid, resolve);
+    });
+  }
 
   async function signBadgeAccept(
     acceptTx: BadgeAcceptTx,
+    claim: BadgeClaimSignCtx,
   ): Promise<string | null> {
+    const generation = beginFlow();
     const account = session.liveAddress.value;
     if (account === "") {
       title.value = "Claim badge";
@@ -311,12 +481,7 @@ export function useWallet(client: TideClient) {
       return null;
     }
     if (session.walletType.value !== "gem") {
-      // Xaman : l'accept de badge n'est pas encore câblé (route /sign/badge-accept).
-      title.value = "Claim badge";
-      phase.value = "error";
-      error.value = "Claim on-chain via GemWallet pour l'instant.";
-      open.value = true;
-      return null;
+      return badgeAcceptXaman(generation, claim);
     }
     title.value = "Claim badge";
     error.value = "";
@@ -329,10 +494,12 @@ export function useWallet(client: TideClient) {
       const result = await submitTransaction({
         transaction: acceptTx as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
       });
+      if (!isCurrentFlow(generation)) return null;
       const hash = result.result?.hash ?? null;
       phase.value = hash !== null ? "signed" : "rejected";
       return hash;
     } catch (e) {
+      if (!isCurrentFlow(generation)) return null;
       phase.value = "error";
       error.value = errorMessage(e);
       return null;

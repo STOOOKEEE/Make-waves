@@ -128,6 +128,11 @@ export interface PaperSessionDto {
   readonly userId: string;
 }
 
+export interface ExternalSessionDto extends PaperSessionDto {
+  readonly provider: string;
+  readonly email: string | null;
+}
+
 /** Config publique pour la signature côté client (GemWallet). */
 export interface PublicConfig {
   /** SourceTag d'attribution (entier public) ; null si Live non configuré. */
@@ -263,6 +268,7 @@ export interface BadgeDto {
   readonly earned: boolean;
   readonly status: BadgeClaimStatus;
   readonly nftTokenId: string | null;
+  readonly claimMode: "external_wallet" | "paper_reward";
 }
 
 /** Transaction `NFTokenAcceptOffer` taggée, prête à signer côté user. */
@@ -277,6 +283,12 @@ export interface ClaimBadgeResult {
   readonly sellOfferId: string;
   readonly nftTokenId: string;
   readonly acceptTx: BadgeAcceptTx;
+}
+
+/** Payload Xaman d'un claim badge : requête de signature + identifiants d'offre. */
+export interface BadgeAcceptSignRequest extends SignRequest {
+  readonly sellOfferId: string;
+  readonly nftTokenId: string;
 }
 
 /** Récompense NFT gagnée après au moins un trade Paper dans la semaine UTC. */
@@ -297,8 +309,21 @@ export interface PaperWalletRewardDto {
     | "funding_in_progress"
     | "funded"
     | "funding_failed"
-    | "reclaimed";
+    | "reclaimed"
+    | "deleted";
   readonly fundingTxHash: string | null;
+  readonly walletDeleteTxHash: string | null;
+  readonly rewardWalletAddress: string | null;
+  readonly rewardWalletStatus:
+    | "not_created"
+    | "pending_funding"
+    | "funding_in_progress"
+    | "funded"
+    | "funding_failed"
+    | "reclaimed"
+    | "deleted";
+  readonly rewardFundingTxHash: string | null;
+  readonly rewardFundingSourceAddress: string | null;
   readonly rewardStatus: "not_earned" | "eligible" | "minting" | "offer_pending" | "claimed";
   readonly nftTokenId: string | null;
   readonly claimTxHash: string | null;
@@ -350,6 +375,7 @@ export interface AdminWalletDto {
     | "funded"
     | "funding_failed"
     | "reclaimed"
+    | "deleted"
     | null;
   readonly network: "mainnet" | null;
   readonly fundingTxHash: string | null;
@@ -551,18 +577,42 @@ export class TideClient {
     return this.call({ path: "/auth/paper/refresh", method: "POST" }, 200);
   }
 
-  /** Vérifie une preuve GemWallet et récupère un token de session. */
-  async authVerifyGem(proof: GemProof): Promise<AuthTokenDto> {
+  /** Échange un token email/OAuth vérifié contre la session persistante Tide. */
+  async authExternal(accessToken: string): Promise<ExternalSessionDto> {
     return this.call(
-      { path: "/auth/verify", method: "POST", body: { wallet: "gem", ...proof } },
+      { path: "/auth/external", method: "POST", body: { accessToken } },
+      200,
+    );
+  }
+
+  /** Vérifie une preuve GemWallet et récupère un token de session. */
+  async authVerifyGem(proof: GemProof, linkPaperUserId?: string): Promise<AuthTokenDto> {
+    return this.call(
+      {
+        path: "/auth/verify",
+        method: "POST",
+        body: {
+          wallet: "gem",
+          ...proof,
+          ...(linkPaperUserId !== undefined ? { linkPaperUserId } : {}),
+        },
+      },
       200,
     );
   }
 
   /** Vérifie un payload Xaman SignIn (par uuid) et récupère un token de session. */
-  async authVerifyXaman(uuid: string): Promise<AuthTokenDto> {
+  async authVerifyXaman(uuid: string, linkPaperUserId?: string): Promise<AuthTokenDto> {
     return this.call(
-      { path: "/auth/verify", method: "POST", body: { wallet: "xaman", uuid } },
+      {
+        path: "/auth/verify",
+        method: "POST",
+        body: {
+          wallet: "xaman",
+          uuid,
+          ...(linkPaperUserId !== undefined ? { linkPaperUserId } : {}),
+        },
+      },
       200,
     );
   }
@@ -952,6 +1002,22 @@ export class TideClient {
     );
   }
 
+  /** Reprend un claim NFT offer_pending sans re-minter le badge. */
+  async resumeBadgeClaim(
+    userId: string,
+    code: string,
+    walletAddress: string,
+  ): Promise<ClaimBadgeResult> {
+    return this.call(
+      {
+        path: path("badges", code, "claim", "resume"),
+        method: "POST",
+        body: { userId, walletAddress },
+      },
+      200,
+    );
+  }
+
   /** Confirme le claim (le user a signé l'accept) → statut claimed. */
   async confirmBadgeClaim(
     userId: string,
@@ -968,6 +1034,26 @@ export class TideClient {
     );
   }
 
+  /**
+   * Claim de badge via Xaman : le serveur fait le claim (mint + sell-offer, ou
+   * reprise d'une offre `offer_pending`) puis crée le payload Xaman de l'accept
+   * (déjà taggé) à signer dans l'app mobile.
+   */
+  async signBadgeAcceptXaman(
+    userId: string,
+    code: string,
+    walletAddress: string,
+  ): Promise<BadgeAcceptSignRequest> {
+    return this.call(
+      {
+        path: path("sign", "badge-accept", code),
+        method: "POST",
+        body: { userId, walletAddress },
+      },
+      201,
+    );
+  }
+
   /** Récompenses hebdomadaires éligibles du compte Paper. */
   async weeklyRewards(userId: string): Promise<WeeklyRewardDto[]> {
     return this.call(
@@ -980,6 +1066,22 @@ export class TideClient {
   async paperWalletStatus(userId: string): Promise<PaperWalletRewardDto> {
     return this.call(
       { path: path("accounts", userId, "paper-wallet"), method: "GET" },
+      200,
+    );
+  }
+
+  /** Claim explicite du premier compte XRPL, financé par Tide. */
+  async claimPaperWallet(userId: string): Promise<PaperWalletRewardDto> {
+    return this.call(
+      { path: path("accounts", userId, "paper-wallet", "claim"), method: "POST" },
+      200,
+    );
+  }
+
+  /** Claim du second compte + NFT, débloqué par le premier trade Paper. */
+  async claimPaperRewardWallet(userId: string): Promise<PaperWalletRewardDto> {
+    return this.call(
+      { path: path("accounts", userId, "paper-wallet", "reward", "claim"), method: "POST" },
       200,
     );
   }

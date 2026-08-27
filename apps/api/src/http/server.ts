@@ -63,6 +63,7 @@ import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
+import { PaperWalletUnavailableError } from "../services/paper-wallet-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import type { PortfolioManagerService } from "../services/portfolio-manager-service";
 import {
@@ -155,12 +156,15 @@ export interface ServerDeps {
   readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
   /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
   readonly badgeService?: BadgeService;
-  /** Une carte/NFT par semaine avec au moins un trade Paper. */
+  /** Une carte/NFT par semaine active, stockée sur le wallet secondaire. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Wallet Mainnet + badge custodial remis automatiquement au premier trade. */
+  /** Wallet initial Mainnet + compte NFT secondaire du funnel Paper. */
   readonly firstTradeRewards?: FirstTradeRewardService;
-  /** Création du wallet custodial sans funding lors de l'arrivée utilisateur. */
-  readonly paperWallets?: Pick<import("../services/paper-wallet-service").PaperWalletService, "ensureCreated">;
+  /** Claims explicites et garde de trading du wallet initial. */
+  readonly paperWallets?: Pick<
+    import("../services/paper-wallet-service").PaperWalletService,
+    "ensureFunded" | "requireFunded"
+  >;
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: {
     readonly token: string;
@@ -308,13 +312,76 @@ function startEventStream(request: FastifyRequest, reply: FastifyReply): void {
 const DEFAULT_PUBLIC_BASE_URL = "http://localhost:3000";
 
 /**
+ * Liste blanche de sérialisation des deux wallets custodiaux. Même si un objet
+ * interne `PaperWallet` (qui contient `encryptedSeed`) atteignait par erreur un
+ * handler, Fastify ne peut envoyer que ces champs publics au navigateur.
+ */
+const PAPER_WALLET_REWARD_RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "network",
+    "walletAddress",
+    "walletStatus",
+    "fundingTxHash",
+    "walletDeleteTxHash",
+    "rewardWalletAddress",
+    "rewardWalletStatus",
+    "rewardFundingTxHash",
+    "rewardFundingSourceAddress",
+    "rewardStatus",
+    "nftTokenId",
+    "claimTxHash",
+  ],
+  properties: {
+    network: { anyOf: [{ type: "string", enum: ["mainnet"] }, { type: "null" }] },
+    walletAddress: { anyOf: [{ type: "string" }, { type: "null" }] },
+    walletDeleteTxHash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    walletStatus: {
+      type: "string",
+      enum: [
+        "not_created",
+        "pending_funding",
+        "funding_in_progress",
+        "funded",
+        "funding_failed",
+        "reclaimed",
+        "deleted",
+      ],
+    },
+    fundingTxHash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    rewardWalletAddress: { anyOf: [{ type: "string" }, { type: "null" }] },
+    rewardWalletStatus: {
+      type: "string",
+      enum: [
+        "not_created",
+        "pending_funding",
+        "funding_in_progress",
+        "funded",
+        "funding_failed",
+        "reclaimed",
+        "deleted",
+      ],
+    },
+    rewardFundingTxHash: { anyOf: [{ type: "string" }, { type: "null" }] },
+    rewardFundingSourceAddress: { anyOf: [{ type: "string" }, { type: "null" }] },
+    rewardStatus: {
+      type: "string",
+      enum: ["not_earned", "eligible", "minting", "offer_pending", "claimed"],
+    },
+    nftTokenId: { anyOf: [{ type: "string" }, { type: "null" }] },
+    claimTxHash: { anyOf: [{ type: "string" }, { type: "null" }] },
+  },
+} as const;
+
+/**
  * Construit le serveur HTTP (Fastify) qui expose les services. Aucune écoute
  * réseau ici : `buildServer` retourne l'instance, testable via `inject()`.
  */
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
 
-  /** Découple le fill Paper immédiat du funding XRPL (lent et optionnel). */
+  /** Enregistre uniquement le mérite ; aucun effet on-chain automatique. */
   const registerPaperTrade = async (userId: string): Promise<void> => {
     // Les profils du banc de charge ne reçoivent ni wallet XRPL ni récompense :
     // ils n'existent que pour exercer le moteur Paper local.
@@ -326,14 +393,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       } catch (error) {
         console.error("[weekly-rewards] qualification échouée:", error);
       }
-      void rewards.provisionWallet(userId).catch((error: unknown) => {
-        console.error("[weekly-rewards] provision wallet échouée:", error);
-      });
     }
-    // Appelé à chaque fill : le store rend la récompense idempotente et permet
-    // de reprendre un `offer_pending` après un redémarrage sans remint.
+    // Appelé à chaque fill : le store rend le déblocage idempotent. Le wallet 2
+    // et le NFT ne seront créés que par le CTA de claim explicite.
     if (deps.firstTradeRewards !== undefined) {
-      void deps.firstTradeRewards.recordFirstTrade(userId).catch((error: unknown) => {
+      await deps.firstTradeRewards.recordFirstTrade(userId).catch((error: unknown) => {
         console.error("[first-trade-reward] remise échouée:", error);
       });
     }
@@ -408,7 +472,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.post("/accounts", async (request, reply) => {
     const { userId } = parseUserId(request.body, "openAccount");
     deps.paper.openAccount(userId);
-    await deps.paperWallets?.ensureCreated(userId);
     reply.code(201);
     return { userId };
   });
@@ -416,7 +479,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   app.post("/accounts/ensure", async (request) => {
     const { userId } = parseUserId(request.body, "ensureAccount");
     const created = deps.paper.ensureAccount(userId);
-    await deps.paperWallets?.ensureCreated(userId);
     return { userId, created };
   });
 
@@ -440,6 +502,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     "/accounts/:userId/orders",
     async (request, reply) => {
       const order = parseOrder(request.body);
+      // Option B : une identité XRPL authentifiée (adresse, jamais paper:*)
+      // trade sans le funnel custodial ; le gate ne s'applique qu'aux comptes
+      // Paper anonymes/liés. En prod la garde impose token.sub === :userId.
+      if (request.params.userId.startsWith("paper:")) {
+        await deps.paperWallets?.requireFunded(request.params.userId);
+      }
       const fill = deps.paper.placeOrder(request.params.userId, order);
       // Le trading Paper reste disponible si XRPL est momentanément indisponible.
       // Un funding ambigu est gelé pour reprise opérateur, jamais retenté en boucle.
@@ -463,6 +531,9 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     "/accounts/:userId/positions",
     async (request, reply) => {
       const input = parseOpenPosition(request.body);
+      if (request.params.userId.startsWith("paper:")) {
+        await deps.paperWallets?.requireFunded(request.params.userId);
+      }
       const position = deps.paper.openPosition(request.params.userId, input);
       await registerPaperTrade(request.params.userId);
       reply.code(201);
@@ -1028,6 +1099,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       return badgeSvc.claim(body.userId, body.walletAddress, request.params.code);
     });
     app.post<{ Params: { code: string } }>(
+      "/badges/:code/claim/resume",
+      (request) => {
+        const body = parseClaimBadge(request.body);
+        return badgeSvc.claimForSign(
+          body.userId,
+          body.walletAddress,
+          request.params.code,
+        );
+      },
+    );
+    app.post<{ Params: { code: string } }>(
       "/badges/:code/claim/confirm",
       async (request, reply) => {
         const body = parseConfirmBadge(request.body);
@@ -1036,6 +1118,31 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         return { ok: true };
       },
     );
+    // Xaman : le user signe l'`NFTokenAcceptOffer` (taggé) dans Xaman, sans
+    // soumettre la tx lui-même. Le serveur fait le claim (mint + sell-offer —
+    // repris si déjà `offer_pending`) puis présente l'accept à signer. Présente
+    // seulement si XUMM ET l'issuer sont configurés (sinon 404, comme /sign/*).
+    if (deps.sign !== undefined) {
+      const signApi = deps.sign.api;
+      app.post<{ Params: { code: string } }>(
+        "/sign/badge-accept/:code",
+        async (request, reply) => {
+          const body = parseClaimBadge(request.body);
+          const claim = await badgeSvc.claimForSign(
+            body.userId,
+            body.walletAddress,
+            request.params.code,
+          );
+          const signRequest = await createSignRequest(signApi, claim.acceptTx);
+          reply.code(201);
+          return {
+            ...signRequest,
+            sellOfferId: claim.sellOfferId,
+            nftTokenId: claim.nftTokenId,
+          };
+        },
+      );
+    }
   }
 
   // La liste existe aussi programme OFF (tableau vide) : le front ne dépend pas
@@ -1046,16 +1153,54 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   );
   app.get<{ Params: { userId: string } }>(
     "/accounts/:userId/paper-wallet",
+    { schema: { response: { 200: PAPER_WALLET_REWARD_RESPONSE_SCHEMA } } },
     (request) =>
       deps.firstTradeRewards?.status(request.params.userId) ?? {
         network: null,
         walletAddress: null,
         walletStatus: "not_created",
         fundingTxHash: null,
+        walletDeleteTxHash: null,
+        rewardWalletAddress: null,
+        rewardWalletStatus: "not_created",
+        rewardFundingTxHash: null,
+        rewardFundingSourceAddress: null,
         rewardStatus: "not_earned",
         nftTokenId: null,
         claimTxHash: null,
       },
+  );
+  app.post<{ Params: { userId: string } }>(
+    "/accounts/:userId/paper-wallet/claim",
+    { schema: { response: { 200: PAPER_WALLET_REWARD_RESPONSE_SCHEMA } } },
+    async (request) => {
+      const wallets = deps.paperWallets;
+      if (wallets === undefined) throw new PaperWalletUnavailableError();
+      const wallet = await wallets.ensureFunded(request.params.userId);
+      return deps.firstTradeRewards?.status(request.params.userId) ?? {
+        network: "mainnet" as const,
+        walletAddress: wallet.address,
+        walletStatus: "funded" as const,
+        fundingTxHash: wallet.fundingTxHash,
+        walletDeleteTxHash: wallet.deleteTxHash,
+        rewardWalletAddress: null,
+        rewardWalletStatus: "not_created" as const,
+        rewardFundingTxHash: null,
+        rewardFundingSourceAddress: null,
+        rewardStatus: "not_earned" as const,
+        nftTokenId: null,
+        claimTxHash: null,
+      };
+    },
+  );
+  app.post<{ Params: { userId: string } }>(
+    "/accounts/:userId/paper-wallet/reward/claim",
+    { schema: { response: { 200: PAPER_WALLET_REWARD_RESPONSE_SCHEMA } } },
+    (request) => {
+      const rewards = deps.firstTradeRewards;
+      if (rewards === undefined) throw new PaperWalletUnavailableError();
+      return rewards.claim(request.params.userId);
+    },
   );
   app.post<{ Params: { week: string } }>(
     "/weekly-rewards/:week/claim",
@@ -1409,6 +1554,22 @@ function registerAuth(
 ): void {
   const { service, resolvers } = auth;
 
+  // Le navigateur peut proposer une liaison Paper au moment du login wallet,
+  // mais il ne peut pas choisir l'identité d'un autre utilisateur. On accepte
+  // le lien seulement si le Bearer courant est bien le JWT de cette session
+  // Paper ; sans ce contrôle, un attaquant pourrait empoisonner la garde
+  // anti-farming avec un `paper:*` arbitraire.
+  function verifiedPaperLink(
+    request: FastifyRequest,
+    body: Record<string, unknown>,
+  ): string | undefined {
+    const candidate = body.linkPaperUserId;
+    if (typeof candidate !== "string") return undefined;
+    return service.verifyToken(request.headers.authorization) === candidate
+      ? candidate
+      : undefined;
+  }
+
   app.addHook("preHandler", async (request, reply) => {
     // Une route inconnue doit rester un vrai 404. Le garde ne doit ni masquer
     // ce statut par un 401, ni transformer l'absence des routes admin publiques.
@@ -1455,6 +1616,27 @@ function registerAuth(
     }
   });
 
+  // Email / OAuth social : le Bearer Tide courant sert uniquement à rattacher
+  // une nouvelle identité à son compte Paper. Le token externe est vérifié par
+  // le fournisseur puis immédiatement oublié.
+  app.post("/auth/external", async (request, reply) => {
+    if (!service.externalEnabled) {
+      reply.code(501);
+      return { error: "login email/social non configuré" };
+    }
+    const body = (request.body ?? {}) as Record<string, unknown>;
+    const accessToken = typeof body["accessToken"] === "string" ? body["accessToken"] : "";
+    try {
+      return await service.loginExternal(
+        accessToken,
+        service.verifyToken(request.headers.authorization),
+      );
+    } catch (err) {
+      reply.code(401);
+      return { error: err instanceof Error ? err.message : "authentification externe échouée" };
+    }
+  });
+
   // Vérifie une preuve (Gem ou Xaman) et délivre un JWT de session.
   app.post("/auth/verify", async (request, reply) => {
     const body = (request.body ?? {}) as Record<string, unknown>;
@@ -1466,6 +1648,12 @@ function registerAuth(
           signature: typeof body.signature === "string" ? body.signature : "",
           publicKey: typeof body.publicKey === "string" ? body.publicKey : "",
         });
+        const paperUserId = verifiedPaperLink(request, body);
+        if (paperUserId !== undefined) {
+          await service.recordWalletLink(address, paperUserId).catch(() => {
+            // Liaison déclarative best-effort (cf. AuthService.recordWalletLink).
+          });
+        }
         return { token: service.issueToken(address), address };
       } catch (err) {
         reply.code(401);
@@ -1475,6 +1663,12 @@ function registerAuth(
     if (body.wallet === "xaman") {
       try {
         const address = await service.verifyXaman(typeof body.uuid === "string" ? body.uuid : "");
+        const paperUserId = verifiedPaperLink(request, body);
+        if (paperUserId !== undefined) {
+          await service.recordWalletLink(address, paperUserId).catch(() => {
+            // Liaison déclarative best-effort (cf. AuthService.recordWalletLink).
+          });
+        }
         return { token: service.issueToken(address), address };
       } catch (err) {
         if (err instanceof XamanNotConfiguredError) {

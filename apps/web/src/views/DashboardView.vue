@@ -7,9 +7,13 @@ import { positionPnl as corePositionPnl, reservedMargin } from "@tide/core";
 import type { MarketOrderInput, Position } from "@tide/core";
 import { MARKETS, fmtNum, type Market } from "../data/markets";
 import { usePaper } from "../composables/usePaper";
-import { useBadges } from "../composables/useBadges";
 import { useWallet } from "../composables/useWallet";
 import { useSession } from "../composables/useSession";
+import { useBadges } from "../composables/useBadges";
+import {
+  PAPER_WALLET_CHANGED_EVENT,
+  useWalletEntry,
+} from "../composables/useWalletEntry";
 import { useI18n } from "../i18n/useI18n";
 import LearnHint from "../components/learn/LearnHint.vue";
 
@@ -91,12 +95,18 @@ const { t } = useI18n({
     virtualBalance: "Virtual balance",
     custodialWallet: "Custodial wallet",
     firstTradeNft: "First Trade NFT",
-    claimFirstTradeNft: "Claim First Trade NFT",
-    claimingFirstTradeNft: "Claiming NFT…",
-    firstTradeNftReady: "First Paper trade completed · NFT ready",
+    claimRewardAccount: "Reveal account + NFT",
+    claimingRewardAccount: "Creating account…",
+    firstTradeNftReady: "First Paper trade completed · hidden account unlocked",
+    mysteryLocked: "Mystery reward locked",
     paperSession: "Paper session",
     realBadge: "REAL FUNDS",
     connectToTrade: "Connect wallet",
+    walletChoiceKicker: "XRPL MAINNET · CHOOSE YOUR PATH",
+    walletChoiceTitle: "Connect a wallet to unlock Paper",
+    walletChoiceBody: "Create a funded Paper wallet, or connect your own wallet. Your choice controls where the First Trade NFT can be claimed.",
+    claimFirstTradeNft: "Claim First Trade NFT",
+    claimingFirstTradeNft: "Claiming NFT…",
     paperHint: "Simulated — no real funds",
     liveHint: "Real swap on XRPL, signed in your wallet",
   },
@@ -175,12 +185,18 @@ const { t } = useI18n({
     virtualBalance: "Solde virtuel",
     custodialWallet: "Wallet custodial",
     firstTradeNft: "NFT First Trade",
-    claimFirstTradeNft: "Réclamer le NFT First Trade",
-    claimingFirstTradeNft: "Claim du NFT…",
-    firstTradeNftReady: "Premier trade Paper validé · NFT prêt",
+    claimRewardAccount: "Révéler le compte + NFT",
+    claimingRewardAccount: "Création du compte…",
+    firstTradeNftReady: "Premier trade Paper validé · compte caché débloqué",
+    mysteryLocked: "Récompense mystère verrouillée",
     paperSession: "Session Paper",
     realBadge: "ARGENT RÉEL",
     connectToTrade: "Connecter le wallet",
+    walletChoiceKicker: "XRPL MAINNET · CHOISIS TON PARCOURS",
+    walletChoiceTitle: "Connecte un wallet pour débloquer le Paper",
+    walletChoiceBody: "Crée un wallet Paper financé, ou connecte ton propre wallet. Ton choix détermine où ton NFT First Trade pourra être réclamé.",
+    claimFirstTradeNft: "Réclamer le NFT First Trade",
+    claimingFirstTradeNft: "Claim du NFT…",
     paperHint: "Simulé — aucun fonds réel",
     liveHint: "Swap réel sur XRPL, signé dans ton wallet",
   },
@@ -190,31 +206,60 @@ const { t } = useI18n({
 const paper = usePaper(props.client);
 const wallet = useWallet(props.client);
 const session = useSession();
-const {
-  badges,
-  claiming: badgeClaiming,
-  load: loadBadges,
-  claim: runBadgeClaim,
-} = useBadges(props.client);
+const walletEntry = useWalletEntry();
+const badgeState = useBadges(props.client);
+const rewardWalletClaiming = ref(false);
 
-/** Le premier badge débloqué devient claimable directement dans le terminal. */
-const firstTradeBadge = computed(() =>
-  badges.value.find(
-    (badge) => badge.code === "first_trade" && badge.earned && badge.status === "unclaimed",
-  ),
-);
+/** Le gate n'existe que lorsque le programme Mainnet est activé côté serveur. */
+const starterWalletClaimRequired = computed(() => {
+  const status = paper.walletReward.value;
+  if (session.walletConnected.value) return false;
+  return (
+    status?.network === "mainnet" &&
+    status.walletStatus !== "funded" &&
+    status.walletStatus !== "deleted"
+  );
+});
+const rewardWalletClaimReady = computed(() => {
+  const status = paper.walletReward.value;
+  return !session.walletConnected.value &&
+    status !== null &&
+    status.rewardStatus !== "not_earned" &&
+    status.rewardStatus !== "claimed";
+});
 
-function claimFirstTradeBadge(): void {
-  const badge = firstTradeBadge.value;
-  const walletAddress = session.liveAddress.value;
-  if (badge === undefined || walletAddress === "") {
-    return;
+async function claimRewardWallet(): Promise<void> {
+  rewardWalletClaiming.value = true;
+  try {
+    await paper.claimRewardWallet();
+  } catch {
+    // Le CTA reste visible et usePaper porte le détail de l'échec.
+  } finally {
+    rewardWalletClaiming.value = false;
   }
-  void runBadgeClaim(
-    paper.userId.value,
+}
+
+const firstTradeBadge = computed(() =>
+  badgeState.badges.value.find((badge) => badge.code === "first_trade"),
+);
+const externalNftClaimReady = computed(() => {
+  const badge = firstTradeBadge.value;
+  return (
+    session.walletConnected.value &&
+    badge?.earned === true &&
+    badge.status !== "claimed"
+  );
+});
+
+async function claimExternalNft(): Promise<void> {
+  const address = session.liveAddress.value;
+  const badge = firstTradeBadge.value;
+  if (address === "" || badge === undefined) return;
+  await badgeState.claim(
+    address,
     badge.code,
-    walletAddress,
-    (acceptTx) => wallet.signBadgeAccept(acceptTx),
+    address,
+    (claim) => wallet.signBadgeAccept(claim.acceptTx, claim),
   );
 }
 
@@ -269,14 +314,19 @@ function shorten(addr: string): string {
   return addr.length > 12 ? addr.slice(0, 6) + "…" + addr.slice(-4) : addr;
 }
 function paperIdentityLabel(): string {
+  if (session.walletConnected.value) {
+    return walletKind() + " " + shorten(session.liveAddress.value);
+  }
   const reward = paper.walletReward.value;
   if (reward?.walletAddress === null || reward?.walletAddress === undefined) {
     const id = paper.userId.value.replace(/^paper:/, "");
     return id === "" ? "" : `${t("paperSession")} ${shorten(id)}`;
   }
-  const nft = reward.rewardStatus === "claimed" ? "✓" : "…";
   const network = reward.network === null ? "XRPL" : reward.network;
-  return `${t("custodialWallet")} ${network} ${shorten(reward.walletAddress)} · ${t("firstTradeNft")} ${nft}`;
+  const rewardAccount = reward.rewardWalletAddress;
+  return rewardAccount === null
+    ? `${t("custodialWallet")} ${network} ${shorten(reward.walletAddress)}`
+    : `${t("custodialWallet")} ${shorten(reward.walletAddress)} → NFT ${shorten(rewardAccount)} ✓`;
 }
 /** Nom lisible du wallet connecté. */
 function walletKind(): string {
@@ -1680,9 +1730,7 @@ async function placePaperOrder(): Promise<void> {
       price: cur.value.p,
     };
     await paper.placeOrder(order);
-    // Le mérite est dérivé des fills serveur : recharge-le aussitôt pour faire
-    // apparaître le CTA NFT sans attendre un changement de page.
-    await loadBadges(paper.userId.value);
+    await badgeState.load(paper.userId.value);
     recordTrade({
       id: newId("trade"),
       product: "spot",
@@ -1776,9 +1824,13 @@ async function initDashboard(): Promise<void> {
 
 async function reloadPaperIdentity(): Promise<void> {
   await paper.connect();
-  await loadBadges(paper.userId.value);
+  await badgeState.load(paper.userId.value);
   loadPaperTerminal();
   await refreshPositions();
+}
+
+function onPaperWalletChanged(): void {
+  void reloadPaperIdentity();
 }
 
 // ---------- cycle de vie ----------
@@ -1788,6 +1840,7 @@ onMounted(() => {
   startBookRefresh();
   startHistoryRefresh();
   window.addEventListener("resize", onResizeChart);
+  window.addEventListener(PAPER_WALLET_CHANGED_EVENT, onPaperWalletChanged);
   void initDashboard();
 });
 onUnmounted(() => {
@@ -1804,6 +1857,7 @@ onUnmounted(() => {
     historyRefreshTimer = null;
   }
   window.removeEventListener("resize", onResizeChart);
+  window.removeEventListener(PAPER_WALLET_CHANGED_EVENT, onPaperWalletChanged);
 });
 </script>
 
@@ -1844,24 +1898,73 @@ onUnmounted(() => {
           </button>
         </template>
         <template v-else>
-          <span v-if="paperIdentityLabel()" class="badge">{{ paperIdentityLabel() }}</span>
-          <button
-            v-if="session.walletConnected.value && firstTradeBadge !== undefined"
-            class="nft-claim"
-            :disabled="badgeClaiming === firstTradeBadge.code"
-            :title="t('firstTradeNftReady')"
-            @click="claimFirstTradeBadge"
-          >
-            <span>✦</span>
-            {{ badgeClaiming === firstTradeBadge.code ? t('claimingFirstTradeNft') : t('claimFirstTradeNft') }}
-          </button>
+          <template v-if="session.walletConnected.value">
+            <button class="wchip" @click="wallet.disconnect()">
+              <span class="dot"></span>{{ shorten(session.liveAddress.value) }}
+              <span class="via">· {{ walletKind() }}</span>
+            </button>
+            <button
+              v-if="externalNftClaimReady"
+              class="nft-claim"
+              :disabled="badgeState.claiming.value !== null"
+              :title="t('firstTradeNft')"
+              @click="claimExternalNft"
+            >
+              <span>✦</span>
+              {{ badgeState.claiming.value === 'first_trade' ? t('claimingFirstTradeNft') : t('claimFirstTradeNft') }}
+            </button>
+          </template>
+          <template v-else>
+            <span v-if="paperIdentityLabel()" class="badge">{{ paperIdentityLabel() }}</span>
+            <button class="connect-entry" @click="walletEntry.show">
+              <span>＋</span>{{ t('connectToTrade') }}
+            </button>
+            <button
+              v-if="rewardWalletClaimReady"
+              class="nft-claim"
+              :disabled="rewardWalletClaiming"
+              :title="t('firstTradeNftReady')"
+              @click="claimRewardWallet"
+            >
+              <span>✦</span>
+              {{ rewardWalletClaiming ? t('claimingRewardAccount') : t('claimRewardAccount') }}
+            </button>
+            <span
+              v-else-if="paper.walletReward.value?.walletStatus === 'funded' && paper.walletReward.value?.rewardStatus === 'not_earned'"
+              class="mystery-locked"
+            >⌁ {{ t('mysteryLocked') }}</span>
+            <span v-if="rewardWalletClaimReady && paper.error.value" class="claim-inline-error">
+              {{ paper.error.value }}
+            </span>
+          </template>
+          <span v-if="externalNftClaimReady && badgeState.error.value" class="claim-inline-error">
+            {{ badgeState.error.value }}
+          </span>
           <span class="ctxlabel">{{ t('virtualBalance') }}</span>
           <span class="ctxval">{{ availLabel() }}</span>
         </template>
       </div>
     </div>
 
-    <div class="deck">
+    <div v-if="starterWalletClaimRequired" class="wallet-claim-gate">
+      <div class="wallet-claim-card">
+        <span class="wallet-claim-mark">◌</span>
+        <div>
+          <div class="wallet-claim-kicker">{{ t('walletChoiceKicker') }}</div>
+          <h2>{{ t('walletChoiceTitle') }}</h2>
+          <p>{{ t('walletChoiceBody') }}</p>
+          <p v-if="paper.error.value" class="wallet-claim-error">{{ paper.error.value }}</p>
+        </div>
+        <button
+          type="button"
+          @click="walletEntry.show"
+        >
+          {{ t('connectToTrade') }}
+        </button>
+      </div>
+    </div>
+
+    <div class="deck" :class="{ locked: starterWalletClaimRequired }">
     <!-- WATCHLIST -->
     <aside class="card watch">
       <div class="wt-head"><span class="t">{{ t('markets') }}</span><span class="lab">24h</span></div>
@@ -2166,6 +2269,12 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
 }
+.deck.locked {
+  pointer-events: none;
+  user-select: none;
+  filter: blur(4px);
+  opacity: 0.32;
+}
 @media (max-width: 1200px) {
   .deck {
     grid-template-columns: 1fr 336px;
@@ -2284,6 +2393,113 @@ onUnmounted(() => {
 .nft-claim:disabled {
   cursor: wait;
   opacity: 0.6;
+}
+.connect-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(95, 124, 255, 0.62);
+  border-radius: 8px;
+  background: rgba(95, 124, 255, 0.12);
+  color: #b8c5ff;
+  font-family: var(--disp);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.connect-entry:hover {
+  background: rgba(95, 124, 255, 0.22);
+  transform: translateY(-1px);
+}
+.mystery-locked {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--mut2);
+  letter-spacing: 0.04em;
+}
+.claim-inline-error {
+  max-width: 220px;
+  color: var(--down);
+  font-size: 10px;
+  line-height: 1.25;
+}
+.wallet-claim-gate {
+  display: grid;
+  place-items: center;
+  padding: 22px 0 8px;
+  z-index: 2;
+}
+.wallet-claim-card {
+  width: min(720px, calc(100vw - 48px));
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 24px;
+  border: 1px solid rgba(95, 124, 255, 0.55);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(95, 124, 255, 0.14), var(--panel));
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.32);
+}
+.wallet-claim-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: #fff;
+  font-size: 29px;
+}
+.wallet-claim-kicker {
+  color: var(--blue);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.wallet-claim-card h2 {
+  margin: 4px 0 6px;
+  color: var(--text);
+  font-family: var(--disp);
+  font-size: 22px;
+}
+.wallet-claim-card p {
+  margin: 0;
+  max-width: 520px;
+  color: var(--soft);
+  line-height: 1.5;
+}
+.wallet-claim-card .wallet-claim-error {
+  margin-top: 7px;
+  color: var(--down);
+}
+.wallet-claim-card button {
+  border: none;
+  border-radius: 10px;
+  background: var(--blue);
+  color: #fff;
+  padding: 11px 16px;
+  font-family: var(--disp);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.wallet-claim-card button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+@media (max-width: 700px) {
+  .wallet-claim-card {
+    grid-template-columns: auto 1fr;
+  }
+  .wallet-claim-card button {
+    grid-column: 1 / -1;
+  }
 }
 .wchip {
   display: inline-flex;

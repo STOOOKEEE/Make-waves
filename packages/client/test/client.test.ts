@@ -41,6 +41,24 @@ describe("TideClient", () => {
     });
   });
 
+  it("authExternal lie un token social à la session Tide courante", async () => {
+    const { client, requests } = stub(() => ({
+      status: 200,
+      body: { token: "jwt-linked", userId: "paper:u1", provider: "x", email: null },
+    }));
+    client.setToken("jwt-paper");
+    expect(await client.authExternal("supabase-token")).toMatchObject({
+      userId: "paper:u1",
+      provider: "x",
+    });
+    expect(requests[0]).toEqual({
+      path: "/auth/external",
+      method: "POST",
+      body: { accessToken: "supabase-token" },
+      headers: { authorization: "Bearer jwt-paper" },
+    });
+  });
+
   it("openAccount -> POST /accounts (201)", async () => {
     const { client, requests } = stub(() => ({ status: 201, body: { userId: "a" } }));
     expect(await client.openAccount("a")).toEqual({ userId: "a" });
@@ -143,6 +161,10 @@ describe("TideClient", () => {
       walletAddress: "rTest",
       walletStatus: "funded" as const,
       fundingTxHash: "FUND",
+      rewardWalletAddress: "rReward",
+      rewardWalletStatus: "funded" as const,
+      rewardFundingTxHash: "FUND2",
+      rewardFundingSourceAddress: "rTest",
       rewardStatus: "claimed" as const,
       nftTokenId: "NFT",
       claimTxHash: "CLAIM",
@@ -153,6 +175,16 @@ describe("TideClient", () => {
       path: "/accounts/paper%3Au1/paper-wallet",
       method: "GET",
     });
+  });
+
+  it("claimPaperWallet puis claimPaperRewardWallet utilisent les deux étapes dédiées", async () => {
+    const { client, requests } = stub(() => ({ status: 200, body: {} }));
+    await client.claimPaperWallet("paper:u1");
+    await client.claimPaperRewardWallet("paper:u1");
+    expect(requests).toEqual([
+      { path: "/accounts/paper%3Au1/paper-wallet/claim", method: "POST" },
+      { path: "/accounts/paper%3Au1/paper-wallet/reward/claim", method: "POST" },
+    ]);
   });
 
   it("openPosition -> POST /accounts/:id/positions (201)", async () => {

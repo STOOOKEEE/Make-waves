@@ -92,6 +92,16 @@ describe("authorize — propriété par :userId", () => {
     expect(d.ok).toBe(true);
   });
 
+  it("protège les deux claims de wallets par le :userId authentifié", async () => {
+    for (const routeUrl of [
+      "/accounts/:userId/paper-wallet/claim",
+      "/accounts/:userId/paper-wallet/reward/claim",
+    ]) {
+      expect((await authorize(req({ method: "POST", routeUrl, params: { userId: ME } }), resolvers)).ok).toBe(true);
+      expect((await authorize(req({ method: "POST", routeUrl, params: { userId: OTHER } }), resolvers)).ok).toBe(false);
+    }
+  });
+
   it("403 si :userId != token", async () => {
     const d = await authorize(
       req({ routeUrl: "/accounts/:userId/orders", params: { userId: OTHER } }),
@@ -126,6 +136,26 @@ describe("authorize — propriété par body/query", () => {
   it("claim de badge : walletAddress doit aussi être soi (F4 — mint vers l'adresse authentifiée)", async () => {
     expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: ME, walletAddress: OTHER } }), resolvers)).ok).toBe(false);
     expect((await authorize(req({ method: "POST", routeUrl: "/badges/:code/claim", params: { code: "x" }, body: { userId: ME, walletAddress: ME } }), resolvers)).ok).toBe(true);
+  });
+
+  it("protège aussi la reprise du claim et le payload Xaman", async () => {
+    for (const routeUrl of [
+      "/badges/:code/claim/resume",
+      "/sign/badge-accept/:code",
+    ]) {
+      expect((await authorize(req({
+        method: "POST",
+        routeUrl,
+        params: { code: "first_trade" },
+        body: { userId: ME, walletAddress: ME },
+      }), resolvers)).ok).toBe(true);
+      expect((await authorize(req({
+        method: "POST",
+        routeUrl,
+        params: { code: "first_trade" },
+        body: { userId: ME, walletAddress: OTHER },
+      }), resolvers)).ok).toBe(false);
+    }
   });
 });
 

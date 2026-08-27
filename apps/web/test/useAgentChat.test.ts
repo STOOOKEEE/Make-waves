@@ -4,8 +4,23 @@ import { useAgentChat } from "../src/composables/useAgentChat";
 import { useSession } from "../src/composables/useSession";
 
 const XRP_ACCOUNT = "rPaperUser11111111111111111111111111111";
+const PAPER_ACCOUNT = "paper:agent-chat-test";
+
+function sessionToken(subject: string): string {
+  const encode = (value: object): string =>
+    globalThis
+      .btoa(JSON.stringify(value))
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+  return `${encode({ alg: "HS256", typ: "JWT" })}.${encode({
+    sub: subject,
+    exp: Math.floor(Date.now() / 1000) + 3600,
+  })}.signature`;
+}
 
 beforeEach(() => {
+  localStorage.clear();
   useSession().disconnectWallet();
 });
 
@@ -89,7 +104,9 @@ describe("useAgentChat", () => {
   });
 
   it("send POSTe sur /api/agent-chat/stream avec {agentId, userId, message}", async () => {
-    useSession().setWallet(XRP_ACCOUNT, "xaman");
+    useSession().userId.value = PAPER_ACCOUNT;
+    const token = sessionToken(PAPER_ACCOUNT);
+    localStorage.setItem("tide.paperSessionToken", token);
     const mockResponse = sseResponse([
       { type: "text_delta", data: { text: "ok" } },
       { type: "done" },
@@ -103,10 +120,12 @@ describe("useAgentChat", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toContain("/api/agent-chat/stream");
     expect(calls[0]?.init?.method).toBe("POST");
+    expect((calls[0]?.init?.headers as Record<string, string> | undefined)?.["Authorization"])
+      .toBe(`Bearer ${token}`);
     const body = JSON.parse((calls[0]?.init?.body as string) ?? "{}");
     expect(body).toEqual({
       agentId: "agent-42",
-      userId: XRP_ACCOUNT,
+      userId: PAPER_ACCOUNT,
       message: "what is BTC?",
       // 1er message → historique vide (mémoire de conversation).
       history: [],

@@ -1,6 +1,7 @@
 import { Client, Wallet, type Transaction } from "xrpl";
 import { buildBadgeAcceptOffer } from "../tx/nft";
 import { buildWalletFundingPayment } from "../tx/payment";
+import { buildAccountDelete } from "../tx/account-delete";
 import { assertAttributionTag } from "../tx/source-tag";
 import { XrplRequestError } from "../client/errors";
 
@@ -65,6 +66,28 @@ export class XrplCustodialWalletGateway {
     );
   }
 
+  /**
+   * Active un nouveau compte depuis un wallet custodial Tide existant. La seed
+   * source n'est conservée ni par le gateway ni dans une transaction : elle ne
+   * sert qu'à signer le Payment en mémoire.
+   */
+  async fundWalletFromSeed(
+    sourceSeed: string,
+    destination: string,
+    amountDrops: string,
+  ): Promise<CustodySubmitResult> {
+    const source = Wallet.fromSeed(sourceSeed);
+    return this.submit(
+      source,
+      buildWalletFundingPayment({
+        account: source.classicAddress,
+        destination,
+        amountDrops,
+        sourceTag: this.sourceTag,
+      }),
+    );
+  }
+
   async acceptNft(seed: string, sellOfferId: string): Promise<CustodySubmitResult> {
     const recipient = Wallet.fromSeed(seed);
     return this.submit(
@@ -72,6 +95,28 @@ export class XrplCustodialWalletGateway {
       buildBadgeAcceptOffer({
         account: recipient.classicAddress,
         sellOfferId,
+        sourceTag: this.sourceTag,
+      }),
+    );
+  }
+
+  /**
+   * Clôture un compte custodial : AccountDelete taggé, le solde restant part à
+   * la destination. Non rejouable financièrement : un compte supprimé n'existe
+   * plus, un retry après résultat ambigu échoue sans double dépense.
+   */
+  async deleteAccount(
+    seed: string,
+    destination: string,
+    feeDrops: string,
+  ): Promise<CustodySubmitResult> {
+    const account = Wallet.fromSeed(seed);
+    return this.submit(
+      account,
+      buildAccountDelete({
+        account: account.classicAddress,
+        destination,
+        feeDrops,
         sourceTag: this.sourceTag,
       }),
     );

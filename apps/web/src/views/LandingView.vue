@@ -9,6 +9,7 @@ import { useWallet } from '../composables/useWallet'
 import { useI18n } from '../i18n/useI18n'
 import LangToggle from '../components/LangToggle.vue'
 import BrandMark from '../components/BrandMark.vue'
+import { useAccountAuth } from '../composables/useAccountAuth'
 
 const props = defineProps<{ client: TideClient }>()
 const { userId, connected } = useSession()
@@ -81,8 +82,8 @@ const { t, locale, intlLocale } = useI18n({
     stepsHeadL1: 'Start trading',
     stepsHeadL2: 'in 60 seconds',
     stepsLead: 'Connect, get your capital, and the race begins. No endless onboarding.',
-    step1Title: 'Connect your wallet',
-    step1Body: 'Xaman or GemWallet. No deposit, no KYC. Your identity stays yours.',
+    step1Title: 'Create your Tide account',
+    step1Body: 'Continue with email or Google. Your Paper portfolio follows you on every device.',
     step2Title: 'Get $10,000',
     step2Body: 'Demo capital credited instantly. Open positions on markets backed by real data feeds.',
     step3Title: 'Climb & cash out',
@@ -184,8 +185,8 @@ const { t, locale, intlLocale } = useI18n({
     stepsHeadL1: 'Commence à trader',
     stepsHeadL2: 'en 60 secondes',
     stepsLead: "Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.",
-    step1Title: 'Connecte ton wallet',
-    step1Body: 'Xaman ou GemWallet. Aucun dépôt, aucun KYC. Ton identité reste la tienne.',
+    step1Title: 'Crée ton compte Tide',
+    step1Body: 'Continue avec ton email ou Google. Ton portefeuille Paper te suit sur tous tes appareils.',
     step2Title: 'Reçois $10 000',
     step2Body: 'Capital de démo crédité instantanément. Ouvre des positions sur des marchés alimentés par de vraies données.',
     step3Title: 'Grimpe & encaisse',
@@ -222,10 +223,11 @@ const { t, locale, intlLocale } = useI18n({
   },
 })
 
-// Navigation : la source pointait vers dashboard.html → on émet vers /dashboard.
 const emit = defineEmits<{ navigate: [path: string] }>()
+const account = useAccountAuth(props.client)
 function goDashboard(): void {
-  emit('navigate', '/dashboard')
+  if (account.signedIn.value) emit('navigate', '/dashboard')
+  else account.open('/dashboard')
 }
 
 // Connexion de wallet réelle (Xaman / GemWallet, mode Live).

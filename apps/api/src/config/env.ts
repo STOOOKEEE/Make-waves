@@ -565,6 +565,34 @@ export function readSessionTtlSeconds(): number {
   return seconds;
 }
 
+export interface ExternalAuthConfig {
+  readonly supabaseUrl: string;
+  readonly publishableKey: string;
+}
+
+/** Email + OAuth social. Les deux variables sont obligatoires ensemble. */
+export function readExternalAuthConfig(): ExternalAuthConfig | undefined {
+  const supabaseUrl = optional("TIDE_AUTH_SUPABASE_URL");
+  const publishableKey = optional("TIDE_AUTH_SUPABASE_PUBLISHABLE_KEY");
+  if (supabaseUrl === undefined && publishableKey === undefined) return undefined;
+  if (supabaseUrl === undefined || publishableKey === undefined) {
+    throw new Error("Configuration Supabase Auth incomplète");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(supabaseUrl);
+  } catch {
+    throw new Error("TIDE_AUTH_SUPABASE_URL invalide");
+  }
+  if (parsed.protocol !== "https:" && parsed.hostname !== "localhost") {
+    throw new Error("TIDE_AUTH_SUPABASE_URL doit utiliser HTTPS");
+  }
+  if (publishableKey.length < 20) {
+    throw new Error("TIDE_AUTH_SUPABASE_PUBLISHABLE_KEY invalide");
+  }
+  return { supabaseUrl: parsed.origin, publishableKey };
+}
+
 /**
  * Identifiants des opérateurs autorisés dans la console admin (CSV). Analyse
  * la liste en ignorant les espaces vides et les entrées vides.

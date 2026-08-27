@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { NftIssuer } from "@tide/xrpl";
-import { PaperWalletService, PAPER_WALLET_FUNDING_DROPS } from "../src/services/paper-wallet-service";
+import {
+  PaperWalletService,
+  PAPER_REWARD_WALLET_FUNDING_DROPS,
+  PAPER_WALLET_FUNDING_DROPS,
+} from "../src/services/paper-wallet-service";
 import {
   WeeklyRewardAlreadyClaimedError,
   WeeklyRewardService,
@@ -17,10 +21,28 @@ const OFFER_ID = "B".repeat(64);
 
 class FakeGateway {
   readonly funding: Array<{ address: string; drops: string }> = [];
+  readonly linkedFunding: Array<{ seed: string; address: string; drops: string }> = [];
   readonly accepted: Array<{ seed: string; sellOfferId: string }> = [];
   async fundWallet(address: string, drops: string): Promise<{ hash: string }> {
     this.funding.push({ address, drops });
     return { hash: "FUND" };
+  }
+  async fundWalletFromSeed(
+    seed: string,
+    address: string,
+    drops: string,
+  ): Promise<{ hash: string }> {
+    this.linkedFunding.push({ seed, address, drops });
+    return { hash: "LINKED_FUND" };
+  }
+  readonly deleted: Array<{ seed: string; destination: string; fee: string }> = [];
+  async deleteAccount(
+    seed: string,
+    destination: string,
+    fee: string,
+  ): Promise<{ hash: string }> {
+    this.deleted.push({ seed, destination, fee });
+    return { hash: "DELETE" };
   }
   async acceptNft(seed: string, sellOfferId: string): Promise<{ hash: string }> {
     this.accepted.push({ seed, sellOfferId });
@@ -47,6 +69,7 @@ describe("PaperWalletService", () => {
     const gateway = new FakeGateway();
     const svc = new PaperWalletService({
       store,
+      rewardStore: new InMemoryPaperWalletStore(),
       gateway,
       masterKeyHex: MASTER,
       masterKeyId: "v1",
@@ -61,12 +84,13 @@ describe("PaperWalletService", () => {
     expect(gateway.funding).toEqual([]);
   });
 
-  it("crée, chiffre et finance une seule fois le wallet au minimum NFT sûr", async () => {
-    expect(PAPER_WALLET_FUNDING_DROPS).toBe("1210000");
+  it("crée, chiffre et finance une seule fois le wallet au minimum du double funnel", async () => {
+    expect(PAPER_WALLET_FUNDING_DROPS).toBe("2220000");
     const store = new InMemoryPaperWalletStore();
     const gateway = new FakeGateway();
     const svc = new PaperWalletService({
       store,
+      rewardStore: new InMemoryPaperWalletStore(),
       gateway,
       masterKeyHex: MASTER,
       masterKeyId: "v1",
@@ -91,6 +115,7 @@ describe("PaperWalletService", () => {
     const gateway = new FakeGateway();
     const svc = new PaperWalletService({
       store,
+      rewardStore: new InMemoryPaperWalletStore(),
       gateway,
       masterKeyHex: MASTER,
       masterKeyId: "v1",
@@ -110,6 +135,7 @@ describe("WeeklyRewardService", () => {
     const now = Date.UTC(2026, 6, 16, 10);
     const wallets = new PaperWalletService({
       store: new InMemoryPaperWalletStore(),
+      rewardStore: new InMemoryPaperWalletStore(),
       gateway: new FakeGateway(),
       masterKeyHex: MASTER,
       masterKeyId: "v1",
@@ -128,6 +154,8 @@ describe("WeeklyRewardService", () => {
     });
 
     await svc.recordTrade("paper:u1");
+    await wallets.ensureFunded("paper:u1");
+    await wallets.ensureRewardFunded("paper:u1");
     const week = weekKey(now);
     expect(await svc.list("paper:u1")).toEqual([
       { week, qualifiedAt: now, status: "eligible", nftTokenId: null, claimedAt: null },
@@ -146,11 +174,12 @@ describe("WeeklyRewardService", () => {
 });
 
 describe("FirstTradeRewardService", () => {
-  it("finance le wallet et remet exactement un NFT au premier trade", async () => {
+  it("débloque au premier trade puis claim un wallet 2 financé par le wallet 1", async () => {
     const now = Date.UTC(2026, 6, 17, 12);
     const gateway = new FakeGateway();
     const wallets = new PaperWalletService({
       store: new InMemoryPaperWalletStore(),
+      rewardStore: new InMemoryPaperWalletStore(),
       gateway,
       masterKeyHex: MASTER,
       masterKeyId: "paper-v1",
@@ -166,20 +195,34 @@ describe("FirstTradeRewardService", () => {
       now: () => now,
     });
 
-    await Promise.all([
-      service.recordFirstTrade("paper:u1"),
-      service.recordFirstTrade("paper:u1"),
-    ]);
+    await wallets.ensureFunded("paper:u1");
+    await Promise.all([service.recordFirstTrade("paper:u1"), service.recordFirstTrade("paper:u1")]);
     await service.recordFirstTrade("paper:u1");
+
+    const unlocked = await service.status("paper:u1");
+    expect(unlocked.walletStatus).toBe("funded");
+    expect(unlocked.rewardWalletStatus).toBe("not_created");
+    expect(unlocked.rewardStatus).toBe("eligible");
+
+    await Promise.all([service.claim("paper:u1"), service.claim("paper:u1")]);
 
     const status = await service.status("paper:u1");
     expect(status.walletAddress).toMatch(/^r/);
-    expect(status.walletStatus).toBe("funded");
+    expect(status.walletStatus).toBe("deleted");
+    expect(status.walletDeleteTxHash).toBe("DELETE");
+    expect(status.rewardWalletAddress).toMatch(/^r/);
+    expect(status.rewardWalletAddress).not.toBe(status.walletAddress);
+    expect(status.rewardWalletStatus).toBe("funded");
+    expect(status.rewardFundingSourceAddress).toBe(status.walletAddress);
+    expect(status.rewardFundingTxHash).toBe("LINKED_FUND");
     expect(status.rewardStatus).toBe("claimed");
     expect(status.nftTokenId).toBe(NFT_ID);
     expect(status.claimTxHash).toBe("CLAIM");
+    expect((await wallets.get("paper:u1"))?.encryptedSeed).toBe("");
     expect(issuer.calls).toBe(1);
     expect(gateway.funding).toHaveLength(1);
+    expect(gateway.linkedFunding).toHaveLength(1);
+    expect(gateway.linkedFunding[0]?.drops).toBe(PAPER_REWARD_WALLET_FUNDING_DROPS);
     expect(gateway.accepted).toHaveLength(1);
   });
 });
