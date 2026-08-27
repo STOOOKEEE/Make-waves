@@ -5,11 +5,10 @@
 import { onMounted, onUnmounted, ref, nextTick, computed, watch } from 'vue'
 import type { TideClient } from '@tide/client'
 import { useSession } from '../composables/useSession'
-import { useWallet } from '../composables/useWallet'
+import { useWalletEntry } from '../composables/useWalletEntry'
 import { useI18n } from '../i18n/useI18n'
 import LangToggle from '../components/LangToggle.vue'
 import BrandMark from '../components/BrandMark.vue'
-import { useAccountAuth } from '../composables/useAccountAuth'
 
 const props = defineProps<{ client: TideClient }>()
 const { userId, connected } = useSession()
@@ -21,7 +20,7 @@ const { t, locale, intlLocale } = useI18n({
     heroDesc: 'TIDE IS A WEB3 PAPER-TRADING ARENA WHERE THE BEST TRADERS COMPETE FOR REAL REWARDS.',
     seasonLive: 'XRPL MAINNET · LIVE',
     tradersCount: 'REAL MARKET DATA',
-    join: 'Join',
+    join: 'Open app',
     heroTag: '[ PAPER TRADING · COMPETITIONS · AI AGENTS ]',
     aiLabel: 'AI Arena · Season 01',
     aiHeadL1: 'One model.',
@@ -124,7 +123,7 @@ const { t, locale, intlLocale } = useI18n({
     heroDesc: "TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.",
     seasonLive: 'XRPL MAINNET · LIVE',
     tradersCount: 'DONNÉES DE MARCHÉ RÉELLES',
-    join: 'Rejoindre',
+    join: "Ouvrir l'app",
     heroTag: '[ PAPER TRADING · COMPÉTITIONS · AGENTS IA ]',
     aiLabel: 'Arène IA · Saison 01',
     aiHeadL1: 'Un modèle.',
@@ -224,16 +223,15 @@ const { t, locale, intlLocale } = useI18n({
 })
 
 const emit = defineEmits<{ navigate: [path: string] }>()
-const account = useAccountAuth(props.client)
+const walletEntry = useWalletEntry()
 function goDashboard(): void {
-  if (account.signedIn.value) emit('navigate', '/dashboard')
-  else account.open('/dashboard')
+  emit('navigate', '/dashboard')
 }
 
-// Connexion de wallet réelle (Xaman / GemWallet, mode Live).
-const wallet = useWallet(props.client)
+// Le CTA de la landing ouvre le même choix central que le dashboard : créer
+// un wallet Paper ou connecter Xaman/GemWallet.
 function connectWallet(): void {
-  void wallet.connect()
+  walletEntry.show()
 }
 
 // Bascule du son (pas d'audio embarqué : reflète juste l'état dans le bandeau).

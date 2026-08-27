@@ -35,6 +35,18 @@ function onWallet(): void {
   walletEntry.show();
 }
 
+function onAccount(): void {
+  // Le bouton de compte ne doit pas ouvrir Tide ID pour un visiteur : le
+  // parcours produit commence par le choix « créer ou connecter un wallet ».
+  // Il reste disponible une fois une session Paper/wallet active pour la
+  // déconnexion explicite.
+  if (account.canLogout.value) {
+    account.open(null);
+    return;
+  }
+  walletEntry.show();
+}
+
 const { t } = useI18n({
   en: {
     trading: "Trading",
@@ -146,7 +158,7 @@ function go(path: string): void {
       <div class="v">{{ equityLabel }}</div>
       <div class="l">{{ t("equity") }}</div>
     </div>
-    <button class="wallet account" @click="account.open(null)">
+    <button v-if="account.canLogout.value" class="wallet account" @click="onAccount">
       {{ accountLabel }}
     </button>
     <button class="wallet" :title="walletConnected ? 'Disconnect wallet' : t('connectWallet')" @click="onWallet"><span class="dot"></span> {{ walletLabel }}</button>
