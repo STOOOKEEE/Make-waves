@@ -127,6 +127,13 @@ conventions below are **taste and craft, not evidence** — follow them, but don
   → **This makes it a tool, not just a hazard: deadpan depends on it.** Drop trailing periods on short
   casual lines. Use them when you want weight or staccato. "no. just. go."
   ⚠️ 64 citations, replications only in low-visibility venues. Write by it; don't argue from it.
+- **⛔ Never use an em dash (—).** `[Eli, 2026-07-30]` Not in posts, not in replies, not anywhere the
+  account speaks. It is the single most reliable tell that a machine or a copywriter wrote the line,
+  and it is doing punctuation work a period or a line break does better. Rewrite the sentence instead
+  of swapping in a hyphen. (En dashes and " - " are the same problem in a costume.)
+- **Replies are shorter than you think.** `[Eli, 2026-07-30]` Two lines is the ceiling, one is
+  usually right. A three-line reply is a little essay in someone else's comments, and the second
+  paragraph is almost always the writer admiring the first. Say the one thing and stop.
 - **Default to one or two lines. Earn anything longer.** `posts.md` §3 finds longer posts win under
   author/topic control — **but that's about carrying more substance, not about padding a one-liner
   into a paragraph.** The reconciliation:

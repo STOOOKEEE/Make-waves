@@ -19,6 +19,12 @@ gentle landing. Reads fine, does nothing: nobody quotes it, nobody argues with i
 stance, and not finishing the thought for the reader. → `context/02-voice.md` § "Why your draft is too
 long and too nice".
 
+**2026-07-30 — deux règles d'Eli, après la reply @Remzztrades.** (1) **Jamais d'em dash (—)**, nulle
+part : c'est le tell le plus fiable qu'une machine ou un copywriter a écrit la ligne. (2) **Les replies
+doivent être plus courtes** : deux lignes de plafond, une suffit souvent. La reply envoyée faisait
+trois lignes et le deuxième paragraphe n'ajoutait rien que de l'admiration pour le premier.
+→ ✅ **Promu** dans `context/02-voice.md` § Mechanics.
+
 ---
 
 ## Process
@@ -28,6 +34,23 @@ Monday" when 2026-07-21 is a Tuesday. It cost one post (a Monday-specific joke, 
 Tuesday) and produced a paragraph of reasoning about substituting a slot that wasn't today's. Cheap to
 prevent: confirm the date, don't infer it. Day-specific jokes are the only content where this matters,
 which is exactly why it slipped through.
+
+**2026-08-01 — la question des URL est tranchée : on arrête de les courir.** Trois batchs de suite
+(30/07, 31/07, 01/08) sont partis sans qu'aucune URL ne soit capturée, parce qu'Eli poste directement
+depuis X. C'est le workflow réel, pas un oubli. → `posted.md` enregistre désormais **date + série +
+texte intégral**, point. **Le coût est plus faible qu'il n'y paraît** : l'écran analytics de X liste
+les posts avec leurs chiffres, et le texte intégral suffit à apparier une ligne à une entrée. La
+section « what performs » reste donc remplissable, en lisant l'analytics au lieu de suivre un lien.
+Corollaire : le texte intégral dans l'archive n'est plus du confort, c'est **la clé d'appariement**.
+
+**2026-08-01 — première continuité réelle du compte.** Le mème « it's a long term hold now » (01/08)
+rejoue le point 1 de « four ways to hold a loser » (30/07) dans une autre forme. C'est le premier post
+qui suppose un post précédent. **À surveiller précisément** : est-ce qu'un post-callback convertit
+mieux en follows qu'un post isolé ? Hypothèse posée le 24/07 (§ Content), jamais testée jusqu'ici.
+
+**2026-08-01 — le compte a 12 posts et zéro invitation.** Depuis le 21/07 on a fait rire sans jamais
+dire où aller. The Invitation est plafonné à 1×/semaine et n'a **jamais** tourné. Ce n'est pas de la
+prudence, c'est un trou dans l'entonnoir : les follows ne se transforment pas tout seuls en joueurs.
 
 **2026-07-21 — two posts shipped without passing through the queue.** Not a problem in itself, but
 their **URLs were never captured** and now have to be retrieved by hand. The archive only works if
