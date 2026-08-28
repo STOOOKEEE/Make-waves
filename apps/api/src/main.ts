@@ -56,7 +56,10 @@ import { migrateExternalIdentityTables } from "./store/migrations/2026-07-22-ext
 import { migrateWalletDeleteColumns } from "./store/migrations/2026-08-27-wallet-delete";
 import { migrateWalletLinkTables } from "./store/migrations/2026-08-27-wallet-links";
 import { SqliteWalletLinkStore } from "./store/sqlite-wallet-link-store";
-import { createFirstTradeExternalGuard } from "./services/first-trade-external-guard";
+import {
+  createFirstTradeExternalGuard,
+  createFirstTradeManagedGuard,
+} from "./services/first-trade-external-guard";
 import { earnedCodes } from "./badges/merit";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
@@ -383,6 +386,10 @@ async function main(): Promise<void> {
           wallets: paperRewardRuntime.wallets,
           issuer: paperRewardRuntime.issuer,
           gateway: paperRewardRuntime.gateway,
+          managedClaimGuard: createFirstTradeManagedGuard({
+            links: walletLinks,
+            badgeClaims: badgeStore,
+          }),
           metadataBaseUrl: env.readPublicBaseUrl(),
           network: "mainnet",
         });
@@ -558,7 +565,6 @@ async function main(): Promise<void> {
       : createFirstTradeExternalGuard({
           links: walletLinks,
           firstTradeRows: paperBadgeRewardStore,
-          starters: paperWalletStore,
           badgeClaims: badgeStore,
         });
   // Le runtime Paper possède déjà l'issuer dédié du programme First Trade.

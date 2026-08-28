@@ -2563,3 +2563,20 @@ anciens wallets 1 `reclaimed` ne sont plus affichés comme des wallets 2
 supprimés. Les wallets 2 correspondent uniquement aux lignes de
 `paper_reward_wallets_mainnet`, tandis que les identités Paper sans wallet
 custodial restent visibles comme lignes virtuelles d'administration.
+
+## 2026-08-28 — Claim externe fiabilisé et navigation soulignée
+
+L'image API de production doit désormais être reconstruite avec le compteur
+`tradeCountOf` afin qu'un premier trade perp Paper débloque réellement le CTA
+First Trade sur Xaman/GemWallet. Le statut est rechargé après le trade et une
+erreur de chargement reste visible même lorsque le CTA ne peut pas être rendu.
+
+La garde anti-farming laisse maintenant l'utilisateur choisir son wallet
+externe même si un wallet 1 a seulement été créé et financé auparavant. Elle
+continue de refuser un autre wallet dès qu'un parcours First Trade a été gagné
+ou initié. La garde symétrique bloque aussi le funnel custodial avant création
+du wallet 2 lorsqu'une offre NFT existe déjà sur un wallet externe lié.
+
+Dans l'AppBar, les onglets conservent leur placement et leur taille ; seuls les
+états actif et survol sont retravaillés avec un contour blanc et un fond léger.
+L'onglet actif expose également `aria-current="page"`.

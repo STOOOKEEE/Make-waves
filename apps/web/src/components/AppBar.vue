@@ -134,6 +134,10 @@ const tabs = computed<{ path: RoutePath; label: string }[]>(() => [
 function go(path: string): void {
   emit("navigate", path);
 }
+
+function isActiveTab(path: RoutePath): boolean {
+  return props.current === path || (path === "/competitions" && props.current === "/competition");
+}
 </script>
 
 <template>
@@ -145,7 +149,8 @@ function go(path: string): void {
       <a
         v-for="t in tabs"
         :key="t.path"
-        :class="{ on: current === t.path || (t.path === '/competitions' && current === '/competition') }"
+        :class="{ on: isActiveTab(t.path) }"
+        :aria-current="isActiveTab(t.path) ? 'page' : undefined"
         :href="`#${t.path}`"
         @click.prevent="go(t.path)"
         >{{ t.label }}</a

@@ -1972,7 +1972,7 @@ onUnmounted(() => {
               {{ paper.error.value }}
             </span>
           </template>
-          <span v-if="externalNftClaimReady && badgeState.error.value" class="claim-inline-error">
+          <span v-if="session.walletConnected.value && badgeState.error.value" class="claim-inline-error">
             {{ badgeState.error.value }}
           </span>
           <span class="ctxlabel">{{ t('virtualBalance') }}</span>

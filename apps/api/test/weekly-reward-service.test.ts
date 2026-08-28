@@ -225,4 +225,34 @@ describe("FirstTradeRewardService", () => {
     expect(gateway.linkedFunding[0]?.drops).toBe(PAPER_REWARD_WALLET_FUNDING_DROPS);
     expect(gateway.accepted).toHaveLength(1);
   });
+
+  it("vérifie la garde externe avant de créer ou financer le wallet 2", async () => {
+    const gateway = new FakeGateway();
+    const wallets = new PaperWalletService({
+      store: new InMemoryPaperWalletStore(),
+      rewardStore: new InMemoryPaperWalletStore(),
+      gateway,
+      masterKeyHex: MASTER,
+      masterKeyId: "paper-v1",
+    });
+    const issuer = new FakeIssuer();
+    const service = new FirstTradeRewardService({
+      store: new InMemoryPaperBadgeRewardStore(),
+      wallets,
+      issuer,
+      gateway,
+      managedClaimGuard: () => Promise.reject(new Error("déjà claimé en externe")),
+      metadataBaseUrl: "https://api.tidetrade.xyz",
+    });
+
+    await wallets.ensureFunded("paper:external-first");
+    await service.recordFirstTrade("paper:external-first");
+
+    await expect(service.claim("paper:external-first")).rejects.toThrow(
+      /déjà claimé en externe/,
+    );
+    expect(await wallets.getReward("paper:external-first")).toBeNull();
+    expect(gateway.linkedFunding).toHaveLength(0);
+    expect(issuer.calls).toBe(0);
+  });
 });

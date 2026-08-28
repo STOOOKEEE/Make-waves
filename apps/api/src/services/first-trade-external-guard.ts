@@ -1,7 +1,6 @@
 import { BADGE_CODES } from "../badges/catalog";
 import type { BadgeStore } from "../store/badge-store";
 import type { PaperBadgeRewardStore } from "../store/paper-badge-reward-store";
-import type { PaperWalletStore } from "../store/paper-wallet-store";
 import type { WalletLinkStore } from "../store/wallet-link-store";
 
 /** Claim First Trade sur wallet connecté refusé (→ 403). */
@@ -15,7 +14,6 @@ export class FirstTradeExternalClaimDeniedError extends Error {
 export interface FirstTradeExternalGuardDeps {
   readonly links: WalletLinkStore;
   readonly firstTradeRows: PaperBadgeRewardStore;
-  readonly starters: PaperWalletStore;
   readonly badgeClaims: BadgeStore;
   /** Plafond journalier global de claims First Trade sur wallet connecté. */
   readonly maxExternalMintsPerDay?: number;
@@ -29,8 +27,10 @@ const DEFAULT_MAX_EXTERNAL_MINTS_PER_DAY = 50;
  * Garde de l'option B (« connecter son wallet » puis claim du NFT dessus).
  * Un user honnête = 1 NFT, quel que soit le nombre de wallets connectés :
  * - l'identité doit être l'adresse XRPL authentifiée (jamais paper:*) ;
- * - si ce wallet a été lié à une identité Paper qui a déjà entamé le funnel
- *   (éligibilité first_trade ou wallet 1 réclamé), le claim est refusé ;
+ * - un wallet 1 simplement créé/financé ne consomme pas la récompense : l'user
+ *   peut encore choisir de recevoir le NFT sur son wallet externe ;
+ * - si l'identité Paper liée ou un autre wallet lié a déjà gagné/commencé le
+ *   claim First Trade, le claim est refusé ;
  * - plafond journalier global de mints externes (frein dur anti-farming).
  * L'idempotence 1 NFT par adresse reste garantie par le BadgeStore.
  */
@@ -51,9 +51,8 @@ export function createFirstTradeExternalGuard(
     if (linked !== null) {
       const linkedWallets = await deps.links.listWalletsForPaperUser(linked);
       const otherWallets = linkedWallets.filter((address) => address !== walletAddress);
-      const [paperReward, starter, otherRewards, otherClaims] = await Promise.all([
+      const [paperReward, otherRewards, otherClaims] = await Promise.all([
         deps.firstTradeRows.get(linked, BADGE_CODES.FIRST_TRADE),
-        deps.starters.get(linked),
         Promise.all(
           otherWallets.map((address) =>
             deps.firstTradeRows.get(address, BADGE_CODES.FIRST_TRADE),
@@ -65,11 +64,10 @@ export function createFirstTradeExternalGuard(
           ),
         ),
       ]);
-      const starterUsed = starter !== null && starter.status !== "pending_funding";
       const anotherWalletUsed =
         otherRewards.some((reward) => reward !== null) ||
         otherClaims.some((claim) => claim !== null);
-      if (paperReward !== null || starterUsed || anotherWalletUsed) {
+      if (paperReward !== null || anotherWalletUsed) {
         throw new FirstTradeExternalClaimDeniedError(
           "Récompense First Trade déjà obtenue avec un autre compte de ce navigateur",
         );
@@ -81,6 +79,35 @@ export function createFirstTradeExternalGuard(
     if (today >= cap) {
       throw new FirstTradeExternalClaimDeniedError(
         `Plafond quotidien de claims First Trade atteint (${String(cap)})`,
+      );
+    }
+  };
+}
+
+export interface FirstTradeManagedGuardDeps {
+  readonly links: Pick<WalletLinkStore, "listWalletsForPaperUser">;
+  readonly badgeClaims: Pick<BadgeStore, "get">;
+}
+
+/**
+ * Garde symétrique du funnel custodial : dès qu'un wallet externe lié a créé
+ * une offre First Trade (même encore en attente de signature), le compte Paper
+ * ne peut plus provisionner wallet 2 et remint le même NFT.
+ */
+export function createFirstTradeManagedGuard(
+  deps: FirstTradeManagedGuardDeps,
+): (paperUserId: string) => Promise<void> {
+  return async (paperUserId) => {
+    if (!paperUserId.startsWith("paper:")) return;
+    const linkedWallets = await deps.links.listWalletsForPaperUser(paperUserId);
+    const externalClaims = await Promise.all(
+      linkedWallets.map((address) =>
+        deps.badgeClaims.get(address, BADGE_CODES.FIRST_TRADE),
+      ),
+    );
+    if (externalClaims.some((claim) => claim !== null)) {
+      throw new FirstTradeExternalClaimDeniedError(
+        "Récompense First Trade déjà réclamée sur un wallet externe lié",
       );
     }
   };

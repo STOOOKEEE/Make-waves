@@ -49,6 +49,8 @@ export interface FirstTradeRewardServiceDeps {
   >;
   readonly issuer: NftIssuer;
   readonly gateway: Pick<XrplCustodialWalletGateway, "acceptNft" | "deleteAccount">;
+  /** Refuse le funnel custodial si un wallet externe lié a déjà initié le claim. */
+  readonly managedClaimGuard?: (userId: string) => Promise<void>;
   /**
    * Destination du solde restant du wallet 1 à sa clôture : le wallet 2 par
    * défaut (l'user finit avec un seul compte vivant) ; "funder" pour récupérer
@@ -132,6 +134,7 @@ export class FirstTradeRewardService {
   private async claimOnce(userId: string): Promise<void> {
     let reward = await this.deps.store.get(userId, FIRST_TRADE);
     if (reward === null) throw new FirstTradeRewardNotEligibleError();
+    await this.deps.managedClaimGuard?.(userId);
     const wallet = await this.deps.wallets.ensureRewardFunded(userId);
 
     if (reward.status === "eligible") {

@@ -10,7 +10,10 @@ import { InMemoryBadgeStore } from "../src/store/badge-store";
 import { InMemoryPaperWalletStore } from "../src/store/paper-wallet-store";
 import { InMemoryPaperBadgeRewardStore } from "../src/store/paper-badge-reward-store";
 import { InMemoryWalletLinkStore } from "../src/store/wallet-link-store";
-import { createFirstTradeExternalGuard } from "../src/services/first-trade-external-guard";
+import {
+  createFirstTradeExternalGuard,
+  createFirstTradeManagedGuard,
+} from "../src/services/first-trade-external-guard";
 
 class FakeIssuer implements NftIssuer {
   readonly destinations: string[] = [];
@@ -38,7 +41,6 @@ function makeApp(options?: { readonly maxExternalMintsPerDay?: number }) {
   const guard = createFirstTradeExternalGuard({
     links,
     firstTradeRows,
-    starters,
     badgeClaims: badgeStore,
     ...(options?.maxExternalMintsPerDay !== undefined
       ? { maxExternalMintsPerDay: options.maxExternalMintsPerDay }
@@ -59,7 +61,7 @@ function makeApp(options?: { readonly maxExternalMintsPerDay?: number }) {
     getPrices: () => ({ XRP: 0.5 }),
     badgeService,
   });
-  return { app, links, starters };
+  return { app, links, starters, firstTradeRows };
 }
 
 async function trade(app: ReturnType<typeof makeApp>["app"], userId: string): Promise<void> {
@@ -120,9 +122,9 @@ describe("option B : claim First Trade sur wallet connecté", () => {
     expect(response.statusCode).toBe(403);
   });
 
-  it("refuse un wallet lié à un compte Paper qui a déjà entamé le funnel", async () => {
+  it("autorise le wallet externe si le wallet 1 lié est seulement financé", async () => {
     const { app, links, starters } = makeApp();
-    const linkedPaper = "paper:deja-funnel";
+    const linkedPaper = "paper:starter-only";
     await starters.create({
       userId: linkedPaper,
       address: "rStarterLinked",
@@ -137,6 +139,31 @@ describe("option B : claim First Trade sur wallet connecté", () => {
     await starters.markFunded(linkedPaper, "FUND", 2);
     const address = addressOf();
     await links.link(address, linkedPaper, 3);
+
+    await trade(app, address);
+    const claim = await app.inject({
+      method: "POST",
+      url: `/badges/${BADGE_CODES.FIRST_TRADE}/claim`,
+      payload: { userId: address, walletAddress: address },
+    });
+    expect(claim.statusCode).toBe(200);
+  });
+
+  it("refuse le wallet externe si le compte Paper lié a gagné First Trade", async () => {
+    const { app, links, firstTradeRows } = makeApp();
+    const linkedPaper = "paper:deja-eligible";
+    const address = addressOf();
+    await links.link(address, linkedPaper, 3);
+    await firstTradeRows.ensureEligible({
+      userId: linkedPaper,
+      badgeCode: BADGE_CODES.FIRST_TRADE,
+      qualifiedAt: 2,
+      status: "eligible",
+      nftTokenId: null,
+      sellOfferId: null,
+      claimTxHash: null,
+      claimedAt: null,
+    });
 
     await trade(app, address);
     const claim = await app.inject({
@@ -170,6 +197,26 @@ describe("option B : claim First Trade sur wallet connecté", () => {
       payload: { userId: addressB, walletAddress: addressB },
     });
     expect(second.statusCode).toBe(403);
+  });
+
+  it("refuse ensuite le funnel custodial du Paper lié", async () => {
+    const badgeClaims = new InMemoryBadgeStore();
+    const links = new InMemoryWalletLinkStore();
+    const paperUserId = "paper:external-already-minted";
+    const address = addressOf();
+    await links.link(address, paperUserId, 1);
+    await badgeClaims.create({
+      userId: address,
+      badgeCode: BADGE_CODES.FIRST_TRADE,
+      claimedAt: 2,
+      nftTokenId: "C".repeat(64),
+      sellOfferId: "D".repeat(64),
+      status: "offer_pending",
+      claimTxHash: null,
+    });
+    const guard = createFirstTradeManagedGuard({ links, badgeClaims });
+
+    await expect(guard(paperUserId)).rejects.toThrow(/wallet externe lié/);
   });
 
   it("gèle les claims externes au-delà du plafond journalier", async () => {
