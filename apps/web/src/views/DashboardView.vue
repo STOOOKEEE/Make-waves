@@ -437,6 +437,9 @@ const paperPositions = ref<PaperPosition[]>([]);
 const pendingOrders = ref<PaperPendingOrder[]>([]);
 const tradeHistory = ref<PaperTrade[]>([]);
 const positionMeta = ref<Record<string, PositionMeta>>({});
+// Une seule ouverture Paper à la fois : protège des doubles clics pendant le
+// POST et permet de désactiver le ticket jusqu'à la confirmation du serveur.
+const openingPaperPosition = ref(false);
 // Positions en cours de fermeture : garde anti double-déclenchement pendant l'appel
 // réseau (TP/SL et fermeture manuelle pourraient sinon fermer deux fois la même).
 const closingPositions = new Set<string>();
@@ -1404,6 +1407,10 @@ async function openPaperPosition(input: {
   stopLoss?: number;
   reason: "market" | "limit";
 }): Promise<boolean> {
+  if (openingPaperPosition.value) {
+    return false;
+  }
+  openingPaperPosition.value = true;
   try {
     const position = await props.client.openPosition(paper.userId.value, {
       product: input.product,
@@ -1415,11 +1422,24 @@ async function openPaperPosition(input: {
       margin: input.margin,
       fee: input.fee,
     });
+    const openedAt = Date.now();
     positionMeta.value[position.id] = {
       takeProfit: input.takeProfit,
       stopLoss: input.stopLoss,
-      openedAt: Date.now(),
+      openedAt,
     };
+    // Le POST est la confirmation financière autoritative. Affiche donc la
+    // position dès sa réponse, sans bloquer sur les cinq lectures de
+    // réconciliation (positions, soldes, ordres, portefeuille et statut NFT).
+    paperPositions.value = [
+      {
+        ...position,
+        takeProfit: input.takeProfit,
+        stopLoss: input.stopLoss,
+        openedAt,
+      },
+      ...paperPositions.value.filter((current) => current.id !== position.id),
+    ];
     recordTrade({
       id: newId("trade"),
       product: input.product,
@@ -1430,13 +1450,20 @@ async function openPaperPosition(input: {
       fee: input.fee,
       pnl: -input.fee,
       reason: input.reason,
-      at: Date.now(),
+      at: openedAt,
     });
-    await Promise.all([refreshPositions(), paper.refresh()]);
+    savePaperTerminal();
+    // Ces lectures restent nécessaires pour réconcilier l'equity et le
+    // backend, mais elles ne retardent plus l'apparition de la position.
+    void Promise.all([refreshPositions(), paper.refresh()]).catch(() => {
+      // Le POST a réussi : le prochain rafraîchissement reprendra la synchro.
+    });
     return true;
   } catch {
     // Ouverture refusée par le backend (marge/frais > disponible, etc.).
     return false;
+  } finally {
+    openingPaperPosition.value = false;
   }
 }
 
@@ -1703,6 +1730,9 @@ function queueLimitOrder(): void {
 }
 
 async function placePaperOrder(): Promise<void> {
+  if (openingPaperPosition.value) {
+    return;
+  }
   if (livePrices.value[cur.value.s] === undefined) {
     return;
   }
@@ -1748,8 +1778,9 @@ async function placePaperOrder(): Promise<void> {
       });
       if (ok) {
         // Une ouverture perp est un trade Paper au même titre qu'un fill spot.
-        // Recharge le mérite pour afficher immédiatement le claim externe.
-        await badgeState.load(paper.userId.value);
+        // Le mérite se recharge en arrière-plan : il ne doit pas retarder
+        // l'affichage de la position déjà confirmée par le serveur.
+        void badgeState.load(paper.userId.value);
       }
       flashPlace(ok ? t("orderSent") : t("orderFailed"));
       return;
@@ -2262,7 +2293,7 @@ onUnmounted(() => {
         <button
           class="placebtn"
           :class="{ sell: side === 'sell' }"
-          :disabled="(mode === 'live' && !liveTradable()) || (mode === 'paper' && (amount <= 0 || amount > availablePaperCash()))"
+          :disabled="(mode === 'live' && !liveTradable()) || (mode === 'paper' && (openingPaperPosition || amount <= 0 || amount > availablePaperCash()))"
           @click="onPlace"
         >{{ placeLabel() }}</button>
       </div>
