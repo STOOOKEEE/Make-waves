@@ -496,6 +496,21 @@ export function useWallet(client: TideClient) {
     phase.value = "pending";
     open.value = true;
     try {
+      // L'offre est réservée à l'adresse qui a authentifié Tide. GemWallet
+      // signe avec son compte actuellement sélectionné, qui peut avoir changé
+      // depuis la connexion : vérifie-le avant de payer des frais pour une
+      // transaction vouée à `tecNO_PERMISSION`.
+      const activeWallet = await getAddress();
+      const activeAddress = activeWallet.result?.address;
+      if (activeAddress !== claim.walletAddress) {
+        const expected =
+          claim.walletAddress.length > 12
+            ? `${claim.walletAddress.slice(0, 6)}…${claim.walletAddress.slice(-4)}`
+            : claim.walletAddress;
+        throw new Error(
+          `Sélectionne le compte ${expected} dans GemWallet, puis réessaie.`,
+        );
+      }
       // GemWallet expose un flux NFT dédié : il ouvre directement l'écran
       // d'acceptation, autofill/signe/soumet la transaction et conserve le
       // SourceTag Tide. L'offre est déjà réservée au wallet connecté.

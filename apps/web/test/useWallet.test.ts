@@ -265,6 +265,33 @@ describe("useWallet — claim NFT GemWallet", () => {
     expect(wallet.error.value).toBe("GemWallet mainnet indisponible");
     wallet.close();
   });
+
+  it("refuse avant soumission si GemWallet a changé de compte actif", async () => {
+    useSession().setWallet(ACCOUNT, "gem");
+    vi.mocked(getAddress).mockResolvedValueOnce({
+      type: GEM_RESPONSE,
+      result: { address: "rOtherWallet222222222222222222222222222" },
+    });
+    const wallet = useWallet(fakeGemClient(Promise.resolve({
+      token: "wallet-jwt",
+      address: ACCOUNT,
+    })));
+
+    const hash = await wallet.signBadgeAccept(
+      {
+        TransactionType: "NFTokenAcceptOffer",
+        Account: ACCOUNT,
+        NFTokenSellOffer: "C".repeat(64),
+        SourceTag: 2606210009,
+      },
+      { userId: ACCOUNT, code: "first_trade", walletAddress: ACCOUNT },
+    );
+
+    expect(hash).toBeNull();
+    expect(acceptNFTOffer).not.toHaveBeenCalled();
+    expect(wallet.error.value).toContain("Sélectionne le compte rAgent…1111");
+    wallet.close();
+  });
 });
 
 describe("useWallet — connexion GemWallet", () => {
