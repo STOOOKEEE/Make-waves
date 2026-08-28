@@ -8,6 +8,7 @@
  * depuis Tide School.
  */
 import { computed } from "vue";
+import TutorialConcept from "./TutorialConcept.vue";
 import { useI18n } from "../../i18n/useI18n";
 import { useTutorial } from "../../composables/useTutorial";
 import { STEP_COUNT } from "../../data/tutorial";
@@ -19,25 +20,29 @@ const tutorial = useTutorial();
 const { t } = useI18n({
   en: {
     kicker: "First time here",
-    title: "Want the guided tour?",
-    body: "Fifteen minutes in a sandbox on live market data. You'll place a real order, set a stop, and watch a leveraged position get liquidated — with fake money, and nothing that touches a wallet.",
+    title: "Learn the terminal by trading",
+    body: "Fifteen minutes in a sandbox on live market data. You'll place a simulated order, set a stop, and watch a leveraged position get liquidated — with fake money, and nothing that touches a wallet.",
     b1: "{n} steps, each one explains a single button",
     b2: "Perps, leverage and risk in depth",
     b3: "Skippable at any moment",
-    accept: "Take the tour →",
+    accept: "Start training →",
     decline: "No thanks, I'll explore",
     later: "You can always start it from Tide School.",
+    visualLab: "TIDE TRAINING LAB",
+    visualNote: "LIVE DATA · VIRTUAL CAPITAL · ZERO WALLET ACTION",
   },
   fr: {
     kicker: "Première visite",
-    title: "Tu veux la visite guidée ?",
-    body: "Quinze minutes dans un bac à sable branché sur les données de marché en direct. Tu passeras un vrai ordre, poseras un stop, et verras une position à levier se faire liquider — en argent fictif, et sans que rien ne touche un wallet.",
+    title: "Apprends le terminal en tradant",
+    body: "Quinze minutes dans un bac à sable branché sur les données de marché en direct. Tu passeras un ordre simulé, poseras un stop, et verras une position à levier se faire liquider — en argent fictif, et sans que rien ne touche un wallet.",
     b1: "{n} étapes, chacune explique un seul bouton",
     b2: "Perps, levier et risque en profondeur",
     b3: "Passable à tout moment",
-    accept: "Faire la visite →",
+    accept: "Commencer l'entraînement →",
     decline: "Non merci, j'explore",
     later: "Tu peux toujours la lancer depuis Tide School.",
+    visualLab: "LABO D'ENTRAÎNEMENT TIDE",
+    visualNote: "DONNÉES RÉELLES · CAPITAL VIRTUEL · AUCUNE ACTION WALLET",
   },
 });
 
@@ -57,21 +62,32 @@ function decline(): void {
 <template>
   <div v-if="open" class="offer-overlay" role="dialog" aria-modal="true" :aria-label="t('title')">
     <div class="offer">
-      <span class="lab kicker">{{ t("kicker") }}</span>
-      <h2>{{ t("title") }}</h2>
-      <p class="body">{{ t("body") }}</p>
-
-      <ul class="points">
-        <li>{{ t("b1", { n: STEP_COUNT }) }}</li>
-        <li>{{ t("b2") }}</li>
-        <li>{{ t("b3") }}</li>
-      </ul>
-
-      <div class="actions">
-        <button class="primary" type="button" @click="accept">{{ t("accept") }}</button>
-        <button class="ghost" type="button" @click="decline">{{ t("decline") }}</button>
+      <div class="offer-visual">
+        <div class="visual-top">
+          <span class="lab">{{ t("visualLab") }}</span>
+          <!-- Plage dérivée du programme : ajouter une étape ne peut pas la désynchroniser. -->
+          <b class="mono">01—{{ STEP_COUNT }}</b>
+        </div>
+        <TutorialConcept chapter="why" step-id="welcome" />
+        <p class="visual-note mono">{{ t("visualNote") }}</p>
       </div>
-      <p class="later soft">{{ t("later") }}</p>
+      <div class="offer-copy">
+        <span class="lab kicker">{{ t("kicker") }}</span>
+        <h2>{{ t("title") }}</h2>
+        <p class="body">{{ t("body") }}</p>
+
+        <ul class="points">
+          <li><i>01</i><span>{{ t("b1", { n: STEP_COUNT }) }}</span></li>
+          <li><i>02</i><span>{{ t("b2") }}</span></li>
+          <li><i>03</i><span>{{ t("b3") }}</span></li>
+        </ul>
+
+        <div class="actions">
+          <button class="primary" type="button" @click="accept">{{ t("accept") }}</button>
+          <button class="ghost" type="button" @click="decline">{{ t("decline") }}</button>
+        </div>
+        <p class="later soft">{{ t("later") }}</p>
+      </div>
     </div>
   </div>
 </template>
@@ -90,53 +106,78 @@ button { background: none; border: none; color: inherit; padding: 0; cursor: poi
   backdrop-filter: blur(8px);
 }
 .offer {
-  width: min(520px, 100%);
-  background: var(--panel);
-  border: 1px solid var(--line2);
-  border-radius: 18px;
-  padding: 30px 32px 26px;
+  width: min(880px, 100%);
+  background: #111318;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 26px;
+  padding: 12px;
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(260px, .85fr) minmax(0, 1.15fr);
+  gap: 0;
+  box-shadow: 0 32px 120px rgba(0, 0, 0, .38);
 }
-.kicker { color: var(--up); }
+.offer-visual {
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(113, 132, 255, .28);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 80% 12%, rgba(79, 106, 255, .3), transparent 34%),
+    #151722;
+}
+.visual-top { display: flex; justify-content: space-between; gap: 12px; color: #aeb8ff; }
+.visual-top b { font-size: 10px; color: rgba(255, 255, 255, .5); }
+.offer-visual :deep(.concept) { height: 210px; transform: scale(1.18); }
+.visual-note { color: rgba(255, 255, 255, .4); font-size: 8px; letter-spacing: .1em; }
+.offer-copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 30px 34px;
+}
+.kicker { color: #aeb8ff; }
 .offer h2 {
   font-family: var(--disp);
-  font-size: 28px;
-  font-weight: 700;
-  line-height: 1.15;
+  margin-top: 10px;
+  font-size: clamp(32px, 4vw, 47px);
+  font-weight: 800;
+  line-height: .98;
+  letter-spacing: -.045em;
+  text-transform: uppercase;
 }
-.body { color: var(--soft); font-size: 15px; line-height: 1.6; }
-.points { display: grid; gap: 8px; margin-top: 4px; }
+.body { margin-top: 16px; color: rgba(255, 255, 255, .65); font-size: 14px; line-height: 1.6; }
+.points { display: grid; gap: 0; margin-top: 18px; border-top: 1px solid rgba(255, 255, 255, .1); }
 .points li {
-  position: relative;
-  padding-left: 20px;
-  font-size: 14px;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  font-size: 13px;
   line-height: 1.45;
 }
-.points li::before {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 8px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--blue);
-}
+.points i { color: #7184ff; font: normal 10px var(--mono); }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .actions button {
-  border-radius: 100px;
+  border-radius: 10px;
   padding: 13px 22px;
   font-weight: 700;
   font-size: 14px;
   border: 1px solid transparent;
 }
-.actions .primary { background: #fff; color: var(--panel); flex: 1; }
-.actions .ghost { border-color: var(--line2); color: var(--text); }
+.actions .primary { background: #fff; color: #111318; flex: 1; }
+.actions .ghost { border-color: rgba(255, 255, 255, .15); color: var(--text); }
 .actions .ghost:hover { border-color: var(--text); }
-.later { font-size: 12px; }
-@media (max-width: 560px) {
-  .offer { padding: 24px 20px 20px; }
+.later { margin-top: 10px; font-size: 10.5px; }
+@media (max-width: 720px) {
+  .offer { grid-template-columns: 1fr; max-height: calc(100dvh - 24px); overflow-y: auto; }
+  .offer-visual { min-height: 180px; }
+  .offer-visual :deep(.concept) { height: 110px; }
+  .offer-copy { padding: 26px 20px 20px; }
   .actions .primary { flex: 1 1 100%; }
 }
 </style>

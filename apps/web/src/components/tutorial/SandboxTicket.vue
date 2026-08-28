@@ -304,44 +304,48 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .ticket {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  gap: 11px;
+  background: #17191f;
+  border: 1px solid rgba(255, 255, 255, .09);
   border-radius: 14px;
-  padding: 16px;
+  padding: 14px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
 }
-.ticket-controls { display: grid; gap: 10px; }
+.ticket-controls { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .mini-field { display: grid; gap: 6px; }
-.mini-field > span { font: 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--soft); }
+.mini-field > span { font: 8.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--soft); }
 .mini-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: var(--panel2); border-radius: 8px; padding: 3px; }
-.mini-seg button { padding: 7px 0; border-radius: 6px; font: 11px var(--mono); letter-spacing: .08em; color: var(--soft); }
-.mini-seg button.on { background: var(--blue); color: #fff; }
+.mini-seg button { min-width: 0; padding: 7px 2px; border-radius: 6px; font: 8.5px var(--mono); letter-spacing: .04em; color: var(--soft); }
+.mini-seg button.on { background: var(--blue); color: #fff; box-shadow: 0 4px 12px rgba(79, 106, 255, .22); }
 .bs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.bs button { padding: 12px 0; border-radius: 8px; font-weight: 700; font-size: 14px; border: 1px solid var(--line2); color: var(--soft); }
+.bs button { padding: 11px 0; border-radius: 9px; font-weight: 750; font-size: 12px; border: 1px solid var(--line2); color: var(--soft); }
 .bs .buy.on { background: var(--up); color: #06231a; border-color: transparent; }
 .bs .sell.on { background: var(--down); color: #2a0a06; border-color: transparent; }
 .field { display: grid; gap: 6px; }
 .fl { display: flex; justify-content: space-between; align-items: baseline; }
-.fl .k { font: 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--soft); }
-.fl .b { font: 11px var(--mono); color: var(--mut2); }
-.inp { display: flex; align-items: center; gap: 8px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; }
-.inp input { flex: 1; background: none; border: none; color: var(--text); font: 14px var(--mono); outline: none; }
+.fl .k { font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--soft); }
+.fl .b { font: 9.5px var(--mono); color: var(--mut2); }
+.inp { display: flex; align-items: center; gap: 8px; background: #101218; border: 1px solid rgba(255, 255, 255, .1); border-radius: 8px; padding: 9px 10px; transition: border-color .2s var(--ease); }
+.inp:focus-within { border-color: #7184ff; }
+.inp input { min-width: 0; flex: 1; background: none; border: none; color: var(--text); font: 13px var(--mono); outline: none; }
 .inp .suf { font: 10.5px var(--mono); color: var(--mut2); }
 .pcts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.pcts button { padding: 7px 0; border-radius: 6px; border: 1px solid var(--line2); font: 11px var(--mono); color: var(--soft); }
+.pcts button { padding: 7px 0; border-radius: 6px; border: 1px solid var(--line2); font: 10px var(--mono); color: var(--soft); }
+.pcts button:hover { color: #fff; border-color: #7184ff; }
 .lev { display: grid; gap: 8px; }
 .lev input[type="range"] { width: 100%; accent-color: var(--blue); }
 .lev-buttons { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-.lev-buttons button { padding: 6px 0; border-radius: 6px; border: 1px solid var(--line2); font: 11px var(--mono); color: var(--soft); }
+.lev-buttons button { padding: 6px 0; border-radius: 6px; border: 1px solid var(--line2); font: 10px var(--mono); color: var(--soft); }
 .lev-buttons button.on { background: var(--blue); color: #fff; border-color: transparent; }
 .risk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.summary { display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 10px; }
-.summary .r { display: flex; justify-content: space-between; font-size: 12px; }
+.summary { display: grid; gap: 6px; padding: 11px; border: 1px solid rgba(255, 255, 255, .08); border-radius: 10px; background: rgba(255, 255, 255, .025); }
+.summary .r { display: flex; justify-content: space-between; gap: 10px; font-size: 10.5px; }
 .summary .r span { color: var(--soft); }
 .summary .r b { font-family: var(--mono); }
 .risk-row.ok b { color: var(--up); }
-.placebtn { padding: 14px 0; border-radius: 10px; background: var(--up); color: #06231a; font-weight: 800; font-size: 14px; }
+.placebtn { padding: 13px 0; border-radius: 9px; background: var(--up); color: #06231a; font-weight: 800; font-size: 12px; box-shadow: 0 8px 24px rgba(61, 222, 159, .14); }
 .placebtn.sell { background: var(--down); color: #2a0a06; }
 .placebtn:disabled { opacity: .4; }
 /* Projecteur — voir `lib/sandbox/spotlight.ts`. La zone visée est cerclée de
@@ -357,7 +361,7 @@ button { background: none; border: none; color: inherit; padding: 0; }
   animation: pulse 1.9s var(--ease) infinite;
 }
 .zone-dim {
-  filter: blur(2.5px) saturate(.5);
+  filter: blur(1.5px) saturate(.5);
   opacity: .3;
   transition: opacity .35s var(--ease), filter .35s var(--ease);
 }
@@ -367,5 +371,18 @@ button { background: none; border: none; color: inherit; padding: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .zone-spot { animation: none; }
+}
+@media (max-width: 1320px) {
+  .ticket-controls { grid-template-columns: 1fr; }
+  .mini-field { grid-template-columns: 70px 1fr; align-items: center; }
+  .mini-field > span { font-size: 8px; }
+}
+@media (max-width: 1180px) {
+  .ticket-controls { grid-template-columns: repeat(3, 1fr); }
+  .mini-field { grid-template-columns: 1fr; }
+}
+@media (max-width: 420px) {
+  .ticket-controls { grid-template-columns: 1fr; }
+  .mini-field { grid-template-columns: 74px 1fr; }
 }
 </style>

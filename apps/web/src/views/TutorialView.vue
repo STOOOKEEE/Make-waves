@@ -32,8 +32,12 @@ const emit = defineEmits<{ navigate: [path: string] }>();
 
 const { t } = useI18n({
   en: {
-    sim: "SIMULATION",
+    sim: "PRACTICE LAB",
     simNote: "Real prices, fake money. Nothing here touches a wallet.",
+    terminal: "Training terminal",
+    liveData: "Live market data",
+    virtualCapital: "$10,000 virtual",
+    exit: "Exit",
     equity: "Simulated equity",
     positions: "Positions",
     noPositions: "No open position yet.",
@@ -52,8 +56,12 @@ const { t } = useI18n({
     quitCancel: "Stay",
   },
   fr: {
-    sim: "SIMULATION",
+    sim: "LABO PRATIQUE",
     simNote: "Vrais prix, argent fictif. Rien ici ne touche un wallet.",
+    terminal: "Terminal d'entraînement",
+    liveData: "Marché en direct",
+    virtualCapital: "10 000 $ virtuels",
+    exit: "Quitter",
     equity: "Équité simulée",
     positions: "Positions",
     noPositions: "Aucune position ouverte.",
@@ -259,7 +267,9 @@ function money(value: number): string {
       <div class="tut-progress" role="progressbar" :aria-valuenow="tutorial.index.value + 1" :aria-valuemin="1" :aria-valuemax="tutorial.total">
         <span :style="{ width: `${((tutorial.index.value + 1) / tutorial.total) * 100}%` }"></span>
       </div>
+      <span class="step-count mono">{{ String(tutorial.index.value + 1).padStart(2, "0") }} / {{ tutorial.total }}</span>
       <LangToggle variant="light" />
+      <button class="exit-btn" type="button" @click="onSkip"><span class="exit-label">{{ t("exit") }}</span> ×</button>
     </header>
 
     <div class="tut-body">
@@ -278,7 +288,19 @@ function money(value: number): string {
         @finish="finish"
       />
 
-      <section class="sandbox">
+      <section class="sandbox-shell">
+        <header class="sandbox-head">
+          <div>
+            <span class="lab">{{ t("sim") }}</span>
+            <strong>{{ t("terminal") }}</strong>
+          </div>
+          <div class="sandbox-status">
+            <span class="status-live"><i></i>{{ t("liveData") }}</span>
+            <span class="mono">{{ t("virtualCapital") }}</span>
+          </div>
+        </header>
+
+        <div class="sandbox">
         <div class="sb-left">
           <aside
             class="card watch"
@@ -420,6 +442,7 @@ function money(value: number): string {
             <SandboxBook :book="sandbox.book.value" :mark="sandbox.mark.value" />
           </div>
         </div>
+        </div>
       </section>
     </div>
 
@@ -439,40 +462,102 @@ function money(value: number): string {
 </template>
 
 <style scoped>
-/* Le reset global ne touche que la police et le curseur : chaque surface
- * neutralise elle-même le style natif des boutons. */
 button { background: none; border: none; color: inherit; padding: 0; }
-.tutorial { display: flex; flex-direction: column; height: 100vh; padding: 12px; gap: 12px; }
-.tut-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.tut-brand { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: -.02em; flex-shrink: 0; }
-.tut-brand .mk { display: block; width: 26px; height: 26px; flex-shrink: 0; }
-.sim-badge { font-size: 10.5px; letter-spacing: .14em; padding: 4px 9px; border-radius: 100px; background: var(--live); color: #2a1500; font-weight: 700; }
-.sim-note { font-size: 12px; }
-.tut-progress { flex: 1; min-width: 120px; height: 3px; background: var(--line2); border-radius: 100px; overflow: hidden; }
-.tut-progress span { display: block; height: 100%; background: var(--up); transition: width .4s var(--ease); }
-.tut-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 440px 1fr; gap: 12px; }
-/* Trois colonnes, comme le vrai terminal : la watchlist à gauche, le graphique
- * et les positions au centre, le ticket et le carnet à droite. Le ticket a
- * ainsi toute la hauteur — il en a besoin, il porte une douzaine de contrôles. */
-.sandbox { display: grid; grid-template-columns: 170px 1fr 320px; gap: 12px; min-height: 0; }
+.tutorial {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: 12px;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(79, 106, 255, .08), transparent 28%),
+    var(--bg);
+}
+.tut-bar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 2px 4px;
+}
+.tut-brand { display: flex; align-items: center; gap: 8px; font-weight: 850; letter-spacing: -.035em; flex-shrink: 0; }
+.tut-brand .mk { display: block; width: 28px; height: 28px; flex-shrink: 0; }
+.sim-badge {
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  padding: 6px 9px;
+  border: 1px solid rgba(79, 106, 255, .24);
+  border-radius: 7px;
+  background: rgba(79, 106, 255, .09);
+  color: var(--blue);
+  font-weight: 750;
+}
+.sim-note { font-size: 11.5px; }
+.tut-progress { flex: 1; min-width: 100px; height: 4px; background: var(--line2); border-radius: 100px; overflow: hidden; }
+.tut-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--blue), #9ca9ff); transition: width .4s var(--ease); }
+.step-count { color: var(--mut2); font-size: 10px; white-space: nowrap; }
+.exit-btn { padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line2); color: var(--soft); font-size: 11px; }
+.exit-btn:hover { color: var(--text); border-color: var(--text); }
+.tut-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(390px, 420px) minmax(0, 1fr); gap: 12px; }
+
+.sandbox-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, .12);
+  border-radius: 24px;
+  background:
+    linear-gradient(rgba(255, 255, 255, .025), rgba(255, 255, 255, 0)),
+    #111318;
+  box-shadow: 0 22px 70px rgba(5, 7, 14, .2);
+}
+.sandbox-head {
+  min-height: 49px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 6px 10px;
+}
+.sandbox-head > div:first-child { display: grid; gap: 2px; }
+.sandbox-head .lab { color: #7184ff; font-size: 8.5px; }
+.sandbox-head strong { font: 700 14px var(--disp); }
+.sandbox-status { display: flex; align-items: center; gap: 7px; }
+.sandbox-status > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 7px;
+  color: rgba(255, 255, 255, .56);
+  font-size: 9.5px;
+}
+.status-live i { width: 6px; height: 6px; border-radius: 50%; background: var(--up); box-shadow: 0 0 0 3px rgba(61, 222, 159, .11); }
+
+.sandbox { flex: 1; display: grid; grid-template-columns: minmax(125px, 150px) minmax(240px, 1fr) minmax(260px, 295px); gap: 9px; min-height: 0; }
 .sb-left { min-height: 0; display: flex; }
 .sb-left > * { flex: 1; }
-.sb-center { display: grid; grid-template-rows: 1.35fr 1fr; gap: 12px; min-height: 0; }
-.sb-right { display: grid; grid-template-rows: 1fr auto; gap: 12px; min-height: 0; }
+.sb-center { display: grid; grid-template-rows: 1.45fr .75fr; gap: 9px; min-width: 0; min-height: 0; }
+.sb-right { display: grid; grid-template-rows: 1fr auto; gap: 9px; min-width: 0; min-height: 0; }
 .bookzone { min-height: 0; overflow: hidden; }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.card { background: #17191f; border: 1px solid rgba(255, 255, 255, .09); border-radius: 14px; padding: 13px; }
 .watch { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
-.wt-head { display: flex; justify-content: space-between; margin-bottom: 6px; }
-.wrow { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
-.wrow.on { background: var(--panel2); }
+.wt-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; }
+.wrow { display: grid; gap: 3px; padding: 9px 8px; border-radius: 9px; text-align: left; font-size: 12px; }
+.wrow:hover { background: rgba(255, 255, 255, .035); }
+.wrow.on { background: rgba(79, 106, 255, .13); box-shadow: inset 2px 0 #7184ff; }
 .wrow span { font-size: 12px; color: var(--soft); }
 .chartcard { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .chart-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.bigprice { font-size: 22px; font-weight: 700; }
+.bigprice { font-size: 20px; font-weight: 750; letter-spacing: -.03em; }
 .ct-type { display: flex; gap: 4px; background: var(--panel2); border-radius: 8px; padding: 3px; }
 .ct-type button { padding: 6px 12px; border-radius: 6px; font: 11px var(--mono); color: var(--soft); }
 .ct-type button.on { background: var(--blue); color: #fff; }
-.fastbtn { margin-left: auto; padding: 8px 14px; border-radius: 100px; border: 1px solid var(--line2); font: 11px var(--mono); color: var(--text); }
+.fastbtn { margin-left: auto; padding: 8px 11px; border-radius: 8px; border: 1px solid var(--line2); font: 10px var(--mono); color: var(--text); }
+.fastbtn:hover { border-color: #7184ff; }
 .chart { flex: 1; min-height: 0; width: 100%; }
 .chart .up { stroke: var(--up); }
 .chart .down { stroke: var(--down); }
@@ -485,15 +570,12 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .chart .lvl.entry { stroke: var(--text); }
 .chart .lvl.liq { stroke: var(--live); }
 .chart .lvl-t { font: 9px var(--mono); fill: var(--soft); }
-.blotter { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.blotter { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
 .empty { font-size: 13px; }
-.prow { display: grid; grid-template-columns: 60px 1fr 1fr 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.prow { display: grid; grid-template-columns: 52px 1fr 1fr 1fr auto; gap: 7px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; }
 .prow .up { color: var(--up); }
 .prow .down { color: var(--down); }
 .closebtn { padding: 5px 12px; border-radius: 100px; border: 1px solid var(--line2); font-size: 11px; color: var(--soft); }
-/* Projecteur — voir `lib/sandbox/spotlight.ts`. Une seule zone est nette et
- * cerclée de rouge ; tout le reste recule. C'est ce qui rend l'étape lisible
- * d'un coup d'œil, sans avoir à lire pour savoir où regarder. */
 .zone-spot {
   position: relative;
   z-index: 2;
@@ -504,8 +586,8 @@ button { background: none; border: none; color: inherit; padding: 0; }
   animation: pulse 1.9s var(--ease) infinite;
 }
 .zone-dim {
-  filter: blur(3px) saturate(.45);
-  opacity: .28;
+  filter: blur(1.5px) saturate(.5);
+  opacity: .3;
   transition: opacity .35s var(--ease), filter .35s var(--ease);
 }
 @keyframes pulse {
@@ -516,16 +598,40 @@ button { background: none; border: none; color: inherit; padding: 0; }
   .zone-spot { animation: none; }
 }
 .quit-overlay { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; background: rgba(8, 8, 12, .72); backdrop-filter: blur(6px); }
-.quit-card { background: var(--panel); border: 1px solid var(--line2); border-radius: 16px; padding: 26px; max-width: 380px; display: grid; gap: 10px; }
+.quit-card { background: #111318; border: 1px solid rgba(255, 255, 255, .15); border-radius: 20px; padding: 28px; max-width: 390px; display: grid; gap: 10px; box-shadow: 0 28px 90px rgba(0, 0, 0, .38); }
 .quit-card h3 { font-size: 20px; font-weight: 700; }
 .quit-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
 .quit-actions button { padding: 10px 18px; border-radius: 100px; font-weight: 700; font-size: 13px; }
 .quit-actions .primary { background: #fff; color: var(--panel); }
 .quit-actions .ghost { border: 1px solid var(--line2); color: var(--text); }
-@media (max-width: 1080px) {
-  .tut-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sandbox { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, auto); }
-  .sb-center { grid-template-rows: 260px 200px; }
+@media (max-width: 1180px) {
+  .tutorial { height: auto; min-height: 100dvh; }
+  .tut-body { grid-template-columns: 1fr; }
+  .tut-body > :first-child { min-height: 760px; }
+  .sandbox-shell { min-height: 760px; }
+}
+@media (max-width: 820px) {
+  .sim-note { display: none; }
+  .sandbox-shell { min-height: 0; }
+  .sandbox { grid-template-columns: 1fr; }
+  .sb-left { min-height: 190px; }
+  .sb-center { grid-template-rows: 340px 210px; }
+  .sb-right { order: -1; min-height: 760px; }
   .bookzone { display: none; }
+}
+@media (max-width: 560px) {
+  .tutorial { padding: 8px; }
+  .tut-bar { gap: 8px; }
+  .sim-badge { display: none; }
+  .tut-progress { order: 8; flex-basis: 100%; }
+  .step-count { margin-left: auto; }
+  .exit-btn { min-width: 32px; font-size: 13px; }
+  .exit-label { display: none; }
+  .tut-body > :first-child { min-height: 760px; }
+  .sandbox-shell { border-radius: 20px; padding: 8px; }
+  .sandbox-head { align-items: flex-start; }
+  .sandbox-status { align-items: flex-end; flex-direction: column; }
+  .sandbox-status > span { font-size: 8.5px; }
+  .sb-center { grid-template-rows: 310px 220px; }
 }
 </style>

@@ -113,23 +113,38 @@ function parseInline(s: string): Seg[] {
 
 <style scoped>
 .body {
-  font-size: 16.5px;
+  font-size: 17px;
+  counter-reset: article-section;
 }
 .b-h {
+  position: relative;
   font-family: var(--disp);
-  font-weight: 800;
+  font-weight: 900;
   text-transform: uppercase;
-  font-size: clamp(23px, 3vw, 31px);
-  letter-spacing: -0.03em;
-  line-height: 1.02;
-  margin: 52px 0 18px;
+  font-size: clamp(29px, 3.8vw, 45px);
+  letter-spacing: -0.045em;
+  line-height: .94;
+  margin: 70px 0 24px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, .13);
   scroll-margin-top: 84px;
+  counter-increment: article-section;
+}
+.b-h::before {
+  content: counter(article-section, decimal-leading-zero);
+  display: block;
+  margin-bottom: 12px;
+  color: var(--blue);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .12em;
 }
 .b-p {
-  font-size: 16.5px;
-  line-height: 1.75;
-  color: rgba(255, 255, 255, 0.88);
-  margin: 0 0 20px;
+  font-size: 17px;
+  line-height: 1.82;
+  color: rgba(255, 255, 255, 0.8);
+  margin: 0 0 24px;
 }
 .b-p strong,
 .b-list strong,
@@ -156,10 +171,10 @@ code.mono {
 .b-list li {
   position: relative;
   padding-left: 22px;
-  font-size: 16px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.86);
-  margin-bottom: 12px;
+  font-size: 16.5px;
+  line-height: 1.68;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 14px;
 }
 .b-list li::before {
   content: "";
@@ -168,8 +183,9 @@ code.mono {
   top: 11px;
   width: 7px;
   height: 7px;
-  border-radius: 50%;
-  background: var(--blue);
+  border-radius: 2px;
+  background: #fff;
+  transform: rotate(45deg);
 }
 
 /* étapes numérotées */
@@ -183,11 +199,18 @@ code.mono {
   display: flex;
   gap: 16px;
   align-items: baseline;
-  padding: 16px 0;
-  border-top: 1px solid var(--line);
+  padding: 20px 0;
+  border-top: 1px solid rgba(255, 255, 255, .12);
 }
 .b-steps .num {
-  color: var(--blue);
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, .2);
+  border-radius: 50%;
+  color: #fff;
   font-weight: 700;
   font-size: 13px;
   flex: 0 0 auto;
@@ -200,12 +223,23 @@ code.mono {
 
 /* encart (callout) */
 .b-callout {
-  border: 1px solid var(--line2);
-  border-left-width: 3px;
-  border-radius: 14px;
-  padding: 20px 22px;
-  margin: 24px 0;
-  background: var(--panel2);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 18px;
+  padding: 26px 28px;
+  margin: 30px 0;
+  background: rgba(255, 255, 255, .055);
+}
+.b-callout::after {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  right: -55px;
+  top: -65px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 50%;
 }
 .b-callout p {
   font-size: 15.5px;
@@ -220,13 +254,13 @@ code.mono {
   color: var(--soft);
 }
 .b-callout.info {
-  border-left-color: var(--blue);
+  box-shadow: inset 3px 0 var(--blue);
 }
 .b-callout.tip {
-  border-left-color: var(--blue);
+  box-shadow: inset 3px 0 #fff;
 }
 .b-callout.warn {
-  border-left-color: var(--live);
+  box-shadow: inset 3px 0 var(--live);
 }
 .b-callout.warn .c-title {
   color: var(--live);
@@ -234,11 +268,11 @@ code.mono {
 
 /* exemple chiffré (worked example) */
 .b-example {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 20px 22px;
-  margin: 24px 0;
-  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 18px;
+  padding: 26px 28px;
+  margin: 30px 0;
+  background: #191c27;
 }
 .b-example .e-title {
   margin-bottom: 12px;
@@ -249,8 +283,8 @@ code.mono {
   justify-content: space-between;
   align-items: baseline;
   gap: 16px;
-  padding: 10px 0;
-  border-top: 1px solid var(--line);
+  padding: 13px 0;
+  border-top: 1px solid rgba(255, 255, 255, .1);
 }
 .b-example .e-row:first-child {
   border-top: none;
@@ -267,20 +301,38 @@ code.mono {
 
 /* citation */
 .b-quote {
-  border-left: 3px solid var(--blue);
-  padding: 4px 0 4px 22px;
-  margin: 28px 0;
+  position: relative;
+  border: 0;
+  padding: 34px 0 34px 48px;
+  margin: 38px 0;
   font-family: var(--disp);
   font-weight: 600;
-  font-size: clamp(18px, 2.4vw, 22px);
-  line-height: 1.4;
-  letter-spacing: -0.01em;
+  font-size: clamp(22px, 3vw, 31px);
+  line-height: 1.25;
+  letter-spacing: -0.025em;
   color: #fff;
+}
+.b-quote::before {
+  content: "“";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  color: var(--blue);
+  font-family: Georgia, serif;
+  font-size: 76px;
+  line-height: 1;
 }
 
 .b-divider {
   border: none;
   border-top: 1px solid var(--line);
   margin: 32px 0;
+}
+
+@media (max-width: 620px) {
+  .b-h { margin-top: 54px; }
+  .b-p { font-size: 16px; line-height: 1.72; }
+  .b-callout, .b-example { padding: 22px 20px; }
+  .b-quote { padding-left: 36px; }
 }
 </style>

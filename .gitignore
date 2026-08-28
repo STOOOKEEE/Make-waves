@@ -52,3 +52,6 @@ skills-lock.json
 # Growth: PNG maîtres régénérables via growth/assets/make_meme*.py (les JPG sont les fichiers postés)
 growth/assets/*.png
 !growth/assets/2026-07-30-stop-loss-tab.png
+
+# Captures et logs du CLI Playwright (scratch de debug, jamais versionné)
+.playwright-cli/

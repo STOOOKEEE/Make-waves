@@ -113,6 +113,15 @@ const { t } = useI18n({
     claimingFirstTradeNft: "Claiming NFT…",
     paperHint: "Simulated — no real funds",
     liveHint: "Real swap on XRPL, signed in your wallet",
+    deskLabel: "TIDE TRADING DESK",
+    paperDesk: "Practice with virtual capital",
+    liveDesk: "XRPL execution with real funds",
+    marketUniverse: "Market universe",
+    assetCount: "{n} assets",
+    orderTicket: "Order ticket",
+    simulated: "Simulated",
+    orderPreview: "Order preview",
+    reviewHint: "Review before sending",
   },
   fr: {
     markets: "Marchés",
@@ -207,6 +216,15 @@ const { t } = useI18n({
     claimingFirstTradeNft: "Claim du NFT…",
     paperHint: "Simulé — aucun fonds réel",
     liveHint: "Swap réel sur XRPL, signé dans ton wallet",
+    deskLabel: "TIDE TRADING DESK",
+    paperDesk: "Entraîne-toi avec un capital virtuel",
+    liveDesk: "Exécution XRPL avec des fonds réels",
+    marketUniverse: "Univers de marché",
+    assetCount: "{n} actifs",
+    orderTicket: "Ticket d'ordre",
+    simulated: "Simulé",
+    orderPreview: "Aperçu de l'ordre",
+    reviewHint: "Vérifie avant d'envoyer",
   },
 });
 
@@ -1163,9 +1181,10 @@ watch(cur, () => {
 
 // ---------- ticket : valeurs dérivées (spot pur, sans levier) ----------
 function estimatedQty(): number {
-  return notional() / cur.value.p;
+  return cur.value.p > 0 ? notional() / cur.value.p : 0;
 }
 function estQtyLabel(): string {
+  if (cur.value.p <= 0) return "—";
   return estimatedQty().toFixed(cur.value.p < 1 ? 0 : 2) + " " + cur.value.s;
 }
 function estFeeValue(): number {
@@ -1931,25 +1950,34 @@ onUnmounted(() => {
   <div class="main" :class="{ live: mode === 'live' }">
     <!-- BARRE DE MODE : passage Paper ↔ Live (argent réel), contexte du compte -->
     <div class="modebar" :class="{ live: mode === 'live' }">
-      <div class="modeseg">
-        <button
-          type="button"
-          :class="{ on: mode === 'paper' }"
-          :title="t('paperHint')"
-          @click="setMode('paper')"
-        >
-          {{ t('modePaper') }}
-        </button>
-        <button
-          type="button"
-          class="livebtn"
-          :class="{ on: mode === 'live' }"
-          :disabled="!liveConfigured()"
-          :title="liveConfigured() ? t('liveHint') : t('liveNotConfigured')"
-          @click="setMode('live')"
-        >
-          {{ t('modeLive') }}
-        </button>
+      <div class="mode-intro">
+        <div class="desk-copy">
+          <span class="desk-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <div>
+            <span class="lab">{{ t('deskLabel') }}</span>
+            <strong>{{ mode === 'paper' ? t('paperDesk') : t('liveDesk') }}</strong>
+          </div>
+        </div>
+        <div class="modeseg">
+          <button
+            type="button"
+            :class="{ on: mode === 'paper' }"
+            :title="t('paperHint')"
+            @click="setMode('paper')"
+          >
+            <span class="mode-dot"></span>{{ t('modePaper') }}
+          </button>
+          <button
+            type="button"
+            class="livebtn"
+            :class="{ on: mode === 'live' }"
+            :disabled="!liveConfigured()"
+            :title="liveConfigured() ? t('liveHint') : t('liveNotConfigured')"
+            @click="setMode('live')"
+          >
+            <span class="mode-dot"></span>{{ t('modeLive') }}
+          </button>
+        </div>
       </div>
 
       <div class="modectx">
@@ -2053,7 +2081,10 @@ onUnmounted(() => {
     <div class="deck" :class="{ locked: starterWalletClaimRequired }">
     <!-- WATCHLIST -->
     <aside class="card watch">
-      <div class="wt-head"><span class="t">{{ t('markets') }}</span><span class="lab">24h</span></div>
+      <div class="wt-head">
+        <div><span class="lab">{{ t('marketUniverse') }}</span><span class="t">{{ t('markets') }}</span></div>
+        <span class="asset-count mono">{{ t('assetCount', { n: filteredMarkets.length }) }} · 24h</span>
+      </div>
       <div class="srch">
         <span class="soft">⌕</span>
         <input v-model="search" :placeholder="t('searchPlaceholder')" />
@@ -2079,7 +2110,7 @@ onUnmounted(() => {
 
     <!-- CENTER -->
     <section class="col">
-      <div class="card" style="flex: 1">
+      <div class="card chart-card">
         <div class="mkt">
           <div class="pairsel">
             <div class="ic">{{ cur.s }}</div>
@@ -2219,6 +2250,15 @@ onUnmounted(() => {
     <!-- RIGHT -->
     <aside class="col">
       <div class="card ticket">
+        <div class="ticket-head">
+          <div>
+            <span class="lab">{{ t('orderTicket') }}</span>
+            <strong>{{ cur.s }} <i>/</i> RLUSD</strong>
+          </div>
+          <span class="ticket-mode" :class="{ live: mode === 'live' }">
+            <i></i>{{ mode === 'paper' ? t('simulated') : t('modeLive') }}
+          </span>
+        </div>
         <div class="ticket-controls">
           <div class="mini-field">
             <span>{{ t('product') }}<LearnHint slug="what-is-a-perpetual" :label="t('hintProduct')" :bubble="false" /></span>
@@ -2285,6 +2325,9 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="summary">
+          <div class="summary-title">
+            <span>{{ t('orderPreview') }}</span><small>{{ t('reviewHint') }}</small>
+          </div>
           <div class="r"><span>{{ t('estQty') }}</span><b>{{ estQtyLabel() }}</b></div>
           <div class="r"><span>{{ t('margin') }}</span><b>{{ estMarginLabel() }}</b></div>
           <div class="r"><span>{{ t('estFees') }}</span><b>${{ fmt(estFeeValue()) }}</b></div>
@@ -2344,16 +2387,24 @@ onUnmounted(() => {
 .main {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 0 18px 18px;
+  gap: 10px;
+  padding: 12px 14px 14px;
   height: calc(100vh - 64px);
+  overflow: hidden;
+  background: transparent;
 }
 .deck {
   display: grid;
-  grid-template-columns: 250px 1fr 336px;
-  gap: 14px;
+  grid-template-columns: minmax(205px, 226px) minmax(420px, 1fr) minmax(310px, 326px);
+  gap: 10px;
   flex: 1;
   min-height: 0;
+}
+.deck .card {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 18px;
+  background: #14161c;
+  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.13);
 }
 .deck.locked {
   pointer-events: none;
@@ -2361,21 +2412,34 @@ onUnmounted(() => {
   filter: blur(4px);
   opacity: 0.32;
 }
-@media (max-width: 1200px) {
+@media (max-width: 1100px) {
   .deck {
     grid-template-columns: 1fr 336px;
   }
   .main {
     height: auto;
+    min-height: calc(100dvh - 64px);
+    overflow: visible;
   }
   .watch {
-    display: none;
+    grid-column: 1 / -1;
+    max-height: 154px;
+  }
+  .watch .wl-scroll {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .watch .wrow {
+    width: 190px;
+    flex: 0 0 auto;
   }
 }
 @media (max-width: 780px) {
   .deck {
     grid-template-columns: 1fr;
   }
+  .watch { grid-column: auto; }
 }
 
 /* ---------- BARRE DE MODE (Paper ↔ Live, argent réel) ---------- */
@@ -2385,10 +2449,10 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 14px;
   flex-shrink: 0;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 10px 14px;
+  background: #14161c;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 18px;
+  padding: 9px 11px 9px 15px;
   transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
 }
 .modebar.live {
@@ -2439,15 +2503,46 @@ onUnmounted(() => {
   padding: 6px 9px;
   cursor: pointer;
 }
+.mode-intro,
+.desk-copy,
+.desk-copy > div {
+  display: flex;
+  align-items: center;
+}
+.mode-intro { gap: 18px; }
+.desk-copy { gap: 11px; }
+.desk-copy > div { align-items: flex-start; flex-direction: column; gap: 2px; }
+.desk-copy .lab { color: #8e9cff; font-size: 8.5px; }
+.desk-copy strong { font-size: 12px; font-weight: 650; }
+.desk-mark {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  padding: 8px;
+  border: 1px solid rgba(113, 132, 255, .35);
+  border-radius: 10px;
+  background: rgba(79, 106, 255, .11);
+}
+.desk-mark i { width: 3px; border-radius: 3px; background: #8998ff; }
+.desk-mark i:nth-child(1) { height: 8px; }
+.desk-mark i:nth-child(2) { height: 15px; }
+.desk-mark i:nth-child(3) { height: 11px; }
 .modeseg {
   display: inline-flex;
   gap: 3px;
   padding: 3px;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 11px;
+  background: rgba(255, 255, 255, .045);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 10px;
 }
 .modeseg button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   border: none;
   background: none;
   color: var(--soft);
@@ -2455,7 +2550,7 @@ onUnmounted(() => {
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.02em;
-  padding: 8px 24px;
+  padding: 7px 15px;
   border-radius: 8px;
   cursor: pointer;
   transition: 0.18s var(--ease);
@@ -2463,7 +2558,10 @@ onUnmounted(() => {
 .modeseg button.on {
   background: var(--blue);
   color: #fff;
+  box-shadow: 0 5px 16px rgba(79, 106, 255, .24);
 }
+.mode-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .5; }
+.modeseg button.on .mode-dot { opacity: 1; box-shadow: 0 0 0 3px rgba(255, 255, 255, .16); }
 .modeseg button.livebtn.on {
   background: var(--live);
   color: #2a1500;
@@ -2571,7 +2669,7 @@ onUnmounted(() => {
   padding: 22px 24px;
   border: 1px solid rgba(95, 124, 255, 0.55);
   border-radius: 16px;
-  background: linear-gradient(135deg, rgba(95, 124, 255, 0.14), var(--panel));
+  background: #171922;
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.32);
 }
 .wallet-claim-mark {
@@ -2673,7 +2771,7 @@ onUnmounted(() => {
   border-left-color: var(--live);
 }
 .main.live .pairsel .ic {
-  background: linear-gradient(135deg, var(--live), #ff7a3c);
+  background: var(--live);
   color: #2a1500;
 }
 .main.live .inp:focus-within {
@@ -2688,7 +2786,7 @@ onUnmounted(() => {
 .col {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
 }
 
@@ -2703,20 +2801,31 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 16px 10px;
+  padding: 15px 15px 10px;
+}
+.wt-head > div {
+  display: grid;
+  gap: 3px;
+}
+.wt-head > div .lab {
+  color: #7f90ff;
+  font-size: 8px;
 }
 .wt-head .t {
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
+  letter-spacing: -.02em;
 }
+.asset-count { color: var(--mut2); font-size: 8.5px; }
 .srch {
   margin: 0 12px 8px;
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, .08);
   border-radius: 9px;
-  padding: 9px 11px;
+  padding: 8px 10px;
+  background: #101218;
 }
 .srch input {
   background: none;
@@ -2747,17 +2856,21 @@ onUnmounted(() => {
   grid-template-columns: 1fr 56px 64px;
   gap: 8px;
   align-items: center;
-  padding: 11px 16px;
+  margin: 2px 7px;
+  padding: 10px 9px;
   cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background 0.15s;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background 0.15s, border-color .15s, transform .15s;
 }
 .wrow:hover {
-  background: var(--panel2);
+  background: rgba(255, 255, 255, .035);
+  transform: translateX(2px);
 }
 .wrow.on {
-  background: var(--panel2);
-  border-left-color: var(--blue);
+  background: rgba(79, 106, 255, .12);
+  border-color: rgba(113, 132, 255, .27);
+  box-shadow: inset 2px 0 #7184ff;
 }
 .wrow .s b {
   font-size: 13px;
@@ -2784,11 +2897,17 @@ onUnmounted(() => {
 }
 
 /* chart card */
+.chart-card {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #14161c !important;
+}
 .mkt {
   display: flex;
   align-items: center;
   gap: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
   overflow-x: auto;
   flex-shrink: 0;
 }
@@ -2796,15 +2915,15 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 11px;
-  padding: 14px 18px;
-  border-right: 1px solid var(--line);
+  padding: 13px 16px;
+  border-right: 1px solid rgba(255, 255, 255, .08);
   cursor: pointer;
 }
 .pairsel .ic {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--blue), #9d7bff);
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  background: var(--blue);
   display: grid;
   place-items: center;
   font-weight: 800;
@@ -2825,13 +2944,13 @@ onUnmounted(() => {
   color: var(--soft);
 }
 .bigprice {
-  padding: 9px 20px;
-  border-right: 1px solid var(--line);
+  padding: 9px 18px;
+  border-right: 1px solid rgba(255, 255, 255, .08);
 }
 .bigprice .p {
   font-family: var(--mono);
-  font-size: 21px;
-  font-weight: 700;
+  font-size: 23px;
+  font-weight: 750;
   letter-spacing: -0.02em;
 }
 .bigprice .c {
@@ -2840,8 +2959,8 @@ onUnmounted(() => {
   font-weight: 700;
 }
 .scell {
-  padding: 9px 20px;
-  border-right: 1px solid var(--line);
+  padding: 9px 16px;
+  border-right: 1px solid rgba(255, 255, 255, .08);
   white-space: nowrap;
 }
 .scell .l {
@@ -2858,14 +2977,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 9px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
   flex-shrink: 0;
 }
 .tf {
   display: flex;
   gap: 2px;
-  background: var(--panel2);
+  background: #101218;
   border-radius: 9px;
   padding: 3px;
 }
@@ -2883,6 +3002,7 @@ onUnmounted(() => {
 .tf button.on {
   background: var(--blue);
   color: #fff;
+  box-shadow: 0 4px 12px rgba(79, 106, 255, .2);
 }
 /* Zone de l'axe des prix : glissement vertical pour zoomer l'échelle (cf. onPriceAxisDown). */
 .price-axis-zoom {
@@ -2900,7 +3020,7 @@ onUnmounted(() => {
   margin-left: auto;
   display: flex;
   gap: 2px;
-  background: var(--panel2);
+  background: #101218;
   border-radius: 9px;
   padding: 3px;
 }
@@ -2921,7 +3041,7 @@ onUnmounted(() => {
   flex: 1;
   position: relative;
   min-height: 300px;
-  padding: 6px 0 0;
+  padding: 10px 0 0;
   display: flex;
   flex-direction: column;
   cursor: grab;
@@ -2976,13 +3096,14 @@ onUnmounted(() => {
 .pos {
   display: flex;
   flex-direction: column;
-  max-height: 248px;
+  max-height: 228px;
+  overflow: hidden;
 }
 .pos-tabs {
   display: flex;
   gap: 18px;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--line);
+  padding: 13px 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
   flex-shrink: 0;
 }
 .pos-tabs button {
@@ -3005,6 +3126,7 @@ onUnmounted(() => {
   bottom: -14px;
   height: 2px;
   background: var(--blue);
+  border-radius: 2px 2px 0 0;
 }
 .pos-tabs .cnt {
   font-family: var(--mono);
@@ -3028,8 +3150,8 @@ onUnmounted(() => {
 .pthead {
   position: sticky;
   top: 0;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
+  background: #14161c;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
 }
 .pthead div {
   font-size: 10px;
@@ -3050,7 +3172,7 @@ onUnmounted(() => {
   font-weight: 700;
 }
 .empty-row {
-  padding: 22px 16px;
+  padding: 24px 16px;
   color: var(--mut2);
   font-family: var(--mono);
   font-size: 12px;
@@ -3089,16 +3211,46 @@ onUnmounted(() => {
 
 /* order ticket */
 .ticket {
-  padding: 12px 14px;
-  flex-shrink: 0;
-  max-height: min(510px, 58%);
+  padding: 13px;
+  flex: 0 0 80%;
+  min-height: 350px;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .18) transparent;
 }
+.ticket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 1px 12px;
+  margin-bottom: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+.ticket-head > div { display: grid; gap: 3px; }
+.ticket-head .lab { color: #8494ff; font-size: 8px; }
+.ticket-head strong { font: 750 14px var(--disp); }
+.ticket-head strong i { color: var(--mut2); font-style: normal; font-weight: 500; }
+.ticket-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid rgba(113, 132, 255, .25);
+  border-radius: 7px;
+  color: #aeb8ff;
+  font: 8.5px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.ticket-mode i { width: 5px; height: 5px; border-radius: 50%; background: #7184ff; }
+.ticket-mode.live { border-color: rgba(255, 157, 60, .4); color: var(--live); }
+.ticket-mode.live i { background: var(--live); box-shadow: 0 0 0 3px rgba(255, 157, 60, .12); }
 .ticket-controls {
   display: grid;
-  gap: 7px;
-  margin-bottom: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-bottom: 11px;
 }
 .mini-field {
   display: grid;
@@ -3106,46 +3258,48 @@ onUnmounted(() => {
 }
 .mini-field > span {
   color: var(--soft);
-  font-size: 10.5px;
+  font-size: 8.5px;
+  white-space: nowrap;
 }
 .mini-seg {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 3px;
   padding: 3px;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 9px;
+  background: #101218;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 8px;
 }
 .mini-seg button {
   border: none;
   background: none;
   color: var(--soft);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 8.5px;
   font-weight: 700;
-  padding: 6px 8px;
+  padding: 6px 2px;
   border-radius: 6px;
 }
 .mini-seg button.on {
   background: var(--blue);
   color: #fff;
+  box-shadow: 0 4px 11px rgba(79, 106, 255, .18);
 }
 .bs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  border-radius: 11px;
+  border-radius: 9px;
   overflow: hidden;
   border: 1px solid var(--line);
-  margin-bottom: 11px;
+  margin-bottom: 10px;
 }
 .bs button {
   border: none;
   background: var(--panel2);
   color: var(--soft);
   font-weight: 800;
-  font-size: 14px;
-  padding: 11px;
+  font-size: 12.5px;
+  padding: 10px;
   transition: 0.2s;
 }
 .bs button.buy.on {
@@ -3157,7 +3311,7 @@ onUnmounted(() => {
   color: #2a0a06;
 }
 .field {
-  margin-bottom: 10px;
+  margin-bottom: 9px;
 }
 .compact-field {
   margin-bottom: 8px;
@@ -3168,20 +3322,21 @@ onUnmounted(() => {
   margin-bottom: 5px;
 }
 .field .fl .k {
-  font-size: 11.5px;
+  font-size: 10px;
   color: var(--soft);
 }
 .field .fl .b {
-  font-size: 11.5px;
+  font-size: 9.5px;
   color: var(--soft);
   font-family: var(--mono);
 }
 .inp {
   display: flex;
   align-items: center;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 9px;
+  padding: 0 11px;
+  background: #101218;
   transition: border-color 0.2s;
 }
 .inp:focus-within {
@@ -3193,15 +3348,15 @@ onUnmounted(() => {
   border: none;
   color: var(--text);
   font-family: var(--mono);
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  padding: 10px 0;
+  padding: 9px 0;
   outline: none;
   width: 100%;
 }
 .inp .suf {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 10px;
   color: var(--soft);
   font-weight: 500;
 }
@@ -3250,13 +3405,13 @@ onUnmounted(() => {
 }
 .pcts button {
   flex: 1;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, .09);
   background: none;
   color: var(--soft);
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
-  padding: 7px 0;
+  padding: 6px 0;
   border-radius: 8px;
   transition: 0.15s;
 }
@@ -3282,13 +3437,33 @@ onUnmounted(() => {
   font-size: 10px;
 }
 .summary {
-  font-size: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, .075);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .025);
+  font-size: 10.5px;
   margin-bottom: 10px;
 }
+.summary-title {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 7px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, .07);
+}
+.summary-title span { color: #fff; font-weight: 750; }
+.summary-title small { color: var(--mut2); font-size: 8px; }
 .summary .r {
   display: flex;
   justify-content: space-between;
-  padding: 3px 0;
+  gap: 7px;
+  padding: 2px 0;
   color: var(--soft);
 }
 .summary .r b {
@@ -3297,15 +3472,17 @@ onUnmounted(() => {
   font-weight: 600;
 }
 .placebtn {
+  margin-top: 8px;
   width: 100%;
   border: none;
-  border-radius: 12px;
-  padding: 13px;
+  border-radius: 9px;
+  padding: 12px;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 13px;
   color: #06231a;
   background: var(--up);
   transition: 0.2s;
+  box-shadow: 0 8px 24px rgba(61, 222, 159, .12);
 }
 .placebtn.sell {
   background: var(--down);
@@ -3322,10 +3499,10 @@ onUnmounted(() => {
 
 /* order book */
 .book {
-  padding: 14px 16px;
+  padding: 13px 14px;
   overflow-y: auto;
-  flex: 1;
-  min-height: 220px;
+  flex: 1 1 20%;
+  min-height: 100px;
 }
 .book .bh {
   display: flex;
@@ -3401,5 +3578,33 @@ onUnmounted(() => {
   font-family: var(--mono);
   font-size: 12px;
   text-align: center;
+}
+@media (max-width: 760px) {
+  .main { padding: 8px; gap: 8px; }
+  .modebar { align-items: stretch; flex-direction: column; padding: 10px; }
+  .mode-intro { justify-content: space-between; gap: 10px; }
+  .desk-copy strong { display: none; }
+  .modectx { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+  .ctxlabel { margin-left: auto; }
+  .deck { gap: 8px; }
+  .deck .card { border-radius: 15px; }
+  .watch { max-height: 148px; }
+  .mkt { align-items: stretch; }
+  .pairsel, .bigprice, .scell { padding-left: 12px; padding-right: 12px; }
+  .chart-wrap { min-height: 330px; }
+  .pos { max-height: 230px; }
+  .ptable { overflow: auto; }
+  .pthead, .ptrow { min-width: 650px; }
+  .ticket { flex: auto; min-height: 0; max-height: none; }
+  .book { min-height: 260px; }
+}
+@media (max-width: 420px) {
+  .desk-copy .lab { display: none; }
+  .desk-mark { width: 30px; height: 30px; }
+  .modeseg { flex: 1; }
+  .modeseg button { flex: 1; padding-inline: 10px; }
+  .ticket-controls { grid-template-columns: 1fr; }
+  .mini-field { grid-template-columns: 66px 1fr; align-items: center; }
+  .mini-field > span { font-size: 8px; }
 }
 </style>
