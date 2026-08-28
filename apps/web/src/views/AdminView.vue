@@ -10,6 +10,8 @@ const {
   error,
   loading,
   walletJob,
+  managedWallets,
+  lastManagedWalletClaim,
   provisionResult,
   competitionPayout,
   lastNftGrant,
@@ -18,6 +20,10 @@ const {
   lastInactiveDelete,
   load,
   refreshWalletJob,
+  importManagedWallet,
+  tradeManagedWallet,
+  claimManagedWalletBadge,
+  removeManagedWallet,
   createUserWallets,
   fundUserWallets,
   deleteInactiveUsers,
@@ -32,6 +38,8 @@ const {
 } = useAdmin(createLocalAdminClient());
 
 const selectedUserIds = ref<string[]>([]);
+const managedWalletLabel = ref("");
+const managedWalletSeed = ref("");
 const bulkSetupRunning = ref(false);
 const bulkSetupStep = ref<"idle" | "workflow">("idle");
 const bulkConfirmation = ref("");
@@ -371,6 +379,50 @@ async function submitCompetition(): Promise<void> {
   }
 }
 
+async function submitManagedWallet(): Promise<void> {
+  const label = managedWalletLabel.value.trim();
+  const seed = managedWalletSeed.value.trim();
+  // La seed quitte immédiatement l'état du formulaire, succès ou échec. Le
+  // service ne la renvoie jamais dans sa réponse.
+  managedWalletSeed.value = "";
+  if (label === "" || seed === "") return;
+  if (await importManagedWallet(label, seed)) managedWalletLabel.value = "";
+}
+
+function confirmManagedTrade(address: string): void {
+  if (window.confirm("Ajouter un trade Paper XRP/RLUSD à cette identité ? Aucune transaction XRPL ne sera envoyée.")) {
+    void tradeManagedWallet(address);
+  }
+}
+
+function confirmManagedClaim(address: string, badgeCode: string): void {
+  if (
+    window.confirm(
+      `Mint + accepter le NFT ${badgeCode} sur ${address} ?\n\n` +
+      "Une transaction XRPL Mainnet sera signée côté serveur avec la seed du coffre.",
+    )
+  ) {
+    void claimManagedWalletBadge(address, badgeCode);
+  }
+}
+
+function confirmManagedRemoval(address: string): void {
+  if (
+    window.confirm(
+      `Retirer ${address} du coffre ?\n\n` +
+      "La seed chiffrée sera effacée du serveur. Le compte Paper, ses NFT et son historique resteront intacts.",
+    )
+  ) {
+    void removeManagedWallet(address);
+  }
+}
+
+function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): string {
+  if (status === "claimed") return "Claimé";
+  if (status === "offer_pending") return "Offre en attente";
+  return "Non claimé";
+}
+
 </script>
 
 <template>
@@ -566,6 +618,95 @@ async function submitCompetition(): Promise<void> {
         <p v-if="lastInactiveDelete" class="result">{{ lastInactiveDelete.deleted }} compte(s) Paper inactif(s) supprimé(s), dont {{ lastInactiveDelete.walletRowsDeleted }} adresse(s) locale(s) non financée(s).</p>
       </section>
 
+      <section class="wallet-manager wallet-manager--vault">
+        <div class="wallet-manager__head">
+          <div>
+            <h2>Wallets externes gérés</h2>
+            <p>Coffre serveur séparé du funnel Paper. Les seeds sont chiffrées au repos, jamais affichées ni renvoyées par l’API. Aucun wallet 1/2 et aucun funding Tide.</p>
+          </div>
+          <strong>{{ managedWallets.length }} wallet(s)</strong>
+        </div>
+
+        <form class="managed-wallet-import" @submit.prevent="submitManagedWallet">
+          <label>
+            Label
+            <input
+              v-model="managedWalletLabel"
+              maxlength="80"
+              autocomplete="off"
+              placeholder="Ex. Wallet test 01"
+              required
+            />
+          </label>
+          <label class="managed-wallet-import__seed">
+            Seed XRPL
+            <input
+              v-model="managedWalletSeed"
+              type="password"
+              maxlength="128"
+              autocomplete="new-password"
+              autocapitalize="off"
+              spellcheck="false"
+              placeholder="s…"
+              required
+            />
+          </label>
+          <button type="submit" :disabled="loading || managedWalletLabel.trim() === '' || managedWalletSeed.trim() === ''">
+            Importer et chiffrer
+          </button>
+        </form>
+        <p class="admin__warning">L’import transite uniquement par le serveur admin privé. Ne colle jamais une seed dans le dashboard public.</p>
+
+        <div class="table-scroll">
+          <table class="admin__table wallet-table wallet-table--vault">
+            <thead>
+              <tr><th>Label / adresse</th><th>Activité Paper</th><th>Badges</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              <tr v-if="managedWallets.length === 0">
+                <td colspan="4" class="muted">Coffre vide.</td>
+              </tr>
+              <tr v-for="wallet in managedWallets" :key="wallet.address">
+                <td>
+                  <strong>{{ wallet.label }}</strong>
+                  <a
+                    :href="explorerAccount(wallet.address)"
+                    class="wallet-address"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ wallet.address }}</a>
+                  <small>Importé le {{ formatDate(wallet.createdAt) }}</small>
+                </td>
+                <td>
+                  <strong>{{ wallet.paperTrades }} trade(s)</strong>
+                  <button type="button" :disabled="loading" @click="confirmManagedTrade(wallet.address)">+1 trade Paper XRP</button>
+                </td>
+                <td>
+                  <div v-for="badge in wallet.badges" :key="badge.code" class="managed-badge">
+                    <span>
+                      <strong>{{ badge.title }}</strong>
+                      <small>{{ badge.earned ? "Mérité" : "Non mérité" }} · {{ managedBadgeLabel(badge.status) }}</small>
+                    </span>
+                    <button
+                      type="button"
+                      class="nft"
+                      :disabled="loading || !badge.earned || badge.status === 'claimed'"
+                      @click="confirmManagedClaim(wallet.address, badge.code)"
+                    >{{ badge.status === "offer_pending" ? "Reprendre" : "Claim" }}</button>
+                  </div>
+                </td>
+                <td class="row-actions">
+                  <button type="button" class="danger" :disabled="loading" @click="confirmManagedRemoval(wallet.address)">Retirer du coffre</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="lastManagedWalletClaim" class="result">
+          NFT {{ lastManagedWalletClaim.badgeCode }} accepté par {{ lastManagedWalletClaim.address }} · tx {{ lastManagedWalletClaim.claimHash }}
+        </p>
+      </section>
+
       <section v-if="externalWallets.length > 0" class="wallet-manager wallet-manager--external">
         <div class="wallet-manager__head">
           <div>
@@ -676,6 +817,7 @@ async function submitCompetition(): Promise<void> {
 .admin__table td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid rgba(128, 128, 128, 0.2); }
 .wallet-manager { border: 1px solid rgba(137, 91, 255, .7); border-radius: 12px; padding: 1.1rem; margin: 1.5rem 0; background: rgba(15, 18, 30, .12); }
 .wallet-manager--external { border-color: rgba(43, 212, 192, .55); }
+.wallet-manager--vault { border-color: rgba(240, 160, 48, .65); }
 .wallet-manager__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .wallet-manager__head h2 { margin: 0; }
 .wallet-manager__head p { margin: .35rem 0 1rem; opacity: .75; }
@@ -692,7 +834,9 @@ async function submitCompetition(): Promise<void> {
 .table-scroll { overflow-x: auto; }
 .wallet-table { min-width: 1180px; margin-bottom: .5rem; }
 .wallet-table--external { min-width: 760px; }
+.wallet-table--vault { min-width: 980px; }
 .wallet-table th:first-child, .wallet-table td:first-child { width: 34px; text-align: center; }
+.wallet-table--vault th:first-child, .wallet-table--vault td:first-child { width: auto; text-align: left; }
 .wallet-table tbody tr.row--selected { background: rgba(137, 91, 255, .10); }
 .user-id { display: block; max-width: 310px; overflow-wrap: anywhere; }
 .wallet-table small { display: block; opacity: .65; margin-top: .2rem; }
@@ -705,6 +849,13 @@ async function submitCompetition(): Promise<void> {
 .status--external { color: #087f73; background: rgba(43, 212, 192, .16); }
 .row-actions { white-space: nowrap; }
 .row-actions button + button { margin-left: .35rem; }
+.managed-wallet-import { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(300px, 1.5fr) auto; gap: .7rem; align-items: end; margin: .8rem 0; }
+.managed-wallet-import label { display: flex; flex-direction: column; gap: .3rem; font-size: .8rem; }
+.managed-wallet-import input { min-height: 38px; padding: .45rem .6rem; }
+.managed-wallet-import button { min-height: 38px; }
+.managed-badge { display: flex; align-items: center; justify-content: space-between; gap: .7rem; min-width: 280px; padding: .3rem 0; }
+.managed-badge + .managed-badge { border-top: 1px solid rgba(128,128,128,.16); }
+.managed-badge button { min-width: 86px; }
 .result, .batch-result { margin: .75rem 0 0; padding: .65rem; border-radius: 8px; background: rgba(35, 184, 103, .10); overflow-wrap: anywhere; }
 .admin__danger { border: 1px solid #c0392b; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
 .admin__danger h2, .admin__job h2 { margin-top: 0; }
@@ -718,4 +869,5 @@ async function submitCompetition(): Promise<void> {
 .admin__warning { color:#c98800; }.payout { display:flex; flex-direction:column; gap:.4rem; }.payout pre { overflow:auto; max-height:260px; }
 button.danger { color: #fff; background: #a93226; }
 select { margin-right: 0.4rem; }
+@media (max-width: 800px) { .managed-wallet-import { grid-template-columns: 1fr; } }
 </style>

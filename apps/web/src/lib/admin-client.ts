@@ -12,6 +12,8 @@ import {
   type AdminPortfolioManagerExecutionDto,
   type AdminPortfolioManagerPlanDto,
   type AdminPortfolioManagerStatusDto,
+  type AdminManagedWalletDto,
+  type AdminManagedWalletClaimDto,
   type ApiRequest,
   type ApiTransport,
 } from "@tide/client";
@@ -52,6 +54,58 @@ export function createLocalAdminClient(
       expectBody<AdminReclaimJobDto>(
         transport,
         { path: "/admin/wallet-ops/status", method: "GET", headers: { "x-admin-token": token } },
+        200,
+      ),
+    managedWallets: (token) =>
+      expectBody<readonly AdminManagedWalletDto[]>(
+        transport,
+        {
+          path: "/admin/managed-wallets",
+          method: "GET",
+          headers: { "x-admin-token": token },
+        },
+        200,
+      ),
+    importManagedWallet: (token, label, seed) =>
+      expectBody<AdminManagedWalletDto>(
+        transport,
+        {
+          path: "/admin/managed-wallets",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { label, seed },
+        },
+        201,
+      ),
+    tradeManagedWallet: (token, address) =>
+      expectBody<AdminManagedWalletDto>(
+        transport,
+        {
+          path: `/admin/managed-wallets/${encodeURIComponent(address)}/trades`,
+          method: "POST",
+          headers: { "x-admin-token": token },
+        },
+        200,
+      ),
+    claimManagedWalletBadge: (token, address, badgeCode) =>
+      expectBody<AdminManagedWalletClaimDto>(
+        transport,
+        {
+          path: `/admin/managed-wallets/${encodeURIComponent(address)}/badges/${encodeURIComponent(badgeCode)}/claim`,
+          method: "POST",
+          headers: { "x-admin-token": token },
+        },
+        200,
+      ),
+    removeManagedWallet: (token, address) =>
+      expectBody<{ readonly deleted: true }>(
+        transport,
+        {
+          path: `/admin/managed-wallets/${encodeURIComponent(address)}`,
+          method: "DELETE",
+          headers: { "x-admin-token": token },
+          body: { confirmation: address },
+        },
         200,
       ),
     provisionWallets: (token, count) =>

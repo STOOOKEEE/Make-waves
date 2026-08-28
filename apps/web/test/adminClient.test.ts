@@ -147,4 +147,42 @@ describe("client admin local", () => {
       body: { userIds, confirmation: "DELETE 2 INACTIVE PAPER ACCOUNTS" },
     });
   });
+
+  it("envoie la seed uniquement au endpoint privé d'import du coffre", async () => {
+    const seen: ApiRequest[] = [];
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen.push(request);
+      return request.method === "DELETE"
+        ? { status: 200, body: { deleted: true } }
+        : {
+            status: 201,
+            body: {
+              address: "rManaged",
+              label: "Test",
+              createdAt: 1,
+              paperTrades: 0,
+              badges: [],
+            },
+          };
+    };
+    const client = createLocalAdminClient(transport);
+
+    await client.importManagedWallet("secret", "Test", "sPrivate");
+    await client.removeManagedWallet("secret", "rManaged");
+
+    expect(seen).toEqual([
+      {
+        path: "/admin/managed-wallets",
+        method: "POST",
+        headers: { "x-admin-token": "secret" },
+        body: { label: "Test", seed: "sPrivate" },
+      },
+      {
+        path: "/admin/managed-wallets/rManaged",
+        method: "DELETE",
+        headers: { "x-admin-token": "secret" },
+        body: { confirmation: "rManaged" },
+      },
+    ]);
+  });
 });

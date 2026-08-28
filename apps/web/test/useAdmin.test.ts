@@ -62,6 +62,29 @@ function clientWithToken(
       return Promise.resolve(response.body as AdminOverviewDto);
     },
     walletOpsStatus: async () => IDLE_JOB,
+    managedWallets: async () => [],
+    importManagedWallet: async (_token, label) => ({
+      address: "rManaged",
+      label,
+      createdAt: 1,
+      paperTrades: 0,
+      badges: [],
+    }),
+    tradeManagedWallet: async (_token, address) => ({
+      address,
+      label: "Managed",
+      createdAt: 1,
+      paperTrades: 1,
+      badges: [],
+    }),
+    claimManagedWalletBadge: async (_token, address, badgeCode) => ({
+      address,
+      badgeCode,
+      nftTokenId: "NFT",
+      sellOfferId: "OFFER",
+      claimHash: "CLAIM",
+    }),
+    removeManagedWallet: async () => ({ deleted: true }),
     provisionWallets: async (_token, count) => ({
       network: "mainnet",
       requested: count,

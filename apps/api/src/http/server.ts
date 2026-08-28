@@ -66,6 +66,7 @@ import type { FirstTradeRewardService } from "../services/first-trade-reward-ser
 import { PaperWalletUnavailableError } from "../services/paper-wallet-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import type { PortfolioManagerService } from "../services/portfolio-manager-service";
+import type { ManagedExternalWalletService } from "../services/managed-external-wallet-service";
 import {
   CompetitionPaymentUnavailableError,
   CompetitionScoringUnavailableError,
@@ -197,6 +198,8 @@ export interface ServerDeps {
  */
 export interface AdminServerDeps {
   readonly admin: NonNullable<ServerDeps["admin"]>;
+  /** Coffre de seeds : injecté uniquement dans le serveur opérateur privé. */
+  readonly managedWalletAdmin?: ManagedExternalWalletService;
   readonly paper: PaperService;
   readonly competition: CompetitionService;
   readonly competitionPayments?: NonNullable<ServerDeps["competitionPayments"]>;
@@ -1392,6 +1395,85 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       results: [],
     };
   });
+
+  // Coffre de wallets externes gérés. Ces routes n'existent que sur le port
+  // admin privé : `adminDepsFromServer` ne transmet jamais ce service au
+  // serveur produit, même si les anciennes routes admin publiques sont actives.
+  if (deps.managedWalletAdmin !== undefined) {
+    const managed = deps.managedWalletAdmin;
+    app.get("/admin/managed-wallets", async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      return managed.list();
+    });
+    app.post("/admin/managed-wallets", async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      try {
+        const wallet = await managed.importSeed(
+          readStringField(request.body, "label"),
+          readStringField(request.body, "seed"),
+        );
+        reply.code(201);
+        return wallet;
+      } catch (error) {
+        reply.code(409);
+        return { error: error instanceof Error ? error.message : "import refusé" };
+      }
+    });
+    app.post<{ Params: { address: string } }>(
+      "/admin/managed-wallets/:address/trades",
+      async (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        try {
+          return await managed.recordPaperTrade(request.params.address);
+        } catch (error) {
+          reply.code(409);
+          return { error: error instanceof Error ? error.message : "trade Paper refusé" };
+        }
+      },
+    );
+    app.post<{ Params: { address: string; code: string } }>(
+      "/admin/managed-wallets/:address/badges/:code/claim",
+      async (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        try {
+          return await managed.claimBadge(request.params.address, request.params.code);
+        } catch (error) {
+          reply.code(409);
+          return { error: error instanceof Error ? error.message : "claim refusé" };
+        }
+      },
+    );
+    app.delete<{ Params: { address: string } }>(
+      "/admin/managed-wallets/:address",
+      async (request, reply) => {
+        if (!hasAdminToken(request, admin.token)) {
+          reply.code(401);
+          return { error: "unauthorized" };
+        }
+        try {
+          return await managed.remove(
+            request.params.address,
+            readStringField(request.body, "confirmation"),
+          );
+        } catch (error) {
+          reply.code(409);
+          return { error: error instanceof Error ? error.message : "suppression refusée" };
+        }
+      },
+    );
+  }
   if (admin.walletAdmin === undefined) return;
   const walletAdmin = admin.walletAdmin;
   app.post("/admin/wallets/provision", async (request, reply) => {

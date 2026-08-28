@@ -421,6 +421,31 @@ export interface AdminNftGrantDto {
   readonly claimHash: string;
 }
 
+export interface AdminManagedWalletBadgeDto {
+  readonly code: string;
+  readonly title: string;
+  readonly earned: boolean;
+  readonly status: "unclaimed" | "offer_pending" | "claimed";
+  readonly nftTokenId: string | null;
+}
+
+/** Wallet du coffre opérateur : aucune seed ni payload chiffré n'est exposé. */
+export interface AdminManagedWalletDto {
+  readonly address: string;
+  readonly label: string;
+  readonly createdAt: number;
+  readonly paperTrades: number;
+  readonly badges: readonly AdminManagedWalletBadgeDto[];
+}
+
+export interface AdminManagedWalletClaimDto {
+  readonly address: string;
+  readonly badgeCode: string;
+  readonly nftTokenId: string;
+  readonly sellOfferId: string;
+  readonly claimHash: string;
+}
+
 export interface AdminBatchNftGrantDto {
   readonly badgeCode: string;
   readonly requested: number;

@@ -12,6 +12,8 @@ import type {
   AdminPortfolioManagerExecutionDto,
   AdminPortfolioManagerPlanDto,
   AdminPortfolioManagerStatusDto,
+  AdminManagedWalletDto,
+  AdminManagedWalletClaimDto,
 } from "@tide/client";
 import { TideApiError } from "@tide/client";
 import { errorMessage } from "./messages";
@@ -22,6 +24,11 @@ const TOKEN_KEY = "tide.adminToken";
 export interface AdminClient {
   adminOverview(token: string): Promise<AdminOverviewDto>;
   walletOpsStatus(token: string): Promise<AdminReclaimJobDto>;
+  managedWallets(token: string): Promise<readonly AdminManagedWalletDto[]>;
+  importManagedWallet(token: string, label: string, seed: string): Promise<AdminManagedWalletDto>;
+  tradeManagedWallet(token: string, address: string): Promise<AdminManagedWalletDto>;
+  claimManagedWalletBadge(token: string, address: string, badgeCode: string): Promise<AdminManagedWalletClaimDto>;
+  removeManagedWallet(token: string, address: string): Promise<{ readonly deleted: true }>;
   provisionWallets(token: string, count: number): Promise<AdminWalletProvisionDto>;
   createUserWallets(token: string, userIds: readonly string[]): Promise<AdminWalletProvisionDto>;
   fundUserWallets(token: string, userIds: readonly string[], confirmation: string): Promise<AdminWalletProvisionDto>;
@@ -45,6 +52,8 @@ export function useAdmin(client: AdminClient) {
   const error = ref("");
   const loading = ref(false);
   const walletJob = ref<AdminReclaimJobDto | null>(null);
+  const managedWallets = ref<readonly AdminManagedWalletDto[]>([]);
+  const lastManagedWalletClaim = ref<AdminManagedWalletClaimDto | null>(null);
   const provisionResult = ref<AdminWalletProvisionDto | null>(null);
   const competitionPayout = ref<AdminCompetitionCloseDto | null>(null);
   const lastNftGrant = ref<AdminNftGrantDto | null>(null);
@@ -69,15 +78,17 @@ export function useAdmin(client: AdminClient) {
     loading.value = true;
     error.value = "";
     try {
-      const [nextOverview, nextWalletJob, nextPortfolioManager] = await Promise.all([
+      const [nextOverview, nextWalletJob, nextPortfolioManager, nextManagedWallets] = await Promise.all([
         client.adminOverview(token.value),
         client.walletOpsStatus(token.value),
         client.portfolioManagerStatus(token.value),
+        client.managedWallets(token.value),
       ]);
       overview.value = nextOverview;
       walletJob.value = nextWalletJob;
       portfolioManager.value = nextPortfolioManager;
       portfolioPlan.value = nextPortfolioManager.preparedPlan;
+      managedWallets.value = nextManagedWallets;
       sessionStorage.setItem(TOKEN_KEY, token.value);
     } catch (err) {
       overview.value = null;
@@ -98,6 +109,68 @@ export function useAdmin(client: AdminClient) {
       walletJob.value = await client.walletOpsStatus(token.value);
     } catch (err) {
       error.value = errorMessage(err);
+    }
+  }
+
+  async function importManagedWallet(label: string, seed: string): Promise<boolean> {
+    if (token.value === "") return false;
+    loading.value = true;
+    error.value = "";
+    try {
+      await client.importManagedWallet(token.value, label, seed);
+      await load();
+      return true;
+    } catch (err) {
+      error.value = errorMessage(err);
+      return false;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function tradeManagedWallet(address: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      await client.tradeManagedWallet(token.value, address);
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function claimManagedWalletBadge(address: string, badgeCode: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      lastManagedWalletClaim.value = await client.claimManagedWalletBadge(
+        token.value,
+        address,
+        badgeCode,
+      );
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function removeManagedWallet(address: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    try {
+      await client.removeManagedWallet(token.value, address);
+      await load();
+    } catch (err) {
+      error.value = errorMessage(err);
+    } finally {
+      loading.value = false;
     }
   }
 
@@ -305,6 +378,8 @@ export function useAdmin(client: AdminClient) {
     error,
     loading,
     walletJob,
+    managedWallets,
+    lastManagedWalletClaim,
     provisionResult,
     competitionPayout,
     lastNftGrant,
@@ -316,6 +391,10 @@ export function useAdmin(client: AdminClient) {
     portfolioExecution,
     load,
     refreshWalletJob,
+    importManagedWallet,
+    tradeManagedWallet,
+    claimManagedWalletBadge,
+    removeManagedWallet,
     provisionWallets,
     createUserWallets,
     fundUserWallets,

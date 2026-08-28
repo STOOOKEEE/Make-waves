@@ -8,10 +8,11 @@ Ce runtime couvre deux parcours XRPL distincts : le wallet custodial Paper (opti
 4. L'issuer dédié mint le NFT XLS-20 `First Trade`, crée une offre à 0 XRP réservée au wallet 2, puis le wallet 2 accepte l'offre. Une fois le NFT accepté, Tide clôture le wallet 1 par `AccountDelete` taggé : le coût spécial actuel est **0,2 XRP** et le solde restant est envoyé au wallet 2 par défaut. Le statut `deleted` permet une reprise contrôlée si le réseau a interrompu cette dernière étape.
 5. En option B, l'utilisateur connecte Xaman ou GemWallet avant de trader. Le Paper trading est comptabilisé sous son adresse XRPL ; après le premier fill, le claim `first_trade` mint l'offre vers **son wallet**, et il signe lui-même `NFTokenAcceptOffer` dans Xaman/GemWallet.
 6. Chaque transaction Tide pertinente porte le `SourceTag`. La réception d'un NFT ne constitue pas à elle seule un volume de trading ; aucun `OfferCreate` artificiel n'est généré automatiquement, car ce serait du volume auto-généré/wash trading sans confirmation de l'organisateur. Un vrai swap Live reste signé par l'utilisateur.
+7. La console opérateur privée propose un troisième inventaire, les **wallets externes gérés**. Une seed dédiée peut y être importée une fois : elle est immédiatement chiffrée dans `managed_external_wallets`, puis seule l'adresse publique est listée. Ces identités peuvent effectuer des trades Paper et réclamer leurs badges comme des wallets externes ; elles ne créent jamais de wallet 1/2 et Tide ne les finance pas.
 
 Les deux options sont idempotentes et protégées contre le farming : une adresse ne peut pas être reliée à plusieurs sessions Paper, les wallets reliés à une même session partagent leur historique de récompense, et un plafond quotidien de claims externes est appliqué.
 
-Le runtime est Mainnet-only et utilise exclusivement les tables SQLite `paper_wallets_mainnet`, `paper_reward_wallets_mainnet`, `weekly_rewards_mainnet` et `paper_badge_rewards_mainnet`.
+Le runtime est Mainnet-only et utilise les tables SQLite `paper_wallets_mainnet`, `paper_reward_wallets_mainnet`, `weekly_rewards_mainnet`, `paper_badge_rewards_mainnet` et le coffre séparé `managed_external_wallets`.
 
 ## Variables obligatoires
 
@@ -39,7 +40,16 @@ Le serveur refuse de démarrer si l'acknowledgement, l'adresse de récupération
 - `TIDE_PAPER_WALLET_RECOVERY_ADDRESS` est une adresse froide différente du funder et de l'issuer.
 - `TIDE_PAPER_WALLET_KEY_MASTER` chiffre les seeds des wallets utilisateurs. Elle doit être sauvegardée hors serveur ; sa perte rend la récupération impossible.
 - Après un `AccountDelete` XRPL confirmé, la seed chiffrée du wallet supprimé est effacée du champ `encrypted_seed`. La ligne reste comme tombstone (adresse, statut, hashes) pour l'audit et l'anti-farming ; elle ne peut plus signer.
-- Aucun de ces secrets n'est inclus dans le build web, les DTO ou la console admin.
+- Aucun de ces secrets n'est inclus dans le build web public ni dans les DTO. La console admin locale accepte une seed uniquement pendant l'import ; elle vide immédiatement le champ et l'API ne renvoie ensuite que l'adresse, le label et les statuts.
+
+## Coffre de wallets externes gérés
+
+- Les routes `/admin/managed-wallets/*` sont montées uniquement sur le port admin privé. Elles restent absentes de `api.tidetrade.xyz`, même si les anciennes routes admin publiques sont activées.
+- Le coffre réutilise `TIDE_PAPER_WALLET_KEY_MASTER` et AES-256-GCM. La base SQLite ne contient aucune seed en clair et ne doit jamais être commitée.
+- Utiliser seulement des wallets dédiés au programme : la seed est custodiale et peut signer un `NFTokenAcceptOffer` Mainnet depuis l'API.
+- Le bouton `+1 trade Paper XRP` ne soumet aucune transaction XRPL. Le bouton `Claim` mint l'offre, déchiffre la seed uniquement en mémoire, signe l'acceptation Mainnet, puis confirme le claim en base.
+- Un échec d'acceptation laisse l'offre en attente ; `Reprendre` réutilise la même offre sans remint. Retirer un wallet efface seulement sa seed chiffrée du coffre et conserve son historique Paper/NFT pour empêcher un nouveau mint.
+- Ces wallets suivent les règles externes (mérite, idempotence et plafond quotidien) mais ne sont pas liés à l'identité navigateur du frontend.
 
 ## Récupération CLI
 

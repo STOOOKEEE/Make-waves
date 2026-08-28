@@ -55,7 +55,9 @@ import { removeLegacyDemoAccounts } from "./store/migrations/2026-07-18-remove-d
 import { migrateExternalIdentityTables } from "./store/migrations/2026-07-22-external-identities";
 import { migrateWalletDeleteColumns } from "./store/migrations/2026-08-27-wallet-delete";
 import { migrateWalletLinkTables } from "./store/migrations/2026-08-27-wallet-links";
+import { migrateManagedExternalWalletTables } from "./store/migrations/2026-08-28-managed-external-wallets";
 import { SqliteWalletLinkStore } from "./store/sqlite-wallet-link-store";
+import { SqliteManagedExternalWalletStore } from "./store/sqlite-managed-external-wallet-store";
 import {
   createFirstTradeExternalGuard,
   createFirstTradeManagedGuard,
@@ -295,6 +297,7 @@ async function main(): Promise<void> {
   migrateExternalIdentityTables(db);
   migrateWalletDeleteColumns(db);
   migrateWalletLinkTables(db);
+  migrateManagedExternalWalletTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
@@ -319,6 +322,7 @@ async function main(): Promise<void> {
   // métadonnées statiques /nft-metadata restent servies dans tous les cas).
   const badgeStore = new SqliteBadgeStore(db);
   const walletLinks = new SqliteWalletLinkStore(db);
+  const managedExternalWalletStore = new SqliteManagedExternalWalletStore(db);
   const issuerSeed = env.readNftIssuerSeed();
   const nftIssuer =
     issuerSeed !== undefined && wsUrl !== undefined && sourceTag !== undefined
@@ -615,6 +619,18 @@ async function main(): Promise<void> {
     paperRewardWalletStore,
     simulation: arenaSimulation,
     paperWalletAdmin,
+    ...(privateAdminRuntime !== undefined &&
+    paperWalletRuntime !== undefined &&
+    paperWalletAdminGateway !== undefined
+      ? {
+          managedExternalWallets: {
+            store: managedExternalWalletStore,
+            masterKeyHex: paperWalletRuntime.masterKeyHex,
+            masterKeyId: paperWalletRuntime.masterKeyId,
+            gateway: paperWalletAdminGateway,
+          },
+        }
+      : {}),
     paperWalletNftInventory: paperWalletAdminGateway,
     agentStore,
     mandateStore,

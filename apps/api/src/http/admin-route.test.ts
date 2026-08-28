@@ -11,6 +11,7 @@ import { InMemoryCompetitionStore } from "../store/competition-store";
 import { arenaSimulationUserId } from "../simulation/arena-ids";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import type { PortfolioManagerService } from "../services/portfolio-manager-service";
+import type { ManagedExternalWalletService } from "../services/managed-external-wallet-service";
 import type { CompetitionDefinition } from "../store/competition-store";
 import { AuthService } from "../auth/auth-service";
 import { InMemoryChallengeStore } from "../auth/challenge-store";
@@ -67,6 +68,89 @@ describe("GET /admin/overview", () => {
 
     expect(overview.statusCode).toBe(200);
     expect(publicRoute.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("garde le coffre de seeds sur le serveur privé et ne renvoie jamais la seed", async () => {
+    const paper = new PaperService(undefined, new InMemoryAccountStore());
+    const service = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions: new InMemoryAgentActionsStore(),
+      prizePoolAddress: null,
+      operatorUserIds: new Set<string>(),
+    });
+    const list = vi.fn(async () => []);
+    const importSeed = vi.fn(async (label: string) => ({
+      address: "rManaged",
+      label,
+      createdAt: 1,
+      paperTrades: 0,
+      badges: [],
+    }));
+    const recordPaperTrade = vi.fn(async () => ({
+      address: "rManaged",
+      label: "Managed",
+      createdAt: 1,
+      paperTrades: 1,
+      badges: [],
+    }));
+    const claimBadge = vi.fn(async () => ({
+      address: "rManaged",
+      badgeCode: "first_trade",
+      nftTokenId: "NFT",
+      sellOfferId: "OFFER",
+      claimHash: "CLAIM",
+    }));
+    const remove = vi.fn(async () => ({ deleted: true as const }));
+    const managedWalletAdmin = {
+      list,
+      importSeed,
+      recordPaperTrade,
+      claimBadge,
+      remove,
+    } as unknown as ManagedExternalWalletService;
+    const app = buildPrivateAdminServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service },
+      managedWalletAdmin,
+    });
+
+    expect((await app.inject({ method: "GET", url: "/admin/managed-wallets" })).statusCode)
+      .toBe(401);
+    const seed = "sPrivateNeverEchoed";
+    const imported = await app.inject({
+      method: "POST",
+      url: "/admin/managed-wallets",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { label: "Managed", seed },
+    });
+    expect(imported.statusCode).toBe(201);
+    expect(imported.body).not.toContain(seed);
+    expect(importSeed).toHaveBeenCalledWith("Managed", seed);
+
+    expect((await app.inject({
+      method: "POST",
+      url: "/admin/managed-wallets/rManaged/trades",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    })).statusCode).toBe(200);
+    expect((await app.inject({
+      method: "POST",
+      url: "/admin/managed-wallets/rManaged/badges/first_trade/claim",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    })).statusCode).toBe(200);
+    expect((await app.inject({
+      method: "DELETE",
+      url: "/admin/managed-wallets/rManaged",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+      payload: { confirmation: "rManaged" },
+    })).statusCode).toBe(200);
+    expect(recordPaperTrade).toHaveBeenCalledWith("rManaged");
+    expect(claimBadge).toHaveBeenCalledWith("rManaged", "first_trade");
+    expect(remove).toHaveBeenCalledWith("rManaged", "rManaged");
     await app.close();
   });
 

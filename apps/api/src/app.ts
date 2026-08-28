@@ -38,6 +38,8 @@ import type { MandateStore } from "./store/mandate-store";
 import type { ArenaSimulationStatusReader } from "./simulation/arena-simulation-service";
 import type { PaperWalletAdminService } from "./services/paper-wallet-admin-service";
 import type { AdminServerDeps } from "./http/server";
+import { ManagedExternalWalletService } from "./services/managed-external-wallet-service";
+import type { ManagedExternalWalletStore } from "./store/managed-external-wallet-store";
 
 /** Configuration de l'application assemblée. */
 export interface AppConfig {
@@ -97,6 +99,15 @@ export interface AppConfig {
   readonly simulation?: ArenaSimulationStatusReader;
   /** Distribution NFT et récupération des wallets depuis la console locale Mainnet. */
   readonly paperWalletAdmin?: PaperWalletAdminService;
+  /** Coffre chiffré de wallets externes, exposé uniquement au serveur admin privé. */
+  readonly managedExternalWallets?: {
+    readonly store: ManagedExternalWalletStore;
+    readonly masterKeyHex: string;
+    readonly masterKeyId: string;
+    readonly gateway: {
+      acceptNft(seed: string, sellOfferId: string): Promise<{ readonly hash: string }>;
+    };
+  };
   /** Lecture réelle des NFT détenus par les wallets Paper financés. */
   readonly paperWalletNftInventory?: {
     addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>>;
@@ -212,6 +223,21 @@ export function createApp(config: AppConfig): App {
           metadataBaseUrl: config.metadataBaseUrl ?? DEFAULT_METADATA_BASE_URL,
         })
       : undefined;
+  if (config.managedExternalWallets !== undefined && badgeService === undefined) {
+    throw new Error("Coffre de wallets gérés demandé sans service de badges");
+  }
+  const managedWalletAdmin =
+    config.managedExternalWallets === undefined || badgeService === undefined
+      ? undefined
+      : new ManagedExternalWalletService({
+          store: config.managedExternalWallets.store,
+          badges: badgeService,
+          paper,
+          getPrices: () => cache.current(),
+          gateway: config.managedExternalWallets.gateway,
+          masterKeyHex: config.managedExternalWallets.masterKeyHex,
+          masterKeyId: config.managedExternalWallets.masterKeyId,
+        });
   // Console admin : active seulement si un token ET les stores agents/mandats/actions
   // sont fournis (le reste — comptes paper — est toujours là via `paper`).
   const admin =
@@ -385,6 +411,9 @@ export function createApp(config: AppConfig): App {
       ? undefined
       : {
           admin,
+          ...(managedWalletAdmin !== undefined
+            ? { managedWalletAdmin }
+            : {}),
           paper,
           competition,
           getPrices: () => cache.current(),
