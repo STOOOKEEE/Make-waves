@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* Rend le corps d'un article (blocs typés) avec les tokens du design system.
  * Aucun v-html : le gras `**…**` et le code `` `…` `` sont parsés en segments
- * sûrs et rendus via <strong>/<code>. Suit docs/DESIGN.md (bleu = seul accent,
+ * sûrs et rendus via <strong>/<code>. Suit docs/BRAND.md (bleu = seul accent,
  * mono pour les nombres, pas d'ombres, contraste panel/panel2). */
 import type { Block } from "../../data/learn/types";
 import { headingId } from "../../data/learn/toc";

@@ -2,10 +2,11 @@
 version: alpha
 name: TIDE
 description: >-
-  Design system de TIDE — plateforme de paper trading et de compétition de
-  trading crypto/web3. Esthétique « terminal éditorial » : aplat bleu cornflower,
-  typographie display tout-capitales, panneaux sombres en bento, data en
-  monospace. Inspiration phantom.land. Mode sombre par défaut.
+  Design system de TIDE — école de trading crypto : cursus bilingue, terminal
+  d'entraînement en capital virtuel, et compétitions ancrées on-chain sur XRPL.
+  Esthétique « terminal éditorial » : aplat bleu cornflower, typographie display
+  tout-capitales, panneaux sombres en bento, data en monospace. Inspiration
+  phantom.land. Mode sombre par défaut.
 
 colors:
   # — Marque & surfaces
@@ -155,19 +156,28 @@ motion:
 
 ## Overview
 
-**TIDE** est une plateforme de **paper trading** et de **compétition de trading
-crypto/web3** : on trade un capital fictif sur de vrais marchés, on grimpe au
-classement, on encaisse des récompenses on-chain.
+**TIDE apprend à trader aux débutants.** On suit un cursus (**Tide School**, 16
+leçons bilingues sur 4 pistes), on s'entraîne sur de vrais marchés avec un
+capital fictif, puis — si on en a envie — on grimpe au classement et on encaisse
+des récompenses on-chain.
+
+L'ordre compte : **l'apprentissage est la promesse d'entrée**, le paper trading
+est le terrain d'exercice, les compétitions et les agents IA sont ce qui vient
+après. Une surface qui inverse cet ordre est hors marque.
 
 Le système visuel est un **« terminal éditorial »** : la rigueur d'un terminal
 de trading (data dense, monospace, panneaux sombres) croisée avec l'audace d'un
 site éditorial primé (typographie display monumentale tout-capitales, asymétrie,
 beaucoup de respiration). Référence de ton : **phantom.land**.
 
-- **Personnalité** : confiant, compétitif, technique, un brin adrénaline. Jamais
-  corporate ni « fintech timide ».
-- **Public** : traders crypto, dégens stratèges, compétiteurs.
-- **Émotion visée** : confiance immédiate + envie d'en découdre.
+- **Personnalité** : confiant, **pédagogue**, technique, un brin adrénaline.
+  Jamais corporate ni « fintech timide » — et **jamais condescendant** : on
+  explique sans infantiliser.
+- **Public** : **cœur de cible, le débutant qui n'ose pas trader par peur de
+  perdre** (étudiants, retail) — la formulation de `SPEC.md` §1. Cœur de
+  rétention : traders crypto et compétiteurs.
+- **Émotion visée** : confiance immédiate + « **je peux commencer maintenant** ».
+  L'envie d'en découdre vient après, une fois à l'aise.
 - **Mode** : sombre par défaut. Le **bleu cornflower** est le socle, pas un accent
   ponctuel — c'est le fond de l'app et l'âme de la marque.
 - **Marque** : wordmark **TIDE** + une marque en losange (triangle « pic »).
@@ -188,9 +198,11 @@ bleu) ; le reste est neutre + une sémantique stricte.
 | Texte 3 | `muted` | `rgba(255,255,255,.38)` | Désactivé, méta |
 | Ligne | `line` | `rgba(255,255,255,.08)` | Hairlines |
 | Ligne + | `line2` | `rgba(255,255,255,.16)` | Bordures, contours de pills |
+| Ligne ++ | `line3` | `rgba(255,255,255,.22)` | Filets éditoriaux pleine largeur (marquee, étapes, grille de features) — ils structurent la page, pas un composant |
 | **Gain** | `up` | `#BFF6CE` | P&L positif, long, courbe en hausse |
 | **Perte** | `down` | `#FFB9AC` | P&L négatif, short |
 | **Récompense** | `gold` | `#FFD66B` | Cagnottes, podium, prix |
+| **Guidage** | `guide` | `#FF4D3D` | **Projecteur du tutoriel uniquement** : anneau et étiquette de la zone à regarder. Rouge franc, distinct du corail `down` — il ne dit pas « perte », il dit « regarde ici ». Interdit ailleurs. |
 
 **Règles d'or :**
 - `up` (menthe) et `down` (corail) sont **exclusivement sémantiques** — réservés
@@ -286,6 +298,49 @@ Inventaire des composants récurrents (définis dans `app.css` + pages).
   (texte plein + contour `-webkit-text-stroke`), **sticker** rond rotatif,
   app-bar en `mix-blend-mode: difference`, barre de progression de scroll.
 
+### Apprentissage (Tide School)
+
+Ces composants existent en code depuis juillet 2026 et manquaient à cet inventaire.
+
+- **Roadmap d'apprentissage** (`LearnView.vue`) — ligne centrale verticale en
+  pointillés, jalons de niveau numérotés 01→04, cartes de leçon en zigzag
+  gauche/droite, vignette ASCII monospace (`data/learn/art.ts`, **jamais
+  d'emoji**), puce de difficulté.
+- **Corps d'article** (`components/learn/ArticleBody.vue`) — rend les blocs
+  typés `h · p · list · steps · callout(info|warn|tip) · example · quote ·
+  divider`. Encart `warn` = bordure gauche `live`, `info`/`tip` = bordure `blue`.
+  Parseur inline sûr pour `**gras**` et `` `code` `` : **aucun `v-html`**.
+- **`LearnHint`** (`components/learn/LearnHint.vue`) — pastille « ? » de 15 px
+  posée à côté d'un contrôle et qui ouvre la leçon qui l'explique. **C'est un
+  pattern, pas un composant isolé** : c'est le pont entre l'app et l'école, et
+  tout contrôle non évident du terminal devrait en porter un.
+
+Manquent encore à cet inventaire, à documenter quand ils bougeront :
+`SegControl`, `StatusBadge`, `BrandMark`, `LangToggle`, `WalletEntryModal`
+(entrée du funnel Paper à deux étages), `AccountModal`, `SignModal`.
+
+## Voice — copie produit
+
+Règles de fond, non négociables, valables sur toutes les surfaces publiques
+(landing, leçons, tutoriel, app). Les deux premières sont des contraintes de
+**promotion financière**, pas des préférences de style.
+
+- ⛔ **Jamais « sans risque » / « risk-free ».** C'est *prohibited-adjacent* en
+  promotion financière. Dire « **argent fictif** », « **capital virtuel** »,
+  « aucun argent réel ». (Source : `growth/context/05-facts.md` § NEVER SAY.)
+- ⛔ **Jamais de promesse de gain** : `returns`, `profit`, `gains`, « make
+  money », ROI, yield, APY. Tide n'est pas un produit d'argent.
+- ⛔ Ne jamais présenter une performance paper agrégée comme une traction réelle,
+  ni citer les cagnottes et nombres de joueurs de `data/competitions.ts` : c'est
+  du **seed data**.
+- ✅ **Dire le simulé à côté du chiffre**, une fois, en passant — pas en bloc
+  légal en pied de page.
+- ✅ **Tutoiement en français.** Le vouvoiement recrée la distance que le produit
+  cherche à supprimer.
+- ✅ Les chiffres qu'on a le droit d'avancer, parce qu'ils sont vérifiables dans
+  le code : **$10 000** de capital de départ, **16 leçons**, **4 pistes**,
+  **FR/EN**, frais **0,02 % maker / 0,06 % taker**, marchés **top 250**.
+
 ## Do's and Don'ts
 
 **À faire**
@@ -303,7 +358,14 @@ Inventaire des composants récurrents (définis dans `app.css` + pages).
 - ❌ Texte sous **10.5px** hors capitales mono.
 - ❌ Mélanger d'autres polices que Archivo + JetBrains Mono.
 - ❌ Introduire un **second accent fort** qui concurrence le bleu.
-- ❌ Titres en bas-de-casse léger : les titres sont **lourds & capitales**.
+- ❌ Titres en bas-de-casse léger **pour les titres d'accroche** (hero, sections
+  de landing, titres de page app) : ceux-là sont **lourds & capitales**.
+  ✅ **Exception pédagogique** : le contenu d'apprentissage — titres de leçon,
+  sous-titres d'article, encarts, étapes, libellés de `LearnHint` — s'écrit en
+  **casse de phrase, Archivo 600/700**. Les capitales dégradent la lisibilité sur
+  du texte explicatif long. Règle d'arbitrage : **titre explicatif ou plus de
+  5 mots → casse de phrase**. C'est déjà ce que fait `LearnView` (« The trader's
+  path »), le doc rattrape le code.
 
 ---
 

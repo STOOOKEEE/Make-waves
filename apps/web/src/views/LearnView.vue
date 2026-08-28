@@ -3,9 +3,10 @@
  * LearnView — index de Tide School en ROADMAP verticale (beginner → pro).
  * Une ligne centrale descend ; les niveaux (jalons) sont posés dessus et les
  * leçons alternent gauche/droite autour. Vignette ASCII sur chaque carte.
- * Bilingue, sur le design system (docs/DESIGN.md) : bleu = seul accent.
+ * Bilingue, sur le design system (docs/BRAND.md) : bleu = seul accent.
  */
-import { computed, onMounted } from "vue";
+import { computed, watchEffect } from "vue";
+import { useTutorial } from "../composables/useTutorial";
 import { articlesByCategory } from "../data/learn";
 import type { Article, Category, Difficulty } from "../data/learn/types";
 import { useI18n } from "../i18n/useI18n";
@@ -15,6 +16,12 @@ const emit = defineEmits<{ navigate: [path: string] }>();
 const { t, locale } = useI18n({
   en: {
     eyebrow: "Tide School",
+    tutLabel: "Start here",
+    tutTitle: "Interactive tutorial",
+    tutBody: "Ten minutes in a guided sandbox on live market data. Place a real order, set a stop, see a leveraged position get liquidated. Fake money, skippable at any time.",
+    tutStart: "Start the tutorial",
+    tutResume: "Resume — step {n} of {total}",
+    tutRestart: "Run it again",
     title: "The trader's path",
     subtitle:
       "One route from your first candle to competing on-chain. Follow the line, clear each level, and go from beginner to pro.",
@@ -28,7 +35,7 @@ const { t, locale } = useI18n({
     lvAdvanced: "Advanced",
     lvPro: "Pro",
     descBasics: "Read the market, master orders, and learn how Tide works.",
-    descPerps: "Perps, leverage, long & short, TP/SL — safely simulated in Paper.",
+    descPerps: "Perps, leverage, long & short, TP/SL — simulated in Paper, with fake money.",
     descStrategies: "Risk management, trends, ranges, breakouts and psychology.",
     descPlatform: "Compete for pots and build a verifiable on-chain track record.",
     readCta: "Read →",
@@ -43,6 +50,12 @@ const { t, locale } = useI18n({
   },
   fr: {
     eyebrow: "Tide School",
+    tutLabel: "Commence ici",
+    tutTitle: "Tutoriel interactif",
+    tutBody: "Dix minutes dans un bac à sable guidé, sur les données de marché en direct. Passe un vrai ordre, pose un stop, regarde une position à levier se faire liquider. Argent fictif, passable à tout moment.",
+    tutStart: "Commencer le tutoriel",
+    tutResume: "Reprendre — étape {n} sur {total}",
+    tutRestart: "Le refaire",
     title: "Le parcours du trader",
     subtitle:
       "Une seule route, de ta première bougie à la compétition on-chain. Suis la ligne, passe chaque niveau, et va de débutant à pro.",
@@ -56,7 +69,7 @@ const { t, locale } = useI18n({
     lvAdvanced: "Avancé",
     lvPro: "Pro",
     descBasics: "Lis le marché, maîtrise les ordres, et comprends comment marche Tide.",
-    descPerps: "Perps, levier, long & short, TP/SL — simulés sans risque en Paper.",
+    descPerps: "Perps, levier, long & short, TP/SL — simulés en Paper, en argent fictif.",
     descStrategies: "Gestion du risque, tendances, ranges, breakouts et psychologie.",
     descPlatform: "Concours pour des cagnottes et bâtis un track record on-chain vérifiable.",
     readCta: "Lire →",
@@ -115,6 +128,15 @@ const roadmap = computed<RoadLevel[]>(() => {
   });
 });
 
+const tutorial = useTutorial();
+const tutorialCta = computed(() => {
+  if (tutorial.status.value === "done") return t("tutRestart");
+  if (tutorial.isResumable.value) {
+    return t("tutResume", { n: tutorial.index.value + 1, total: tutorial.total });
+  }
+  return t("tutStart");
+});
+
 function difficultyLabel(d: Difficulty): string {
   return t(d);
 }
@@ -123,8 +145,9 @@ function open(slug: string): void {
   emit("navigate", `/learn/${slug}`);
 }
 
-onMounted(() => {
-  document.title = "TIDE School — The trader's path | TIDE";
+// Le titre d'onglet suit la langue choisie : il restait en anglais en FR.
+watchEffect(() => {
+  document.title = `${t("eyebrow")} — ${t("title")} | TIDE`;
 });
 </script>
 
@@ -137,6 +160,17 @@ onMounted(() => {
         <p>{{ t("subtitle") }}</p>
       </div>
     </div>
+
+    <!-- Entrée du tutoriel : c'est le foyer naturel du parcours, et le libellé
+         change selon qu'on commence, qu'on reprend ou qu'on recommence. -->
+    <a class="tut-card" href="#/tutorial" @click.prevent="emit('navigate', '/tutorial')">
+      <div class="tut-copy">
+        <span class="lab">{{ t("tutLabel") }}</span>
+        <strong>{{ t("tutTitle") }}</strong>
+        <p>{{ t("tutBody") }}</p>
+      </div>
+      <span class="tut-cta">{{ tutorialCta }} →</span>
+    </a>
 
     <div class="road">
       <template v-for="level in roadmap" :key="level.id">
@@ -207,6 +241,36 @@ onMounted(() => {
 </template>
 
 <style scoped>
+/* Carte d'entrée du tutoriel, posée avant la roadmap. */
+.tut-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  background: var(--panel);
+  border: 1px solid var(--line2);
+  border-radius: 16px;
+  padding: 24px 26px;
+  margin-bottom: 48px;
+  transition: border-color .25s, transform .25s var(--ease);
+}
+.tut-card:hover { border-color: var(--up); transform: translateY(-2px); }
+.tut-copy { display: grid; gap: 8px; max-width: 640px; }
+.tut-copy .lab { color: var(--up); }
+.tut-copy strong { font-size: 22px; font-weight: 700; }
+.tut-copy p { color: var(--soft); font-size: 15px; line-height: 1.55; }
+.tut-cta {
+  flex-shrink: 0;
+  background: #fff;
+  color: var(--panel);
+  font-weight: 800;
+  font-size: 14px;
+  border-radius: 100px;
+  padding: 13px 22px;
+  white-space: nowrap;
+}
+
 .eyebrow {
   margin-bottom: 10px;
 }

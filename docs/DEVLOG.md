@@ -2580,3 +2580,139 @@ du wallet 2 lorsqu'une offre NFT existe déjà sur un wallet externe lié.
 Dans l'AppBar, les onglets conservent leur placement et leur taille ; seuls les
 états actif et survol sont retravaillés avec un contour blanc et un fond léger.
 L'onglet actif expose également `aria-current="page"`.
+
+## 2026-08-28 — Consolidation du dépôt + audit de dette front
+
+**Quoi.** `main` remis au niveau du travail réel, puis audit du front pour ouvrir
+le chantier `feat/front-app`.
+
+Trois choses. (1) `main` était **48 commits derrière** `fix/live-claim-nav` (six
+semaines de travail d'Armand : funnel wallet à deux étages, wallet entry, purge
+des données fictives, console admin étendue, coffre de seeds chiffré) et en était
+un **ancêtre strict** — fast-forward, aucune fusion à arbitrer. Base vérifiée
+avant de pousser : **1077 tests, typecheck 8/8, lint 0**. (2) Le système growth
+(archive des posts, règles de voix, générateurs de mèmes) est fusionné ; les PNG
+maîtres sont gitignorés, régénérables via `growth/assets/make_meme*.py`, seuls
+les JPG postés sont versionnés. (3) La route `GET /admin/agent-actions` est
+**réécrite**, pas fusionnée.
+
+**Pourquoi la réécriture plutôt que la fusion.** La PR #8 visait la structure
+d'origine, où les routes admin étaient déclarées inline dans `buildServer` avec
+leur garde de token recopiée à chaque handler. Cette structure a été refactorisée
+depuis en `registerAdminRoutes` + `hasAdminToken`, partagée entre le serveur
+public et le serveur opérateur privé. Le diff ne s'appliquait plus (3 fichiers en
+conflit) et l'appliquer de force aurait réintroduit le style abandonné. La
+lecture passe donc par une nouvelle méthode `AdminService.agentActions` — le
+store d'actions était déjà une dépendance du service, aucun câblage nouveau à
+faire remonter jusqu'à `AdminServerDeps`. Même contrat qu'en PR #8 (`agentId`
+requis, `limit` entier dans [1, 200]), +5 tests.
+
+**Cheminement.** `feat/roadmap-lots` s'est révélée entièrement absorbée par la
+PR #7 : `AdminView.vue` et `useAdmin.ts` sont identiques bit-à-bit sur `main`.
+Son dernier commit `ba5e82d` corrigeait la doc (« garde admin = comparaison
+directe, pas timing-safe ») — cette correction est **obsolète** : le code de
+`main` utilise bien `timingSafeEqual` avec égalité de longueur préalable. Rien
+n'est perdu, la branche est supprimable.
+
+**Audit front (rapport complet reporté dans CLAUDE.md).** Cinq points, par coût
+de non-traitement : `DashboardView.vue` à **3405 lignes sans aucun test** alors
+qu'il porte le funnel wallet, le chart, le carnet, le ticket et le blotter ;
+`/arena` rend un écran vide de 37 lignes pendant qu'`AgentView.vue` (688 l., 12
+tests) n'est branchée sur **aucune route**, rendant toute la grappe agent
+inatteignable au runtime ; le design system a forké (`LandingView` redéfinit ses
+tokens, trois vues ont leur CSS minifié sur une ligne, `docs/DESIGN.md` et
+`docs/BRAND.md` sont deux copies bit-à-bit) ; code mort (`useMarket.ts`,
+`useCountdown.ts`, ~24 clés i18n orphelines) ; couverture déséquilibrée (~30 cas
+sur la stack agent non atteignable, ~16 sur le funnel wallet, zéro sur le
+routing).
+
+**Dette tracée.** Le funnel deux-wallets **n'a toujours jamais tourné de bout en
+bout en production** — aucun claim déclenché pour ne pas dépenser de vrais XRP.
+Le scénario manuel en 8 étapes est prêt dans `docs/devlogs.md`. C'est la
+vérification qui manque avant de considérer le funnel acquis.
+
+## 2026-08-28 — Pivot « apprendre d'abord » : repositionnement + tutoriel interactif
+
+**Quoi.** Deux lots sur `feat/front-app`, poussés. (1) Le front mène désormais par
+l'apprentissage. (2) Un tutoriel interactif de 19 étapes, bilingue et cliquable,
+sur `#/tutorial`.
+
+**Pourquoi.** Conseil de XRPL Commons, organisateur de Make Waves. Le pivot ne
+contredit pas le produit : `docs/SPEC.md` §1 définissait déjà Tide comme un
+« terrain d'entraînement où on apprend sans risque », et `ROADMAP.md` l.73 avait
+une case ouverte « texte produit honnête sur le Paper (engagement/apprentissage,
+ne pas survendre la perf) ». C'est la vitrine qui avait dérivé vers l'arène
+compétitive, pas la spec. Le lot 1 la rapatrie.
+
+**Lot 1 — repositionnement.** La landing garde sa charpente et change de
+promesse. La section pleine largeur passe de l'AI Arena à Tide School : l'Arène
+concentrait quatre CTA vers une page qui annonce elle-même qu'aucune compétition
+d'agents ne tourne. `Learn` passe de 6e et dernière à première position dans
+l'app-bar et dans les cartes produit. Les pistes et le compte de leçons sont
+dérivés de `data/learn`, donc aucun chiffre en dur ne peut mentir. Le CTA final
+passe à deux boutons : le secondaire garde `walletEntry.show()`, seul point
+d'entrée du funnel wallet sur la page, et un test le verrouille.
+
+Dette soldée au passage puisqu'on rouvrait le fichier : 29 clés i18n orphelines,
+CSS `.stats` mort, fork de tokens (6 recopies identiques du global, 4 divergences
+non intentionnelles — la seule valeur réellement différente est promue en
+`--line3` documenté), `.lab` local hors spec, et les titres de cartes produit qui
+étaient en `--blue` sur fond `--blue`, donc invisibles au repos.
+
+`docs/BRAND.md` réécrit sur la définition produit, le public (le débutant, plus
+les « dégens stratèges ») et l'émotion visée ; l'interdit « pas de titres en
+bas-de-casse » est borné aux titres d'accroche pour laisser respirer la copie
+pédagogique ; les composants d'apprentissage entrent à l'inventaire.
+`docs/DESIGN.md`, copie bit-à-bit, devient un stub.
+
+**Règle de copie remontée.** `growth/context/05-facts.md` interdit « risk-free » /
+« sans risque » comme *prohibited-adjacent en promotion financière*. Le marquee
+de la landing affichait « Zero Risk », et la copie FR de `LearnView` promettait
+des perps « simulés sans risque ». Corrigé, et la règle est désormais dans
+`docs/BRAND.md` § Voice, visible depuis le design system au lieu d'être enfouie
+dans les docs growth.
+
+**Lot 2 — le tutoriel.** La décision structurante est qu'il vit **à côté** du
+terminal, pas par-dessus. En production `starterWalletClaimRequired` applique
+`.deck.locked` (`DashboardView.vue` l.2358-2363) : le deck est flouté et inerte
+tant que le wallet Paper n'est pas financé. Un tour en surimpression échouerait
+donc exactement là où il sert, et il existe **deux régimes de premier passage**
+décidés par le serveur. Une surface autonome se comporte pareil dans les deux, et
+surtout `DashboardView` (3405 l., zéro test) n'est pas touché.
+
+La garantie « aucune écriture serveur » est une **contrainte de compilation** :
+`TutorialView` reçoit `SandboxFeed = Pick<TideClient, "markets"|"history"|
+"bookDepth">`, donc appeler `placeOrder` ou `claimPaperWallet` depuis cet arbre ne
+compile pas. Ces trois routes sont publiques (`auth/guard.ts` l.36-39) : le
+tutoriel tourne sans compte, sans wallet, sans dépenser un XRP.
+
+Réutilisation plutôt que réécriture : le contenu d'une étape est un `RawBlock[]`
+de Tide School (bilingue garanti à la compilation) rendu par `ArticleBody` tel
+quel ; le PnL vient de `positionPnl` de `@tide/core`, donc une seule règle de PnL
+dans tout Tide et les chiffres appris sont ceux du produit.
+
+**Bugs & fix.** Deux bugs trouvés **au navigateur, pas par les tests**.
+(1) L'équité double-comptait la marge — 10 000 $ s'affichaient 12 494 $ après un
+ordre à 25 %. La marge est *réservée dans le cash, pas dépensée* (convention de
+`@tide/core` `position/equity.ts`), elle ne devait pas être rajoutée dans
+`simEquity`. (2) La watchlist proposait USDT et USDC : un actif qui vaut 1 $ en
+permanence n'enseigne ni une bougie, ni un stop, ni une liquidation. Les
+stablecoins sont filtrés.
+
+**Dette tracée.** Le tutoriel ne simule pas le funding (expliqué en texte), ni le
+pan/zoom du chart, ni les ordres limit adossés au carnet (un limit se remplit
+quand le mark croise le prix). Le scénario de liquidation n'est **pas** scripté :
+la marche de prix reste honnête, c'est la ligne de liquidation tracée sur le
+graphique et le tableau 2x→50 % / 20x→5 % qui font la pédagogie.
+
+**Deux idées qui remontent vers le produit.** La ligne « Risque au stop » ($ et %
+de l'équité) et les repères entrée/TP/SL/liquidation sur le graphique n'existent
+pas dans le vrai ticket. Ce sont les deux ajouts les plus utiles de tout l'écran.
+À back-porter après le hackathon.
+
+**Vérifié.** 1133 tests (+56 sur ces deux lots, sur une zone qui en avait zéro),
+typecheck 8/8, lint 0, build OK. Navigateur, EN et FR : validation d'objectif au
+clic, ordre spot exécuté, perp 10x avec liquidation calculée et tracée,
+accélération d'une heure, et la règle du 1 % qui refuse 13,50 % de risque puis
+valide 0,42 %. **Les tests du funnel wallet passent sans avoir été modifiés** —
+c'était le critère de non-régression.

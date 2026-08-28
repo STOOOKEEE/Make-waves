@@ -119,13 +119,15 @@ const accountLabel = computed(() =>
   account.canLogout.value ? account.label.value : t("account"),
 );
 
+// `Learn` ouvre la rangée : l'apprentissage est la promesse d'entrée du produit,
+// pas une ressource annexe. Le reste de l'ordre est inchangé.
 const tabs = computed<{ path: RoutePath; label: string }[]>(() => [
+  { path: "/learn", label: t("learn") },
   { path: "/dashboard", label: t("trading") },
   { path: "/portfolio", label: t("portfolio") },
   { path: "/leaderboard", label: t("leaderboard") },
   { path: "/competitions", label: t("competitions") },
   { path: "/arena", label: t("arena") },
-  { path: "/learn", label: t("learn") },
 ]);
 
 function go(path: string): void {

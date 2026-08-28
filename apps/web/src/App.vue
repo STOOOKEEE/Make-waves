@@ -18,11 +18,20 @@ import CompetitionView from "./views/CompetitionView.vue";
 import ArenaView from "./views/ArenaView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
+import TutorialView from "./views/TutorialView.vue";
+import TutorialOfferModal from "./components/tutorial/TutorialOfferModal.vue";
 
 // La console d'administration est un outil local : cet import conditionnel est
 // éliminé du build Vite de production, donc son code n'est jamais publié.
 const LocalAdminView = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./views/AdminView.vue"))
+  : null;
+
+// Archive de la landing d'avant le repositionnement « apprendre d'abord »,
+// consultable sur #/landing-classic en développement. Même mécanisme que
+// ci-dessus : l'import conditionnel est éliminé du build de production.
+const LocalLandingClassicView = import.meta.env.DEV
+  ? defineAsyncComponent(() => import("./views/LandingClassicView.vue"))
   : null;
 
 const client = createClient();
@@ -42,7 +51,9 @@ const { current, competitionId, routeId, navigate } = useRoute();
 <template>
   <div class="grain"></div>
   <AppBar
-    v-if="current !== '/landing'"
+    v-if="
+      current !== '/landing' && current !== '/landing-classic' && current !== '/tutorial'
+    "
     :current="current"
     :client="client"
     @navigate="navigate"
@@ -71,15 +82,32 @@ const { current, competitionId, routeId, navigate } = useRoute();
       :slug="routeId"
       @navigate="navigate"
     />
+    <!-- `:feed="client"` s'élargit vers `SandboxFeed`, qui n'expose que trois
+         méthodes de lecture : le tutoriel ne peut pas écrire côté serveur. -->
+    <TutorialView
+      v-else-if="current === '/tutorial'"
+      :feed="client"
+      :step-id="routeId"
+      @navigate="navigate"
+    />
     <component
       :is="LocalAdminView"
       v-else-if="current === '/admin' && LocalAdminView !== null"
+    />
+    <component
+      :is="LocalLandingClassicView"
+      v-else-if="current === '/landing-classic' && LocalLandingClassicView !== null"
+      :client="client"
+      @navigate="navigate"
     />
   </main>
 
   <SignModal :client="client" />
   <WalletEntryModal :client="client" />
   <AccountModal :client="client" @logged-out="navigate('/landing')" />
+  <!-- Proposé une seule fois, au premier passage sur le terminal. Monté ici
+       comme les autres modales : `DashboardView` n'est pas touché. -->
+  <TutorialOfferModal v-if="current === '/dashboard'" @navigate="navigate" />
 </template>
 
 <style scoped>
