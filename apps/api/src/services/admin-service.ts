@@ -3,7 +3,7 @@ import { isValidClassicAddress } from "xrpl";
 import type { PaperService } from "./paper-service";
 import type { Agent, AgentStatus, AgentType, AgentStore } from "../store/agent-store";
 import type { MandateStore } from "../store/mandate-store";
-import type { AgentActionsStore } from "../store/agent-actions-store";
+import type { AgentAction, AgentActionsStore } from "../store/agent-actions-store";
 import {
   isArenaSimulationUserId,
   isTechnicalTestUserId,
@@ -143,6 +143,15 @@ export class AdminService {
       wallets,
       simulation: this.deps.simulation?.status() ?? disabledSimulationStatus(),
     };
+  }
+
+  /**
+   * Log d'actions d'un agent arbitraire, en lecture seule. `overview` n'expose
+   * que la dernière action par agent ; la couche growth a besoin de la série
+   * complète (posts « Bot Diary », cf. `growth/log/data-access.md`).
+   */
+  async agentActions(agentId: string, limit: number): Promise<readonly AgentAction[]> {
+    return this.deps.actions.listByAgent(agentId, limit);
   }
 
   /**

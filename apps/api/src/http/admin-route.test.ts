@@ -584,3 +584,100 @@ describe("admin competition operations", () => {
     await app.close();
   });
 });
+
+describe("GET /admin/agent-actions", () => {
+  function buildWithActions() {
+    const actions = new InMemoryAgentActionsStore();
+    const paper = new PaperService(undefined, new InMemoryAccountStore());
+    paper.openAccount("visitor");
+    const service = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions,
+      prizePoolAddress: null,
+      operatorUserIds: new Set<string>(),
+    });
+    const app = buildServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service },
+    });
+    return { app, actions };
+  }
+
+  async function seed(actions: InMemoryAgentActionsStore, count: number) {
+    for (let i = 0; i < count; i += 1) {
+      await actions.record({
+        id: `a${i}`,
+        agentId: "agent-1",
+        userId: "visitor",
+        toolName: "place_order",
+        toolParams: "{}",
+        result: "{}",
+        error: null,
+        idempotencyKey: null,
+        executedAt: 1_700_000_000_000 + i,
+      });
+    }
+  }
+
+  it("401 sans token, sans révéler l'existence de l'agent", async () => {
+    const { app } = buildWithActions();
+    const res = await app.inject({ method: "GET", url: "/admin/agent-actions?agentId=agent-1" });
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("400 si agentId manque ou est vide", async () => {
+    const { app } = buildWithActions();
+    const headers = { "x-admin-token": ADMIN_TOKEN };
+    expect((await app.inject({ method: "GET", url: "/admin/agent-actions", headers })).statusCode).toBe(400);
+    expect(
+      (await app.inject({ method: "GET", url: "/admin/agent-actions?agentId=%20", headers })).statusCode,
+    ).toBe(400);
+    await app.close();
+  });
+
+  it("400 si limit est hors de [1, 200] ou non entier", async () => {
+    const { app } = buildWithActions();
+    const headers = { "x-admin-token": ADMIN_TOKEN };
+    for (const limit of ["0", "201", "abc"]) {
+      const res = await app.inject({
+        method: "GET",
+        url: `/admin/agent-actions?agentId=agent-1&limit=${limit}`,
+        headers,
+      });
+      expect(res.statusCode).toBe(400);
+    }
+    await app.close();
+  });
+
+  it("200 + le log complet de l'agent avec le bon token", async () => {
+    const { app, actions } = buildWithActions();
+    await seed(actions, 3);
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/agent-actions?agentId=agent-1",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toHaveLength(3);
+    expect(body[0].toolName).toBe("place_order");
+    await app.close();
+  });
+
+  it("respecte limit", async () => {
+    const { app, actions } = buildWithActions();
+    await seed(actions, 5);
+    const res = await app.inject({
+      method: "GET",
+      url: "/admin/agent-actions?agentId=agent-1&limit=2",
+      headers: { "x-admin-token": ADMIN_TOKEN },
+    });
+    expect(res.json()).toHaveLength(2);
+    await app.close();
+  });
+});

@@ -1248,6 +1248,10 @@ function adminDepsFromServer(deps: ServerDeps): AdminServerDeps {
   };
 }
 
+/** Taille de page par défaut et plafond de `GET /admin/agent-actions`. */
+const ADMIN_AGENT_ACTIONS_LIMIT = 100;
+const ADMIN_AGENT_ACTIONS_MAX_LIMIT = 200;
+
 function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void {
   const { admin } = deps;
   const competitionEquity = (competitionId: string) => {
@@ -1269,6 +1273,29 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
     }
     return admin.service.overview(deps.getPrices());
   });
+  // Le log d'actions d'un agent arbitraire, sans le JWT propriétaire qu'exige
+  // `/api/agent-actions` : matière des posts « Bot Diary » de la couche growth.
+  app.get<{ Querystring: { agentId?: string; limit?: string } }>(
+    "/admin/agent-actions",
+    async (request, reply) => {
+      if (!hasAdminToken(request, admin.token)) {
+        reply.code(401);
+        return { error: "unauthorized" };
+      }
+      const agentId = request.query.agentId?.trim() ?? "";
+      if (agentId === "") {
+        reply.code(400);
+        return { error: "agentId required" };
+      }
+      const rawLimit = request.query.limit?.trim() ?? "";
+      const limit = rawLimit === "" ? ADMIN_AGENT_ACTIONS_LIMIT : Math.trunc(Number(rawLimit));
+      if (!Number.isFinite(limit) || limit < 1 || limit > ADMIN_AGENT_ACTIONS_MAX_LIMIT) {
+        reply.code(400);
+        return { error: `limit must be an integer in [1, ${ADMIN_AGENT_ACTIONS_MAX_LIMIT}]` };
+      }
+      return admin.service.agentActions(agentId, limit);
+    },
+  );
   app.get("/admin/portfolio-manager/status", async (request, reply) => {
     if (!hasAdminToken(request, admin.token)) {
       reply.code(401);
