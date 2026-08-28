@@ -36,6 +36,7 @@ pnpm-debug.log*
 ._*
 .idea/
 .vscode/
+.history/
 
 # Caches Python (scripts de skills)
 __pycache__/
@@ -47,3 +48,7 @@ skills-lock.json
 
 # tokensave (code graph MCP, local)
 .tokensave/
+
+# Growth: PNG maîtres régénérables via growth/assets/make_meme*.py (les JPG sont les fichiers postés)
+growth/assets/*.png
+!growth/assets/2026-07-30-stop-loss-tab.png
