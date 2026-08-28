@@ -94,6 +94,10 @@ const { t } = useI18n({
     liveNotConfigured: "Live not configured",
     virtualBalance: "Virtual balance",
     custodialWallet: "Custodial wallet",
+    paperWalletAddress: "Paper wallet public address",
+    rewardWalletAddress: "NFT wallet public address",
+    copyAddress: "Copy address",
+    addressCopied: "Copied",
     firstTradeNft: "First Trade NFT",
     claimRewardAccount: "Reveal account + NFT",
     claimingRewardAccount: "Creating account…",
@@ -184,6 +188,10 @@ const { t } = useI18n({
     liveNotConfigured: "Live non configuré",
     virtualBalance: "Solde virtuel",
     custodialWallet: "Wallet custodial",
+    paperWalletAddress: "Adresse publique du wallet Paper",
+    rewardWalletAddress: "Adresse publique du wallet NFT",
+    copyAddress: "Copier l'adresse",
+    addressCopied: "Copiée",
     firstTradeNft: "NFT First Trade",
     claimRewardAccount: "Révéler le compte + NFT",
     claimingRewardAccount: "Création du compte…",
@@ -227,6 +235,24 @@ const rewardWalletClaimReady = computed(() => {
     status.rewardStatus !== "not_earned" &&
     status.rewardStatus !== "claimed";
 });
+
+const copiedPaperAddress = ref(false);
+let copyResetTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function copyPaperAddress(address: string): Promise<void> {
+  if (navigator.clipboard === undefined) return;
+  try {
+    await navigator.clipboard.writeText(address);
+    copiedPaperAddress.value = true;
+    if (copyResetTimer !== null) clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => {
+      copiedPaperAddress.value = false;
+      copyResetTimer = null;
+    }, 1_500);
+  } catch {
+    // L'adresse reste affichée ; le navigateur peut refuser le clipboard hors HTTPS.
+  }
+}
 
 async function claimRewardWallet(): Promise<void> {
   rewardWalletClaiming.value = true;
@@ -1720,6 +1746,11 @@ async function placePaperOrder(): Promise<void> {
         stopLoss: sl,
         reason: "market",
       });
+      if (ok) {
+        // Une ouverture perp est un trade Paper au même titre qu'un fill spot.
+        // Recharge le mérite pour afficher immédiatement le claim externe.
+        await badgeState.load(paper.userId.value);
+      }
       flashPlace(ok ? t("orderSent") : t("orderFailed"));
       return;
     }
@@ -1856,6 +1887,10 @@ onUnmounted(() => {
     clearInterval(historyRefreshTimer);
     historyRefreshTimer = null;
   }
+  if (copyResetTimer !== null) {
+    clearTimeout(copyResetTimer);
+    copyResetTimer = null;
+  }
   window.removeEventListener("resize", onResizeChart);
   window.removeEventListener(PAPER_WALLET_CHANGED_EVENT, onPaperWalletChanged);
 });
@@ -1945,6 +1980,26 @@ onUnmounted(() => {
         </template>
       </div>
     </div>
+
+    <section
+      v-if="!session.walletConnected.value && paper.walletReward.value?.walletAddress"
+      class="paper-wallet-info"
+      aria-label="Paper wallet addresses"
+    >
+      <div class="paper-wallet-info__item">
+        <span class="paper-wallet-info__label">{{ t('paperWalletAddress') }}</span>
+        <code>{{ paper.walletReward.value.walletAddress }}</code>
+      </div>
+      <button
+        type="button"
+        class="paper-wallet-info__copy"
+        @click="copyPaperAddress(paper.walletReward.value.walletAddress)"
+      >{{ copiedPaperAddress ? t('addressCopied') : t('copyAddress') }}</button>
+      <div v-if="paper.walletReward.value.rewardWalletAddress" class="paper-wallet-info__item paper-wallet-info__item--reward">
+        <span class="paper-wallet-info__label">{{ t('rewardWalletAddress') }}</span>
+        <code>{{ paper.walletReward.value.rewardWalletAddress }}</code>
+      </div>
+    </section>
 
     <div v-if="starterWalletClaimRequired" class="wallet-claim-gate">
       <div class="wallet-claim-card">
@@ -2308,6 +2363,50 @@ onUnmounted(() => {
 .modebar.live {
   border-color: rgba(255, 157, 60, 0.5);
   box-shadow: 0 0 0 1px rgba(255, 157, 60, 0.18), 0 8px 28px -16px rgba(255, 157, 60, 0.5);
+}
+.paper-wallet-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-top: 8px;
+  padding: 9px 13px;
+  border: 1px solid rgba(95, 124, 255, 0.34);
+  border-radius: 11px;
+  background: rgba(95, 124, 255, 0.08);
+}
+.paper-wallet-info__item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.paper-wallet-info__item--reward {
+  padding-left: 14px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+.paper-wallet-info__label {
+  color: var(--soft);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.paper-wallet-info code {
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.paper-wallet-info__copy {
+  margin-left: auto;
+  border: 1px solid rgba(95, 124, 255, 0.62);
+  border-radius: 7px;
+  background: rgba(95, 124, 255, 0.12);
+  color: #b8c5ff;
+  font-family: var(--disp);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 6px 9px;
+  cursor: pointer;
 }
 .modeseg {
   display: inline-flex;

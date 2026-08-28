@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Client, Wallet, type AccountDelete, type NFTokenBurn } from "xrpl";
 import type { NftIssuer, NftIssueResult } from "@tide/xrpl";
-import { badgeByCode } from "../badges/catalog";
+import { BADGE_CODES, badgeByCode } from "../badges/catalog";
 import type { PaperBadgeRewardStore } from "../store/paper-badge-reward-store";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
+import type { FirstTradeRewardService, FirstTradeRewardStatus } from "./first-trade-reward-service";
 import type { PaperWalletService } from "./paper-wallet-service";
 
 const DELETE_LEDGER_DELAY = 255;
@@ -88,20 +89,49 @@ export interface AdminBatchNftGrantResult {
   )[];
 }
 
+export interface AdminPaperWorkflowSuccess {
+  readonly userId: string;
+  readonly status: "succeeded";
+  readonly badgeCode: string;
+  readonly wallet1Address: string;
+  readonly wallet1Status: Exclude<FirstTradeRewardStatus["walletStatus"], "not_created">;
+  readonly wallet1DeleteTxHash: string | null;
+  readonly wallet2Address: string;
+  readonly wallet2Status: Exclude<FirstTradeRewardStatus["rewardWalletStatus"], "not_created">;
+  readonly nftTokenId: string | null;
+  readonly claimTxHash: string | null;
+}
+
+export type AdminPaperWorkflowResult =
+  | AdminPaperWorkflowSuccess
+  | { readonly userId: string; readonly status: "failed"; readonly error: string };
+
+export interface AdminPaperWorkflowBatchResult {
+  readonly badgeCode: string;
+  readonly requested: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly AdminPaperWorkflowResult[];
+}
+
 export interface PaperUserActivity {
   readonly exists: boolean;
   readonly hasTraded: boolean;
 }
 
 export interface PaperWalletAdminServiceDeps {
-  readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed" | "eraseSeed">;
+  readonly store: Pick<PaperWalletStore, "get" | "list" | "markReclaimed" | "markDeleted" | "eraseSeed">;
   /** Wallets secondaires qui détiennent les NFT du nouveau funnel. */
   readonly rewardStore?: Pick<PaperWalletStore, "get" | "list" | "markReclaimed" | "eraseSeed">;
   readonly rewards: PaperBadgeRewardStore;
   readonly wallets: Pick<PaperWalletService, "decryptSeed">;
-  readonly provisioner: Pick<PaperWalletService, "ensureCreated" | "ensureFunded">;
+  readonly provisioner: Pick<PaperWalletService, "ensureCreated" | "ensureFunded" | "ensureRewardFunded">;
+  /** Orchestrateur public réutilisé pour le badge First Trade. */
+  readonly firstTradeRewards?: Pick<FirstTradeRewardService, "recordFirstTrade" | "claim">;
   readonly ensurePaperAccount: (userId: string) => void;
   readonly paperUserActivity: (userId: string) => PaperUserActivity;
+  /** Vérifie les seuils des badges autres que First Trade côté serveur. */
+  readonly badgeEligibility?: (userId: string, badgeCode: string) => boolean;
   readonly issuer: NftIssuer;
   readonly recoveryAddress: string;
   readonly network: "mainnet";
@@ -186,6 +216,44 @@ export class PaperWalletAdminService {
     return this.provisionResult(ids.length, wallets);
   }
 
+  /**
+   * Exécute le funnel Paper complet pour une sélection : wallet 1, wallet 2,
+   * NFT sur le wallet 2 puis fermeture du wallet 1. Le badge First Trade
+   * réutilise son orchestrateur public afin de conserver exactement les mêmes
+   * transitions et la même idempotence que le parcours utilisateur.
+   */
+  async setupPaperWorkflowBatch(
+    userIds: readonly string[],
+    badgeCode: string,
+  ): Promise<AdminPaperWorkflowBatchResult> {
+    const badge = badgeByCode(badgeCode);
+    if (badge === undefined) throw new Error("Badge inconnu");
+    const ids = this.validatePaperUsers(userIds, true);
+    for (const userId of ids) this.assertBadgeEligibility(userId, badge.code);
+    if (badge.code === BADGE_CODES.FIRST_TRADE && this.deps.firstTradeRewards === undefined) {
+      throw new Error("Workflow First Trade indisponible");
+    }
+    const results: AdminPaperWorkflowResult[] = [];
+    for (const userId of ids) {
+      try {
+        results.push(await this.setupPaperWorkflow(userId, badge.code));
+      } catch (error) {
+        results.push({
+          userId,
+          status: "failed",
+          error: error instanceof Error ? error.message : "Workflow Paper refusé",
+        });
+      }
+    }
+    return {
+      badgeCode: badge.code,
+      requested: ids.length,
+      succeeded: results.filter((result) => result.status === "succeeded").length,
+      failed: results.filter((result) => result.status === "failed").length,
+      results,
+    };
+  }
+
   /** Distribue un même badge en série afin de préserver les séquences XRPL. */
   async grantBadgeBatch(
     userIds: readonly string[],
@@ -216,7 +284,6 @@ export class PaperWalletAdminService {
   async grantBadge(userId: string, badgeCode: string): Promise<AdminNftGrantResult> {
     const badge = badgeByCode(badgeCode);
     if (badge === undefined) throw new Error("Badge inconnu");
-    const wallet = await this.requireFundedWallet(userId);
     const existing = await this.deps.rewards.get(userId, badge.code);
     if (existing?.status === "claimed") {
       throw new Error("Ce badge a déjà été distribué à ce wallet");
@@ -224,6 +291,10 @@ export class PaperWalletAdminService {
     if (existing !== null) {
       throw new Error(`Distribution déjà engagée (${existing.status})`);
     }
+    this.assertBadgeEligibility(userId, badge.code);
+    // Toute distribution admin passe par le wallet 2. Il est créé et financé
+    // par le wallet 1 si nécessaire ; le wallet 1 ne reçoit plus de NFT.
+    const wallet = await this.deps.provisioner.ensureRewardFunded(userId);
     await this.deps.rewards.ensureEligible({
       userId,
       badgeCode: badge.code,
@@ -395,14 +466,109 @@ export class PaperWalletAdminService {
     };
   }
 
-  private async requireFundedWallet(userId: string): Promise<PaperWallet> {
-    const rewardWallet = await this.deps.rewardStore?.get(userId);
-    const wallet = rewardWallet?.status === "funded"
-      ? rewardWallet
-      : await this.deps.store.get(userId);
-    if (wallet === null) throw new Error("Wallet Paper introuvable");
-    if (wallet.status !== "funded") throw new Error(`Wallet non disponible (${wallet.status})`);
-    return wallet;
+  private async setupPaperWorkflow(
+    userId: string,
+    badgeCode: string,
+  ): Promise<AdminPaperWorkflowSuccess> {
+    await this.deps.provisioner.ensureFunded(userId);
+
+    if (badgeCode === BADGE_CODES.FIRST_TRADE) {
+      const rewards = this.deps.firstTradeRewards;
+      if (rewards === undefined) throw new Error("Workflow First Trade indisponible");
+      await rewards.recordFirstTrade(userId);
+      const status = await rewards.claim(userId);
+      if (
+        status.rewardStatus !== "claimed" ||
+        status.walletAddress === null ||
+        status.rewardWalletAddress === null ||
+        (status.walletStatus !== "deleted" && status.walletStatus !== "reclaimed")
+      ) {
+        throw new Error("Workflow First Trade incomplet : vérification opérateur requise");
+      }
+      return workflowSuccessFromStatus(userId, badgeCode, status);
+    }
+
+    const existing = await this.deps.rewards.get(userId, badgeCode);
+    let nftTokenId: string | null = null;
+    let claimTxHash: string | null = null;
+    let rewardAddress: string;
+    if (existing?.status === "claimed") {
+      // Un clic répété après un AccountDelete partiellement échoué ne doit ni
+      // re-minter ni refuser silencieusement : on reprend uniquement la
+      // fermeture du wallet 1 vers le wallet 2 déjà récompensé.
+      const reward = await this.deps.rewardStore?.get(userId);
+      if (reward?.status !== "funded") {
+        throw new Error("Récompense déjà claimée mais wallet 2 indisponible");
+      }
+      rewardAddress = reward.address;
+      nftTokenId = existing.nftTokenId;
+      claimTxHash = existing.claimTxHash;
+    } else {
+      const grant = await this.grantBadge(userId, badgeCode);
+      rewardAddress = grant.walletAddress;
+      nftTokenId = grant.nftTokenId;
+      claimTxHash = grant.claimHash;
+    }
+    await this.closeStarterAfterReward(userId, rewardAddress);
+    const [starter, reward] = await Promise.all([
+      this.deps.store.get(userId),
+      this.deps.rewardStore?.get(userId) ?? null,
+    ]);
+    if (starter === null || reward === null) {
+      throw new Error("Workflow Paper incomplet : wallets introuvables après claim");
+    }
+    return {
+      userId,
+      status: "succeeded",
+      badgeCode,
+      wallet1Address: starter.address,
+      wallet1Status: starter.status,
+      wallet1DeleteTxHash: starter.deleteTxHash,
+      wallet2Address: reward.address,
+      wallet2Status: reward.status,
+      nftTokenId,
+      claimTxHash,
+    };
+  }
+
+  /** Ferme le wallet 1 vers le wallet 2 après une distribution admin. */
+  private async closeStarterAfterReward(userId: string, rewardAddress: string): Promise<void> {
+    const starter = await this.deps.store.get(userId);
+    if (starter === null) throw new Error("Wallet Paper initial introuvable");
+    if (starter.status === "deleted" || starter.status === "reclaimed") {
+      await this.deps.store.eraseSeed(userId);
+      return;
+    }
+    if (starter.status !== "funded") {
+      throw new Error(`Wallet Paper initial non disponible (${starter.status})`);
+    }
+    const snapshot = await this.deps.gateway.snapshot(starter.address);
+    if (snapshot.nftIds.length !== 0 || snapshot.ownerCount !== 0) {
+      throw new Error(
+        `Fermeture du wallet 1 bloquée: ${String(snapshot.nftIds.length)} NFT, ${String(snapshot.ownerCount)} objet(s)`,
+      );
+    }
+    const deleted = await this.deps.gateway.deleteAccount(
+      await this.deps.wallets.decryptSeed(starter),
+      rewardAddress,
+      snapshot.deleteFeeDrops,
+    );
+    await this.deps.store.markDeleted(userId, deleted.hash);
+    await this.deps.store.eraseSeed(userId);
+  }
+
+  private assertBadgeEligibility(userId: string, badgeCode: string): void {
+    const activity = this.deps.paperUserActivity(userId);
+    if (!activity.exists) throw new Error(`Compte Paper inconnu: ${userId}`);
+    if (badgeCode === BADGE_CODES.FIRST_TRADE && !activity.hasTraded) {
+      throw new Error(`Aucun trade Paper exécuté pour ${userId}`);
+    }
+    if (
+      badgeCode !== BADGE_CODES.FIRST_TRADE &&
+      (this.deps.badgeEligibility === undefined || !this.deps.badgeEligibility(userId, badgeCode))
+    ) {
+      throw new Error(`Badge ${badgeCode} non mérité par ${userId}`);
+    }
   }
 
   private async markReclaimed(wallet: PaperWallet): Promise<void> {
@@ -623,6 +789,31 @@ function queuedResult(wallet: PaperWallet): ReclaimResult {
     deleteTxHash: null,
     recoveredXrpEstimate: 0,
     error: null,
+  };
+}
+
+function workflowSuccessFromStatus(
+  userId: string,
+  badgeCode: string,
+  status: FirstTradeRewardStatus,
+): AdminPaperWorkflowSuccess {
+  if (status.walletAddress === null || status.rewardWalletAddress === null) {
+    throw new Error("Workflow Paper incomplet : adresse de wallet manquante");
+  }
+  if (status.walletStatus === "not_created" || status.rewardWalletStatus === "not_created") {
+    throw new Error("Workflow Paper incomplet : statut de wallet manquant");
+  }
+  return {
+    userId,
+    status: "succeeded",
+    badgeCode,
+    wallet1Address: status.walletAddress,
+    wallet1Status: status.walletStatus,
+    wallet1DeleteTxHash: status.walletDeleteTxHash,
+    wallet2Address: status.rewardWalletAddress,
+    wallet2Status: status.rewardWalletStatus,
+    nftTokenId: status.nftTokenId,
+    claimTxHash: status.claimTxHash,
   };
 }
 

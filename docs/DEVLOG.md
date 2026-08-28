@@ -2526,3 +2526,32 @@ le coût spécial de 0,2 XRP reste inchangé.
 Le dashboard et les textes de création affichent désormais 2,22 XRP. Cette
 modification réduit le capital immobilisé sans changer le coût final de
 clôture des deux comptes (environ 0,4 XRP par utilisateur, hors frais réseau).
+
+## 2026-08-28 — Console Paper/External et workflow admin complet
+
+La console admin sépare désormais les adresses XRPL externes des wallets Paper
+custodiaux. Les wallets 1 et 2 Paper sont affichés sur la même ligne, sans
+jamais exposer une seed ; les wallets 2 sont identifiés par le rôle `reward`.
+Les adresses externes restent non-custodiales : aucun funding Tide et aucune
+seed ne doit être saisie dans le navigateur. Une future procédure d’import,
+si nécessaire, devra rester côté serveur avec chiffrement et audit.
+
+Le bouton « Créer + financer + wallet 2 + NFT » appelle maintenant un workflow
+unique et idempotent : vérification du mérite Paper, création/funding du wallet
+1 (2,22 XRP), création/funding du wallet 2 depuis le wallet 1, mint + accept du
+NFT sur le wallet 2, puis `AccountDelete` du wallet 1 vers le wallet 2 et
+effacement de la seed du wallet 1 après succès. Un second clic reprend une
+clôture incomplète sans remint ni double funding. Les badges `First Trade`,
+`Ten Trades` et `First Competition` sont contrôlés par l'activité réelle.
+
+Le dashboard utilisateur affiche maintenant les adresses publiques Paper et
+wallet NFT secondaire, sans seed.
+
+## 2026-08-28 — First Trade débloqué aussi par les positions perp
+
+Le badge `first_trade` comptait uniquement les fills spot alors que le terminal
+Paper permet aussi d'ouvrir des positions perp. Une position perp confirmée est
+désormais incluse dans le compteur de mérite via `PaperService.tradeCountOf`.
+Le dashboard recharge le statut des badges immédiatement après une ouverture
+perp réussie : le bouton de claim sur le wallet externe apparaît donc sans
+rechargement de page. Aucun appel XRPL n'est effectué par ce déblocage off-chain.

@@ -364,7 +364,9 @@ export interface AdminAgentDto {
 
 export interface AdminWalletDto {
   readonly address: string | null;
-  readonly kind: "agent" | "paper" | "prize_pool";
+  readonly kind: "agent" | "paper" | "external" | "prize_pool";
+  /** Présent pour les lignes Paper secondaires du nouveau funnel. */
+  readonly walletRole?: "reward";
   readonly agentId: string | null;
   readonly userId: string | null;
   readonly live: boolean;
@@ -381,6 +383,7 @@ export interface AdminWalletDto {
   readonly fundingTxHash: string | null;
   readonly fundedAt: number | null;
   readonly createdAt: number | null;
+  readonly deleteTxHash?: string | null;
 }
 
 export interface AdminReclaimResultDto {
@@ -427,6 +430,31 @@ export interface AdminBatchNftGrantDto {
     | { readonly userId: string; readonly status: "succeeded"; readonly grant: AdminNftGrantDto }
     | { readonly userId: string; readonly status: "failed"; readonly error: string }
   )[];
+}
+
+export interface AdminPaperWorkflowSuccessDto {
+  readonly userId: string;
+  readonly status: "succeeded";
+  readonly badgeCode: string;
+  readonly wallet1Address: string;
+  readonly wallet1Status: Exclude<AdminWalletDto["status"], null>;
+  readonly wallet1DeleteTxHash: string | null;
+  readonly wallet2Address: string;
+  readonly wallet2Status: Exclude<AdminWalletDto["status"], null>;
+  readonly nftTokenId: string | null;
+  readonly claimTxHash: string | null;
+}
+
+export type AdminPaperWorkflowResultDto =
+  | AdminPaperWorkflowSuccessDto
+  | { readonly userId: string; readonly status: "failed"; readonly error: string };
+
+export interface AdminPaperWorkflowBatchDto {
+  readonly badgeCode: string;
+  readonly requested: number;
+  readonly succeeded: number;
+  readonly failed: number;
+  readonly results: readonly AdminPaperWorkflowResultDto[];
 }
 
 export interface AdminWalletProvisionDto {

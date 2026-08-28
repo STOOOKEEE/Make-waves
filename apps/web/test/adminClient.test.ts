@@ -102,6 +102,27 @@ describe("client admin local", () => {
     ]);
   });
 
+  it("demande le workflow Paper complet sur la nouvelle route", async () => {
+    let seen: ApiRequest | undefined;
+    const transport = async (request: ApiRequest): Promise<ApiResponse> => {
+      seen = request;
+      return {
+        status: 200,
+        body: { badgeCode: "ten_trades", requested: 1, succeeded: 1, failed: 0, results: [] },
+      };
+    };
+    const userIds = ["paper:u1"];
+
+    await createLocalAdminClient(transport).setupPaperWorkflow("secret", userIds, "ten_trades");
+
+    expect(seen).toEqual({
+      path: "/admin/wallets/setup",
+      method: "POST",
+      headers: { "x-admin-token": "secret" },
+      body: { userIds, badgeCode: "ten_trades" },
+    });
+  });
+
   it("transmet la confirmation de suppression des comptes inactifs", async () => {
     let seen: ApiRequest | undefined;
     const transport = async (request: ApiRequest): Promise<ApiResponse> => {

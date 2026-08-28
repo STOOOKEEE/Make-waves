@@ -57,6 +57,7 @@ import { migrateWalletDeleteColumns } from "./store/migrations/2026-08-27-wallet
 import { migrateWalletLinkTables } from "./store/migrations/2026-08-27-wallet-links";
 import { SqliteWalletLinkStore } from "./store/sqlite-wallet-link-store";
 import { createFirstTradeExternalGuard } from "./services/first-trade-external-guard";
+import { earnedCodes } from "./badges/merit";
 import { createXamanApi } from "./xaman/sdk";
 import { ArenaSimulationService } from "./simulation/arena-simulation-service";
 import { isTechnicalTestUserId } from "./simulation/arena-ids";
@@ -392,36 +393,6 @@ async function main(): Promise<void> {
           paperWalletRuntime.serverUrl,
           paperWalletRuntime.sourceTag,
         );
-  const paperWalletAdmin =
-    paperWalletAdminGateway === undefined ||
-    paperWalletRuntime === undefined ||
-    paperRewardRuntime === undefined
-      ? undefined
-      : new PaperWalletAdminService({
-          store: paperWalletStore,
-          rewardStore: paperRewardWalletStore,
-          rewards: paperBadgeRewardStore,
-          wallets: paperRewardRuntime.wallets,
-          provisioner: paperRewardRuntime.wallets,
-          ensurePaperAccount: (userId) => { paper.ensureAccount(userId); },
-          paperUserActivity: (userId) => {
-            if (isTechnicalTestUserId(userId)) return { exists: false, hasTraded: false };
-            try {
-              return {
-                exists: true,
-                hasTraded: paper.tradeCountOf(userId) > 0,
-              };
-            } catch {
-              return { exists: false, hasTraded: false };
-            }
-          },
-          issuer: paperRewardRuntime.issuer,
-          recoveryAddress: paperWalletRuntime.recoveryAddress,
-          network: "mainnet",
-          gateway: paperWalletAdminGateway,
-          metadataBaseUrl: env.readPublicBaseUrl(),
-        });
-
   // Aucune compétition injectée : une base neuve reste vide jusqu'à la création
   // explicite d'une compétition réelle depuis la console locale.
   const competitionStore = new SqliteCompetitionStore(db);
@@ -444,6 +415,51 @@ async function main(): Promise<void> {
     paper,
     env.readArenaSimulationConfig(),
   );
+
+  const paperWalletAdmin =
+    paperWalletAdminGateway === undefined ||
+    paperWalletRuntime === undefined ||
+    paperRewardRuntime === undefined
+      ? undefined
+      : new PaperWalletAdminService({
+          store: paperWalletStore,
+          rewardStore: paperRewardWalletStore,
+          rewards: paperBadgeRewardStore,
+          wallets: paperRewardRuntime.wallets,
+          provisioner: paperRewardRuntime.wallets,
+          firstTradeRewards,
+          ensurePaperAccount: (userId) => { paper.ensureAccount(userId); },
+          paperUserActivity: (userId) => {
+            if (isTechnicalTestUserId(userId)) return { exists: false, hasTraded: false };
+            try {
+              return {
+                exists: true,
+                hasTraded: paper.tradeCountOf(userId) > 0,
+              };
+            } catch {
+              return { exists: false, hasTraded: false };
+            }
+          },
+          badgeEligibility: (userId, badgeCode) => {
+            try {
+              const competitionCount = competitionStore
+                .list()
+                .filter((competition) => competitionStore.hasParticipant(competition.id, userId))
+                .length;
+              return earnedCodes({
+                fillCount: paper.tradeCountOf(userId),
+                competitionCount,
+              }).includes(badgeCode);
+            } catch {
+              return false;
+            }
+          },
+          issuer: paperRewardRuntime.issuer,
+          recoveryAddress: paperWalletRuntime.recoveryAddress,
+          network: "mainnet",
+          gateway: paperWalletAdminGateway,
+          metadataBaseUrl: env.readPublicBaseUrl(),
+        });
 
   // Agents & mandats (AI Agent) : montés systématiquement — le serveur MCP et la
   // vue AgentView consomment ces routes (`/api/agents`, `/api/mandates`,

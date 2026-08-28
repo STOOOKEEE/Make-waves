@@ -8,6 +8,7 @@ import type {
   AdminCompetitionCloseDto,
   AdminCompetitionInput,
   AdminInactiveUserDeleteDto,
+  AdminPaperWorkflowBatchDto,
   AdminPortfolioManagerExecutionDto,
   AdminPortfolioManagerPlanDto,
   AdminPortfolioManagerStatusDto,
@@ -27,6 +28,7 @@ export interface AdminClient {
   deleteInactiveUsers(token: string, userIds: readonly string[], confirmation: string): Promise<AdminInactiveUserDeleteDto>;
   grantWalletNft(token: string, userId: string, badgeCode: string): Promise<AdminNftGrantDto>;
   grantWalletNftBatch(token: string, userIds: readonly string[], badgeCode: string): Promise<AdminBatchNftGrantDto>;
+  setupPaperWorkflow(token: string, userIds: readonly string[], badgeCode: string): Promise<AdminPaperWorkflowBatchDto>;
   reclaimWallet(token: string, userId: string): Promise<AdminReclaimJobDto>;
   reclaimAllWallets(token: string, confirmation: string): Promise<AdminReclaimJobDto>;
   createCompetition(token: string, input: AdminCompetitionInput): Promise<{ id: string }>;
@@ -48,6 +50,7 @@ export function useAdmin(client: AdminClient) {
   const lastNftGrant = ref<AdminNftGrantDto | null>(null);
   const lastBatchNftGrant = ref<AdminBatchNftGrantDto | null>(null);
   const lastInactiveDelete = ref<AdminInactiveUserDeleteDto | null>(null);
+  const lastPaperWorkflow = ref<AdminPaperWorkflowBatchDto | null>(null);
   const portfolioManager = ref<AdminPortfolioManagerStatusDto | null>(null);
   const portfolioPlan = ref<AdminPortfolioManagerPlanDto | null>(null);
   const portfolioExecution = ref<AdminPortfolioManagerExecutionDto | null>(null);
@@ -193,6 +196,23 @@ export function useAdmin(client: AdminClient) {
     }
   }
 
+  async function setupPaperWorkflow(userIds: readonly string[], badgeCode: string): Promise<void> {
+    if (token.value === "") return;
+    loading.value = true;
+    error.value = "";
+    lastPaperWorkflow.value = null;
+    try {
+      lastPaperWorkflow.value = await client.setupPaperWorkflow(token.value, userIds, badgeCode);
+      await load();
+    } catch (err) {
+      const message = errorMessage(err);
+      await load();
+      error.value = message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
   async function reclaimOne(userId: string): Promise<void> {
     if (token.value === "") return;
     loading.value = true;
@@ -290,6 +310,7 @@ export function useAdmin(client: AdminClient) {
     lastNftGrant,
     lastBatchNftGrant,
     lastInactiveDelete,
+    lastPaperWorkflow,
     portfolioManager,
     portfolioPlan,
     portfolioExecution,
@@ -301,6 +322,7 @@ export function useAdmin(client: AdminClient) {
     deleteInactiveUsers,
     grantNft,
     grantNftBatch,
+    setupPaperWorkflow,
     reclaimOne,
     reclaimAll,
     createCompetition,

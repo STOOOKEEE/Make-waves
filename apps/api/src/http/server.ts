@@ -1437,6 +1437,21 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { error: error instanceof Error ? error.message : "funding refusé" };
     }
   });
+  app.post("/admin/wallets/setup", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    try {
+      return await walletAdmin.setupPaperWorkflowBatch(
+        readStringArrayField(request.body, "userIds"),
+        readStringField(request.body, "badgeCode"),
+      );
+    } catch (error) {
+      reply.code(409);
+      return { error: error instanceof Error ? error.message : "workflow Paper refusé" };
+    }
+  });
   app.post("/admin/wallets/nfts", async (request, reply) => {
     if (!hasAdminToken(request, admin.token)) {
       reply.code(401);

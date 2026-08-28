@@ -328,6 +328,41 @@ describe("admin wallet operations", () => {
     await app.close();
   });
 
+  it("exécute le workflow Paper complet derrière le token admin", async () => {
+    const setupPaperWorkflowBatch = vi.fn(async (userIds: readonly string[], badgeCode: string) => ({
+      badgeCode,
+      requested: userIds.length,
+      succeeded: userIds.length,
+      failed: 0,
+      results: [],
+    }));
+    const walletAdmin = {
+      status: vi.fn(),
+      setupPaperWorkflowBatch,
+    } as unknown as PaperWalletAdminService;
+    const app = buildAdminServer(walletAdmin);
+    const headers = { "x-admin-token": ADMIN_TOKEN };
+    const userIds = ["paper:u1", "paper:u2"];
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/admin/wallets/setup",
+      payload: { userIds, badgeCode: "ten_trades" },
+    });
+    expect(unauthorized.statusCode).toBe(401);
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/admin/wallets/setup",
+      headers,
+      payload: { userIds, badgeCode: "ten_trades" },
+    });
+    expect(accepted.statusCode).toBe(200);
+    expect(accepted.json()).toMatchObject({ requested: 2, succeeded: 2, badgeCode: "ten_trades" });
+    expect(setupPaperWorkflowBatch).toHaveBeenCalledWith(userIds, "ten_trades");
+    await app.close();
+  });
+
   it("garde la récupération globale par token et confirmation serveur", async () => {
     const startReclaimAll = vi.fn(async () => ({
       enabled: true,

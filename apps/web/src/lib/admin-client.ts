@@ -4,6 +4,7 @@ import {
   type AdminOverviewDto,
   type AdminNftGrantDto,
   type AdminBatchNftGrantDto,
+  type AdminPaperWorkflowBatchDto,
   type AdminWalletProvisionDto,
   type AdminReclaimJobDto,
   type AdminCompetitionCloseDto,
@@ -113,6 +114,17 @@ export function createLocalAdminClient(
         transport,
         {
           path: "/admin/wallets/nfts",
+          method: "POST",
+          headers: { "x-admin-token": token },
+          body: { userIds, badgeCode },
+        },
+        200,
+      ),
+    setupPaperWorkflow: (token, userIds, badgeCode) =>
+      expectBody<AdminPaperWorkflowBatchDto>(
+        transport,
+        {
+          path: "/admin/wallets/setup",
           method: "POST",
           headers: { "x-admin-token": token },
           body: { userIds, badgeCode },

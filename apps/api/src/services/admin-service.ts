@@ -1,4 +1,5 @@
 import type { PriceMap } from "@tide/core";
+import { isValidClassicAddress } from "xrpl";
 import type { PaperService } from "./paper-service";
 import type { Agent, AgentStatus, AgentType, AgentStore } from "../store/agent-store";
 import type { MandateStore } from "../store/mandate-store";
@@ -43,11 +44,13 @@ export interface AdminAgentRow {
   readonly createdAt: number;
 }
 
-export type WalletKind = "agent" | "paper" | "prize_pool";
+export type WalletKind = "agent" | "paper" | "external" | "prize_pool";
 
 export interface AdminWalletRow {
   readonly address: string | null;
   readonly kind: WalletKind;
+  /** Wallet 2 du funnel Paper, celui qui porte les NFT. */
+  readonly walletRole?: "reward";
   readonly agentId: string | null;
   readonly userId: string | null;
   readonly live: boolean;
@@ -277,10 +280,28 @@ export class AdminService {
         createdAt: null,
         deleteTxHash: null,
       }));
-    const paperWallets = await this.deps.paperWallets?.list() ?? [];
+    const [paperWallets, rewardWallets] = await Promise.all([
+      this.deps.paperWallets?.list() ?? [],
+      this.deps.paperRewardWallets?.list() ?? [],
+    ]);
     const paperWalletByUser = new Map(paperWallets.map((wallet) => [wallet.userId, wallet]));
     const userIds = new Set(users.map((user) => user.userId));
     wallets.push(...users.map((user) => {
+      if (isExternalWalletUserId(user.userId)) {
+        return {
+          address: user.userId,
+          kind: "external" as const,
+          agentId: null,
+          userId: user.userId,
+          live: true,
+          status: null,
+          network: "mainnet" as const,
+          fundingTxHash: null,
+          fundedAt: null,
+          createdAt: null,
+          deleteTxHash: null,
+        };
+      }
       const wallet = paperWalletByUser.get(user.userId);
       return {
         address: wallet?.address ?? null,
@@ -299,6 +320,20 @@ export class AdminService {
     wallets.push(...paperWallets.filter((wallet) => !userIds.has(wallet.userId)).map((wallet) => ({
       address: wallet.address,
       kind: "paper" as const,
+      agentId: null,
+      userId: wallet.userId,
+      live: false,
+      status: wallet.status,
+      network: "mainnet" as const,
+      fundingTxHash: wallet.fundingTxHash,
+      fundedAt: wallet.fundedAt,
+      createdAt: wallet.createdAt,
+      deleteTxHash: wallet.deleteTxHash,
+    })));
+    wallets.push(...rewardWallets.map((wallet) => ({
+      address: wallet.address,
+      kind: "paper" as const,
+      walletRole: "reward" as const,
       agentId: null,
       userId: wallet.userId,
       live: false,
@@ -357,15 +392,12 @@ export class AdminService {
   ): Promise<number | null> {
     const reader = this.deps.paperWalletNftInventory;
     if (reader === undefined) return null;
-    const starterAddresses = wallets.flatMap((wallet) =>
+    const paperAddresses = wallets.flatMap((wallet) =>
       wallet.kind === "paper" && wallet.status === "funded" && wallet.address !== null
         ? [wallet.address]
         : [],
     );
-    const rewardAddresses = (await this.deps.paperRewardWallets?.list() ?? [])
-      .filter((wallet) => wallet.status === "funded")
-      .map((wallet) => wallet.address);
-    const addresses = [...new Set([...starterAddresses, ...rewardAddresses])];
+    const addresses = [...new Set(paperAddresses)];
     if (addresses.length === 0) return 0;
     try {
       return (await reader.addressesWithNfts(addresses)).size;
@@ -389,4 +421,9 @@ function disabledSimulationStatus(): ArenaSimulationStatus {
     skippedTrades: 0,
     lastError: null,
   };
+}
+
+/** Les comptes XRPL connectés sont aussi les identifiants Paper Live du front. */
+function isExternalWalletUserId(userId: string): boolean {
+  return isValidClassicAddress(userId);
 }

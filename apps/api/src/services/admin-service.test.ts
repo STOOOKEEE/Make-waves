@@ -8,6 +8,7 @@ import { InMemoryAgentActionsStore } from "../store/agent-actions-store";
 import type { PriceMap } from "@tide/core";
 import { ArenaSimulationService } from "../simulation/arena-simulation-service";
 import { InMemoryPaperWalletStore } from "../store/paper-wallet-store";
+import { Wallet } from "xrpl";
 
 const PRICES: PriceMap = { XRP: 0.5 };
 
@@ -240,6 +241,49 @@ describe("AdminService.overview", () => {
       deleteTxHash: null,
     });
     expect(JSON.stringify(wallets)).not.toContain("secret-chiffré-interne");
+  });
+
+  it("sépare un compte XRPL connecté du wallet Paper custodial", async () => {
+    const externalAddress = Wallet.generate().classicAddress;
+    const { paper, service } = makeService([]);
+    paper.openAccount(externalAddress);
+
+    const { wallets } = await service.overview(PRICES);
+
+    expect(wallets).toContainEqual(expect.objectContaining({
+      address: externalAddress,
+      kind: "external",
+      userId: externalAddress,
+      live: true,
+      status: null,
+      network: "mainnet",
+    }));
+    expect(wallets.filter((wallet) => wallet.kind === "paper" && wallet.userId === externalAddress)).toHaveLength(0);
+  });
+
+  it("expose le wallet 2 avec un rôle distinct sans seed", async () => {
+    const { paper, paperRewardWallets, service } = makeService([]);
+    paper.openAccount("paper:reward-row");
+    await paperRewardWallets.create({
+      userId: "paper:reward-row",
+      address: "rRewardRow",
+      encryptedSeed: "secret-reward",
+      masterKeyId: "v1",
+      status: "funded",
+      fundingTxHash: "REWARD_FUND",
+      fundedAt: 2,
+      createdAt: 2,
+      deleteTxHash: null,
+    });
+
+    const { wallets } = await service.overview(PRICES);
+    expect(wallets).toContainEqual(expect.objectContaining({
+      address: "rRewardRow",
+      kind: "paper",
+      walletRole: "reward",
+      userId: "paper:reward-row",
+    }));
+    expect(JSON.stringify(wallets)).not.toContain("secret-reward");
   });
 
   it("affiche chaque compte Paper même si son wallet n'est pas encore créé", async () => {

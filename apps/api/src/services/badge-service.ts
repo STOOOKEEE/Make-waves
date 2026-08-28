@@ -60,9 +60,11 @@ export class BadgeClaimManagedError extends Error {
 /** Base publique par défaut des URI de métadonnées NFT. */
 const DEFAULT_METADATA_BASE_URL = "http://localhost:3000";
 
-/** Source du nombre d'ordres exécutés (implémentée par `PaperService`). */
+/** Source de l'activité de trading (implémentée par `PaperService`). */
 export interface BadgeOrdersSource {
   ordersOf(userId: string): readonly unknown[];
+  /** Inclut les ordres spot et les ouvertures de positions perp. */
+  tradeCountOf?(userId: string): number;
 }
 
 /** Source des compétitions (implémentée par `CompetitionService`). */
@@ -138,9 +140,16 @@ export class BadgeService {
     return { fillCount: this.fillCountOf(userId), competitionCount };
   }
 
-  /** Nombre d'ordres. Un compte paper pas encore créé (nouveau visiteur) → 0. */
+  /**
+   * Nombre de trades. Un compte Paper pas encore créé (nouveau visiteur) → 0.
+   * Le fallback garde la compatibilité avec les sources de test/legacy qui ne
+   * savent compter que les ordres spot.
+   */
   private fillCountOf(userId: string): number {
     try {
+      if (this.deps.paper.tradeCountOf !== undefined) {
+        return this.deps.paper.tradeCountOf(userId);
+      }
       return this.deps.paper.ordersOf(userId).length;
     } catch (err) {
       if (err instanceof Error && err.name === "AccountNotFoundError") {

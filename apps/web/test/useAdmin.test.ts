@@ -103,6 +103,13 @@ function clientWithToken(
       failed: 0,
       results: [],
     }),
+    setupPaperWorkflow: async (_token, userIds, badgeCode) => ({
+      badgeCode,
+      requested: userIds.length,
+      succeeded: userIds.length,
+      failed: 0,
+      results: [],
+    }),
     reclaimWallet: async () => IDLE_JOB,
     reclaimAllWallets: async () => IDLE_JOB,
     createCompetition: async (_token, input) => ({ id: input.id }),

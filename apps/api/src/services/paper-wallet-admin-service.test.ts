@@ -8,6 +8,7 @@ import {
   type PaperWalletAdminGateway,
   type WalletLedgerSnapshot,
 } from "./paper-wallet-admin-service";
+import type { FirstTradeRewardStatus } from "./first-trade-reward-service";
 
 const USER_ID = "paper:admin-test-user";
 const WALLET_ADDRESS = "rPaperWallet";
@@ -42,7 +43,13 @@ async function waitForJob(service: PaperWalletAdminService): Promise<void> {
   }
 }
 
-async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]) {
+async function fixture(
+  snapshots: readonly WalletLedgerSnapshot[] = [snapshot()],
+  firstTradeRewards?: {
+    recordFirstTrade(userId: string): Promise<void>;
+    claim(userId: string): Promise<FirstTradeRewardStatus>;
+  },
+) {
   const store = new InMemoryPaperWalletStore();
   const rewardStore = new InMemoryPaperWalletStore();
   await store.create(WALLET);
@@ -83,8 +90,26 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     ensureCreated,
     ensureFunded: vi.fn(async (userId: string) => {
       const wallet = await ensureCreated(userId);
+      if (wallet.status !== "pending_funding") return wallet;
       await store.markFunded(userId, `fund-${userId}`, 2);
       return { ...wallet, status: "funded" as const, fundingTxHash: `fund-${userId}`, fundedAt: 2 };
+    }),
+    ensureRewardFunded: vi.fn(async (userId: string) => {
+      const existing = await rewardStore.get(userId);
+      if (existing !== null) return existing;
+      const wallet: PaperWallet = {
+        userId,
+        address: `rReward${userId.slice(-10)}`,
+        encryptedSeed: "encrypted-reward",
+        masterKeyId: "v1",
+        status: "funded",
+        fundingTxHash: `reward-fund-${userId}`,
+        fundedAt: 3,
+        createdAt: 3,
+        deleteTxHash: null,
+      };
+      await rewardStore.create(wallet);
+      return wallet;
     }),
   };
   const ensurePaperAccount = vi.fn();
@@ -96,6 +121,8 @@ async function fixture(snapshots: readonly WalletLedgerSnapshot[] = [snapshot()]
     provisioner,
     ensurePaperAccount,
     paperUserActivity: () => ({ exists: true, hasTraded: true }),
+    badgeEligibility: () => true,
+    ...(firstTradeRewards === undefined ? {} : { firstTradeRewards }),
     issuer,
     recoveryAddress: ISSUER_ADDRESS,
     network: "mainnet",
@@ -149,17 +176,68 @@ describe("PaperWalletAdminService", () => {
 
     expect(result).toMatchObject({
       userId: USER_ID,
-      walletAddress: WALLET_ADDRESS,
+      walletAddress: `rReward${USER_ID.slice(-10)}`,
       nftTokenId: "nft-id",
       claimHash: "claim-hash",
     });
     expect(issuer.issueBadge).toHaveBeenCalledWith({
       uri: "https://api.test/nft-metadata/first_trade",
       taxon: 1,
-      destination: WALLET_ADDRESS,
+      destination: `rReward${USER_ID.slice(-10)}`,
     });
     expect(gateway.acceptNft).toHaveBeenCalledWith("sTestSeed", "offer-id");
     expect(await rewards.get(USER_ID, "first_trade")).toMatchObject({ status: "claimed" });
+  });
+
+  it("exécute le workflow complet vers le wallet 2 puis ferme le wallet 1", async () => {
+    const { service, store, rewardStore, gateway, issuer } = await fixture();
+
+    const result = await service.setupPaperWorkflowBatch([USER_ID], "ten_trades");
+
+    expect(result).toMatchObject({ requested: 1, succeeded: 1, failed: 0, badgeCode: "ten_trades" });
+    expect(issuer.issueBadge).toHaveBeenCalledWith(expect.objectContaining({
+      destination: `rReward${USER_ID.slice(-10)}`,
+      taxon: 2,
+    }));
+    expect(gateway.deleteAccount).toHaveBeenCalledWith(
+      "sTestSeed",
+      `rReward${USER_ID.slice(-10)}`,
+      "200000",
+    );
+    expect((await store.get(USER_ID))?.status).toBe("deleted");
+    expect((await store.get(USER_ID))?.encryptedSeed).toBe("");
+    expect((await rewardStore.get(USER_ID))?.status).toBe("funded");
+
+    const retry = await service.setupPaperWorkflowBatch([USER_ID], "ten_trades");
+    expect(retry).toMatchObject({ requested: 1, succeeded: 1, failed: 0 });
+    expect(gateway.deleteAccount).toHaveBeenCalledTimes(1);
+  });
+
+  it("utilise le service First Trade canonique pour le parcours par défaut", async () => {
+    const firstTradeRewards = {
+      recordFirstTrade: vi.fn(async () => undefined),
+      claim: vi.fn(async (): Promise<FirstTradeRewardStatus> => ({
+        network: "mainnet",
+        walletAddress: WALLET_ADDRESS,
+        walletStatus: "deleted",
+        fundingTxHash: "funding",
+        walletDeleteTxHash: "delete-hash",
+        rewardWalletAddress: "rRewardFirstTrade",
+        rewardWalletStatus: "funded",
+        rewardFundingTxHash: "reward-funding",
+        rewardFundingSourceAddress: WALLET_ADDRESS,
+        rewardStatus: "claimed",
+        nftTokenId: "nft-first-trade",
+        claimTxHash: "claim-first-trade",
+      })),
+    };
+    const { service } = await fixture([snapshot()], firstTradeRewards);
+
+    const result = await service.setupPaperWorkflowBatch([USER_ID], "first_trade");
+
+    expect(result).toMatchObject({ requested: 1, succeeded: 1, failed: 0, badgeCode: "first_trade" });
+    expect(firstTradeRewards.recordFirstTrade).toHaveBeenCalledWith(USER_ID);
+    expect(firstTradeRewards.claim).toHaveBeenCalledWith(USER_ID);
   });
 
   it("distribue un badge en lot et rapporte les succès", async () => {

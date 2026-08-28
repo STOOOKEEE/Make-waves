@@ -21,9 +21,15 @@ const NFT_ID = "00082710" + "1234567890ABCDEF".repeat(3) + "1234ABCD";
 const OFFER_ID = "ABCDEF01" + "1234567890ABCDEF".repeat(3) + "0011AABB";
 
 class FakeOrders implements BadgeOrdersSource {
-  constructor(private readonly count: number) {}
+  constructor(
+    private readonly count: number,
+    private readonly tradeCount = count,
+  ) {}
   ordersOf(): readonly unknown[] {
     return new Array(this.count).fill(0);
+  }
+  tradeCountOf(): number {
+    return this.tradeCount;
   }
 }
 
@@ -97,6 +103,18 @@ describe("BadgeService.statusFor", () => {
     await svc.confirmClaim("u1", "first_trade", "HASH");
     const afterConfirm = await svc.statusFor("u1");
     expect(afterConfirm.find((b) => b.code === "first_trade")?.status).toBe("claimed");
+  });
+
+  it("compte aussi une ouverture de position perp comme premier trade", async () => {
+    // La source Paper expose le total spot + perp, même si aucun ordre spot
+    // n'est présent dans l'historique classique.
+    const perpSvc = new BadgeService({
+      paper: new FakeOrders(0, 1),
+      competition: new FakeCompetition(),
+      store: new InMemoryBadgeStore(),
+    });
+    const status = await perpSvc.statusFor("u1");
+    expect(status.find((badge) => badge.code === "first_trade")?.earned).toBe(true);
   });
 });
 
