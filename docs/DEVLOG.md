@@ -2555,3 +2555,11 @@ désormais incluse dans le compteur de mérite via `PaperService.tradeCountOf`.
 Le dashboard recharge le statut des badges immédiatement après une ouverture
 perp réussie : le bouton de claim sur le wallet externe apparaît donc sans
 rechargement de page. Aucun appel XRPL n'est effectué par ce déblocage off-chain.
+
+## 2026-08-28 — Compteurs admin Paper clarifiés
+
+La console distingue maintenant les wallets 1 et 2 dans ses compteurs : les
+anciens wallets 1 `reclaimed` ne sont plus affichés comme des wallets 2
+supprimés. Les wallets 2 correspondent uniquement aux lignes de
+`paper_reward_wallets_mainnet`, tandis que les identités Paper sans wallet
+custodial restent visibles comme lignes virtuelles d'administration.

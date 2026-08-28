@@ -94,6 +94,14 @@ const rewardByUser = computed(() => new Map(
 const createdPaperWallets = computed(() =>
   paperWallets.value.filter((wallet) => wallet.status !== "not_created"),
 );
+const closedPaperWallets = computed(() =>
+  paperWallets.value.filter((wallet) => wallet.status === "reclaimed" || wallet.status === "deleted").length,
+);
+const pendingPaperWallets = computed(() =>
+  paperWallets.value.filter((wallet) =>
+    wallet.status === "pending_funding" || wallet.status === "funding_in_progress" || wallet.status === "funding_failed",
+  ).length,
+);
 const fundedPaperWallets = computed(() =>
   paperWallets.value.filter((wallet) => wallet.status === "funded").length,
 );
@@ -167,9 +175,8 @@ const walletNetwork = computed<"mainnet">(() => "mainnet");
 const deleteConfirmation = computed(
   () => `DELETE ALL ${walletNetwork.value.toUpperCase()} WALLETS`,
 );
-const reclaimedPaperWallets = computed(() =>
-  [...paperWallets.value, ...rewardWallets.value]
-    .filter((wallet) => wallet.status === "reclaimed" || wallet.status === "deleted").length,
+const closedRewardWallets = computed(() =>
+  rewardWallets.value.filter((wallet) => wallet.status === "reclaimed" || wallet.status === "deleted").length,
 );
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -401,8 +408,8 @@ async function submitCompetition(): Promise<void> {
           <span class="card__label">Wallets Paper custodiaux</span>
           <strong class="card__value">{{ fundedPaperWallets }}</strong>
           <ul class="segments">
-            <li>Wallet 1 : {{ createdPaperWallets.length }} créés · {{ paperWallets.length - createdPaperWallets.length }} manquants</li>
-            <li>Wallet 2 : {{ rewardWallets.length }} créés · {{ reclaimedPaperWallets }} supprimés / récupérés</li>
+            <li>Wallet 1 : {{ createdPaperWallets.length }} enregistrés · {{ fundedPaperWallets }} actifs · {{ pendingPaperWallets }} en attente · {{ closedPaperWallets }} fermés / récupérés</li>
+            <li>Wallet 2 : {{ rewardWallets.length }} créés · {{ closedRewardWallets }} fermés / récupérés</li>
           </ul>
         </div>
 
