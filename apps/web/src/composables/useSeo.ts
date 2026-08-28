@@ -9,7 +9,9 @@ import type { Ref } from "vue";
 import type { Article } from "../data/learn/types";
 import type { Locale } from "../i18n/locale";
 
-const DEFAULT_TITLE = "TIDE — Cross-market trading trainer on XRPL";
+/** Doit rester identique au <title> de `apps/web/index.html` : c'est le titre
+ *  restauré quand une vue quitte l'écran et relâche son SEO. */
+const DEFAULT_TITLE = "TIDE — Learn to trade crypto with virtual money";
 const BRAND = "TIDE School";
 
 interface ManagedTag {

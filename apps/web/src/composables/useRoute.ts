@@ -12,10 +12,16 @@ const PUBLIC_ROUTES = [
   "/learn",
 ] as const;
 
-/** `/admin` n'existe que dans le serveur de développement local. */
-export type RoutePath = (typeof PUBLIC_ROUTES)[number] | "/admin";
+/**
+ * Routes réservées au serveur de développement local : la console admin, et
+ * l'archive de la landing d'avant le repositionnement « apprendre d'abord »
+ * (gardée pour référence visuelle, cf. `LandingClassicView.vue`).
+ */
+const DEV_ROUTES = ["/admin", "/landing-classic"] as const;
+
+export type RoutePath = (typeof PUBLIC_ROUTES)[number] | (typeof DEV_ROUTES)[number];
 export const ROUTES: readonly RoutePath[] = import.meta.env.DEV
-  ? [...PUBLIC_ROUTES, "/admin"]
+  ? [...PUBLIC_ROUTES, ...DEV_ROUTES]
   : PUBLIC_ROUTES;
 
 // Le domaine nu accueille les visiteurs sur la landing ; le terminal reste

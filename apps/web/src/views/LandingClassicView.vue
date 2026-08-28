@@ -1,4 +1,12 @@
 <script setup lang="ts">
+// ARCHIVE — landing « arène compétitive », telle qu'elle était au 2026-08-28,
+// avant le repositionnement « apprendre d'abord » suggéré par XRPL Commons.
+// Conservée à la demande d'Eli pour pouvoir la revoir RENDUE, pas seulement en
+// hash git : accessible sur #/landing-classic, mais UNIQUEMENT en développement
+// (import conditionnel `import.meta.env.DEV` dans App.vue, comme AdminView) —
+// Vite l'élimine du build de production, donc rien de mort n'est publié.
+// Ne pas faire évoluer ce fichier : c'est une photo, pas du code vivant.
+//
 // Landing page — page d'accueil SPÉCIALE : elle n'utilise PAS l'app-bar global,
 // elle rend sa propre barre supérieure (.bar) et ses propres tokens de couleurs
 // (différents des tokens globaux). Le .grain global est déjà rendu par App.vue.
@@ -9,7 +17,6 @@ import { useWalletEntry } from '../composables/useWalletEntry'
 import { useI18n } from '../i18n/useI18n'
 import LangToggle from '../components/LangToggle.vue'
 import BrandMark from '../components/BrandMark.vue'
-import { articlesByCategory } from '../data/learn'
 
 const props = defineProps<{ client: TideClient }>()
 const { userId, connected } = useSession()
@@ -18,48 +25,26 @@ const { t, locale, intlLocale } = useI18n({
   en: {
     soundOff: 'SOUND [OFF]',
     soundOn: 'SOUND [ON]',
-    heroDesc: 'TIDE TEACHES YOU TO TRADE CRYPTO ON REAL MARKETS, WITH VIRTUAL MONEY, BEFORE YOU EVER RISK YOUR OWN.',
+    heroDesc: 'TIDE IS A WEB3 PAPER-TRADING ARENA WHERE THE BEST TRADERS COMPETE FOR REAL REWARDS.',
     seasonLive: 'XRPL MAINNET · LIVE',
     tradersCount: 'REAL MARKET DATA',
     join: 'Open app',
-    heroTag: '[ LEARN · PRACTISE · THEN COMPETE ]',
-    heroTitleL1: 'Learn to',
-    heroTitleL2: 'Trade',
-    demoWallet: 'Season leader',
-    s04Return: 'S04 return · rank #{rank}',
-    topTradersLive: 'Top traders — live',
-    segSchool: 'School',
-    segLeaderboard: 'Leaderboard',
-    segCompetitions: 'Competitions',
-    marqPractice: 'Practise',
-    marqFakeMoney: 'Fake Money',
-    marqRealSkill: 'Real Skill',
-    manifestoLabel: 'The manifesto',
-    manifestoP1: 'Nobody is born knowing how to read a chart. ',
-    manifestoHighlight: 'So we teach you first, and let you practise for free.',
-    manifestoP2: ' Sixteen lessons, a guided tutorial, and a $10,000 paper account on real crypto markets. No deposit, no KYC, and no real money involved while you learn.',
-    stepsHeadL1: 'Three steps',
-    stepsHeadL2: 'from zero',
-    stepsLead: 'You start by understanding, not by depositing. The tutorial walks you through your first trade, click by click, and you can skip it whenever you want.',
-    step1Title: 'Understand the basics',
-    step1Body: 'Sixteen bilingual lessons: charts, order types, perpetuals, leverage, risk. Written for someone who has never placed a trade.',
-    step2Title: 'Practise with fake money',
-    step2Body: 'A guided sandbox running on live market data. Open a position, set a stop, watch it play out. No real money is involved at any point.',
-    step3Title: 'Then compete',
-    step3Body: 'When it clicks, take your paper account into competitions and settle the results on XRPL.',
-    learnLabel: 'Tide School',
-    learnHeadL1: 'Four tracks.',
-    learnHeadL2: 'Sixteen lessons.',
-    learnLead: 'A path that starts at "what is a market" and ends at running a strategy under pressure. Every lesson is free, bilingual, and finishes with a drill you can do straight away in the terminal.',
-    learnCta: 'Start learning →',
-    learnTrackLessons: '{n} lessons',
-    learnTotal: '{n} lessons · 4 tracks · EN & FR',
-    learnSideLabel: 'Guided tutorial',
-    learnSideBody: 'Your first trade, explained click by click. Skippable at any time.',
+    heroTag: '[ PAPER TRADING · COMPETITIONS · AI AGENTS ]',
+    aiLabel: 'AI Arena · Season 01',
+    aiHeadL1: 'One model.',
+    aiHeadL2: 'A thousand brains.',
+    aiLead:
+      "Not into trading by hand? Enter the AI Arena. Everyone gets the same frozen model, the same data feed and the same demo capital — the only variable is the strategy you engineer. Autonomous agents compete on-chain for the pot.",
+    aiCta: 'Enter the AI Arena →',
+    aiSpec1K: 'Model',
+    aiSpec1V: 'Frozen · identical',
+    aiSpec2K: 'Data',
+    aiSpec2V: 'Unified feed',
+    aiSpec3K: 'Capital',
+    aiSpec3V: 'Demo · equal',
+    aiNote: 'identical for every competitor · verified on-chain',
     featureLabel: 'Explore Tide',
-    featureTitle: 'Everything you need, in one place.',
-    featureLearn: 'Learn',
-    featureLearnBody: 'Sixteen lessons on charts, orders, perps, leverage and risk.',
+    featureTitle: 'Everything in one trading platform.',
     featureTrading: 'Trading',
     featureTradingBody: 'Paper spot and perpetual positions using real market data.',
     featurePortfolio: 'Portfolio',
@@ -69,70 +54,98 @@ const { t, locale, intlLocale } = useI18n({
     featureCompetitions: 'Competitions',
     featureCompetitionsBody: 'Verified XRP entry pools and on-chain payouts.',
     featureArena: 'AI Arena',
-    featureArenaBody: 'Agent strategies under identical constraints. Opens when a real competition runs.',
-    ctaHeadL1: 'Start with',
-    ctaHeadL2: 'lesson one',
-    ctaP: 'Free, bilingual, and no wallet needed. You connect one later, only when you want to act on-chain.',
-    ctaBtn: 'Open Tide School →',
-    ctaBtn2: 'Create a free account',
-    footerTagline: 'Learn to trade crypto on real markets with virtual money. Then prove it on-chain.',
+    featureArenaBody: 'Compare agent strategies under the same constraints.',
+    featureLearn: 'Learn',
+    featureLearnBody: 'Understand trading, risk, perps and Tide competitions.',
+    duelLive: 'Live duel',
+    duelATag: 'regime · reflection',
+    duelBTag: 'raw execution',
+    duelFeed1: 'regime → range detected',
+    duelFeed2: 'fading the BTC high',
+    duelFeed3: 'throttle on · 1 order / min',
+    duelFeed4: 'stop hit · capital preserved',
+    duelFeed5: 'sentiment +, opening LONG',
+    demoWallet: 'Season leader',
+    s04Return: 'S04 return · rank #{rank}',
+    topTradersLive: 'Top traders — live',
+    meName: 'you — connect',
+    meRanks: '↑ 6 ranks today',
+    segArena: 'Arena',
+    segLeaderboard: 'Leaderboard',
+    segRewards: 'Rewards',
+    marqCompetition: 'Competition',
+    marqZeroRisk: 'Zero Risk',
+    marqRealGlory: 'Real Glory',
+    manifestoLabel: 'The manifesto',
+    manifestoP1: 'You get $10,000 in virtual capital. You trade real crypto markets in real time. ',
+    manifestoHighlight: 'No deposit, no painful liquidations, no KYC.',
+    manifestoP2: ' Just your read on the market — against the current season leaderboard. The best cash out on-chain when rewards are enabled.',
+    statPaidOut: 'paid out this season',
+    statWallets: 'wallets created',
+    statMarkets: 'markets available',
+    statFeeFree: 'fee-free trading',
+    stepsHeadL1: 'Start trading',
+    stepsHeadL2: 'in 60 seconds',
+    stepsLead: 'Connect, get your capital, and the race begins. No endless onboarding.',
+    step1Title: 'Create your Tide account',
+    step1Body: 'Continue with email or Google. Your Paper portfolio follows you on every device.',
+    step2Title: 'Get $10,000',
+    step2Body: 'Demo capital credited instantly. Open positions on markets backed by real data feeds.',
+    step3Title: 'Climb & cash out',
+    step3Body: 'Beat the market and your rivals. At the close, rewards drop automatically on-chain.',
+    seasonPot: 'Season pot',
+    potCaption: 'RLUSD + season NFT · split across the top 50',
+    cdDays: 'Days',
+    cdHours: 'Hours',
+    cdMin: 'Min',
+    cdSec: 'Sec',
+    prize1: '1st place',
+    prize2: '2nd place',
+    prize3: '3rd place',
+    prize4: 'Top 4 — 50',
+    ctaHeadL1: 'Take',
+    ctaHeadL2: 'your spot',
+    ctaP: 'Sharpen your edge in paper mode, then connect a wallet only when you need on-chain actions.',
+    connectWallet: 'Connect wallet →',
+    footerTagline: 'The paper-trading arena where the best crypto pilots go head to head — and cash out on-chain.',
     colProduct: 'Product',
     colResources: 'Resources',
-    linkTerminal: 'Terminal',
-    linkLeaderboard: 'Leaderboard',
+    colCommunity: 'Community',
     linkCompetitions: 'Competitions',
+    linkLeaderboard: 'Leaderboard',
+    linkRewards: 'Rewards',
+    linkMarkets: 'Markets',
     linkSchool: 'Tide School',
-    linkDocumentation: 'First lesson',
+    linkDocumentation: 'Documentation',
+    linkRules: 'Rules',
+    linkApi: 'API',
+    linkStatus: 'Status',
     copyright: '© 2026 TIDE LABS — BUILT ON-CHAIN',
     disclaimer: 'PAPER TRADING INVOLVES NO REAL CAPITAL',
   },
   fr: {
     soundOff: 'SON [OFF]',
     soundOn: 'SON [ON]',
-    heroDesc: "TIDE T'APPREND À TRADER LA CRYPTO SUR DE VRAIS MARCHÉS, AVEC DE L'ARGENT VIRTUEL, AVANT DE RISQUER LE TIEN.",
+    heroDesc: "TIDE EST UNE ARÈNE DE PAPER TRADING WEB3 OÙ LES MEILLEURS TRADERS S'AFFRONTENT POUR DES RÉCOMPENSES RÉELLES.",
     seasonLive: 'XRPL MAINNET · LIVE',
     tradersCount: 'DONNÉES DE MARCHÉ RÉELLES',
     join: "Ouvrir l'app",
-    heroTag: "[ APPRENDRE · S'ENTRAÎNER · PUIS CONCOURIR ]",
-    // Pas d'accent en tête de 2e ligne : `line-height: .84` + `.gl{overflow:hidden}`
-    // (l'animation de montée) rognent un « À » qui déborde sur la ligne du dessus.
-    heroTitleL1: 'Apprendre',
-    heroTitleL2: 'le trading',
-    demoWallet: 'Meilleur trader',
-    s04Return: 'Rendement S04 · rang #{rank}',
-    topTradersLive: 'Top traders — live',
-    segSchool: 'École',
-    segLeaderboard: 'Classement',
-    segCompetitions: 'Compétitions',
-    marqPractice: 'Entraînement',
-    marqFakeMoney: 'Argent Fictif',
-    marqRealSkill: 'Vraie Compétence',
-    manifestoLabel: 'Le manifeste',
-    manifestoP1: 'Personne ne naît en sachant lire un graphique. ',
-    manifestoHighlight: "Alors on te l'apprend d'abord, et on te laisse t'entraîner gratuitement.",
-    manifestoP2: " Seize leçons, un tutoriel guidé, et un compte paper de $10 000 sur de vrais marchés crypto. Pas de dépôt, pas de KYC, et aucun argent réel pendant que tu apprends.",
-    stepsHeadL1: 'Trois étapes',
-    stepsHeadL2: 'en partant de zéro',
-    stepsLead: "Tu commences par comprendre, pas par déposer. Le tutoriel t'accompagne clic par clic sur ton premier trade, et tu peux le passer quand tu veux.",
-    step1Title: 'Comprendre les bases',
-    step1Body: "Seize leçons bilingues : graphiques, types d'ordres, perpétuels, levier, risque. Écrites pour quelqu'un qui n'a jamais passé un ordre.",
-    step2Title: "S'entraîner en argent fictif",
-    step2Body: "Un bac à sable guidé branché sur les données de marché en direct. Ouvre une position, pose un stop, regarde ce que ça donne. Aucun argent réel n'entre en jeu.",
-    step3Title: 'Puis concourir',
-    step3Body: 'Quand le déclic est là, emmène ton compte paper en compétition et fais régler les résultats sur XRPL.',
-    learnLabel: 'Tide School',
-    learnHeadL1: 'Quatre pistes.',
-    learnHeadL2: 'Seize leçons.',
-    learnLead: "Un parcours qui part de « c'est quoi un marché » et va jusqu'à tenir une stratégie sous pression. Chaque leçon est gratuite, bilingue, et se termine par un exercice à faire tout de suite dans le terminal.",
-    learnCta: 'Commencer à apprendre →',
-    learnTrackLessons: '{n} leçons',
-    learnTotal: '{n} leçons · 4 pistes · EN & FR',
-    learnSideLabel: 'Tutoriel guidé',
-    learnSideBody: 'Ton premier trade, expliqué clic par clic. Passable à tout moment.',
+    heroTag: '[ PAPER TRADING · COMPÉTITIONS · AGENTS IA ]',
+    aiLabel: 'Arène IA · Saison 01',
+    aiHeadL1: 'Un modèle.',
+    aiHeadL2: 'Mille cerveaux.',
+    aiLead:
+      "Pas fan du trading à la main ? Entre dans l'Arène IA. Chacun reçoit le même modèle figé, le même flux de données et le même capital démo — la seule variable, c'est la stratégie que tu conçois. Des agents autonomes s'affrontent on-chain pour la cagnotte.",
+    aiCta: "Entrer dans l'Arène IA →",
+    aiSpec1K: 'Modèle',
+    aiSpec1V: 'Figé · identique',
+    aiSpec2K: 'Données',
+    aiSpec2V: 'Flux unifié',
+    aiSpec3K: 'Capital',
+    aiSpec3V: 'Démo · égal',
+    aiNote: 'identique pour chaque concurrent · vérifié on-chain',
     featureLabel: 'Explorer Tide',
-    featureTitle: "Tout ce qu'il te faut, au même endroit.",
-    featureLearn: 'Apprendre',
-    featureLearnBody: "Seize leçons sur les graphiques, les ordres, les perps, le levier et le risque.",
+    featureTitle: 'Toute la plateforme de trading au même endroit.',
     featureTrading: 'Trading',
     featureTradingBody: 'Spot et perp Paper basés sur de vraies données de marché.',
     featurePortfolio: 'Portefeuille',
@@ -142,20 +155,72 @@ const { t, locale, intlLocale } = useI18n({
     featureCompetitions: 'Compétitions',
     featureCompetitionsBody: 'Pools de tickets XRP vérifiés et paiements on-chain.',
     featureArena: 'Arène IA',
-    featureArenaBody: "Stratégies d'agents sous contraintes identiques. Ouvre quand une vraie compétition tourne.",
-    ctaHeadL1: 'Commence par',
-    ctaHeadL2: 'la première leçon',
-    ctaP: "Gratuit, bilingue, et sans wallet. Tu en connectes un plus tard, seulement quand tu veux agir on-chain.",
-    ctaBtn: 'Ouvrir Tide School →',
-    ctaBtn2: 'Créer un compte gratuit',
-    footerTagline: "Apprends à trader la crypto sur de vrais marchés avec de l'argent virtuel. Puis prouve-le on-chain.",
+    featureArenaBody: 'Comparer des stratégies d’agents sous les mêmes contraintes.',
+    featureLearn: 'Apprendre',
+    featureLearnBody: 'Comprendre le trading, le risque, les perps et les compétitions Tide.',
+    duelLive: 'Duel en direct',
+    duelATag: 'régime · réflexion',
+    duelBTag: 'exécution brute',
+    duelFeed1: 'régime → range détecté',
+    duelFeed2: 'on fade le haut BTC',
+    duelFeed3: 'throttle · 1 ordre / min',
+    duelFeed4: 'stop touché · capital préservé',
+    duelFeed5: 'sentiment +, ouverture LONG',
+    demoWallet: 'Meilleur trader',
+    s04Return: 'Rendement S04 · rang #{rank}',
+    topTradersLive: 'Top traders — live',
+    meName: 'toi — connecté',
+    meRanks: "↑ 6 rangs aujourd'hui",
+    segArena: 'Arène',
+    segLeaderboard: 'Classement',
+    segRewards: 'Récompenses',
+    marqCompetition: 'Compétition',
+    marqZeroRisk: 'Zéro Risque',
+    marqRealGlory: 'Gloire Réelle',
+    manifestoLabel: 'Le manifeste',
+    manifestoP1: 'Tu reçois $10 000 virtuels. Tu trades les vrais marchés crypto en temps réel. ',
+    manifestoHighlight: 'Pas de dépôt, pas de liquidation qui fait mal, pas de KYC.',
+    manifestoP2: ' Juste ta lecture du marché — opposée au classement de la saison en cours. Les meilleurs encaissent on-chain quand les récompenses sont activées.',
+    statPaidOut: 'distribués cette saison',
+    statWallets: 'portefeuilles créés',
+    statMarkets: 'marchés disponibles',
+    statFeeFree: 'trading sans frais',
+    stepsHeadL1: 'Commence à trader',
+    stepsHeadL2: 'en 60 secondes',
+    stepsLead: "Connecte, reçois ton capital, et la course commence. Pas d'onboarding interminable.",
+    step1Title: 'Crée ton compte Tide',
+    step1Body: 'Continue avec ton email ou Google. Ton portefeuille Paper te suit sur tous tes appareils.',
+    step2Title: 'Reçois $10 000',
+    step2Body: 'Capital de démo crédité instantanément. Ouvre des positions sur des marchés alimentés par de vraies données.',
+    step3Title: 'Grimpe & encaisse',
+    step3Body: 'Bats le marché et tes rivaux. À la clôture, les récompenses tombent automatiquement on-chain.',
+    seasonPot: 'Cagnotte de la saison',
+    potCaption: 'RLUSD + NFT de saison · répartis sur le top 50',
+    cdDays: 'Jours',
+    cdHours: 'Heures',
+    cdMin: 'Min',
+    cdSec: 'Sec',
+    prize1: '1ère place',
+    prize2: '2e place',
+    prize3: '3e place',
+    prize4: 'Top 4 — 50',
+    ctaHeadL1: 'Prends',
+    ctaHeadL2: 'ta place',
+    ctaP: "Affûte ton edge en paper, puis connecte un wallet seulement quand une action on-chain est nécessaire.",
+    connectWallet: 'Connecter le wallet →',
+    footerTagline: "L'arène de paper trading où les meilleurs pilotes crypto se mesurent — et encaissent on-chain.",
     colProduct: 'Produit',
     colResources: 'Ressources',
-    linkTerminal: 'Terminal',
-    linkLeaderboard: 'Classement',
+    colCommunity: 'Communauté',
     linkCompetitions: 'Compétitions',
+    linkLeaderboard: 'Classement',
+    linkRewards: 'Récompenses',
+    linkMarkets: 'Marchés',
     linkSchool: 'Tide School',
-    linkDocumentation: 'Première leçon',
+    linkDocumentation: 'Documentation',
+    linkRules: 'Règlement',
+    linkApi: 'API',
+    linkStatus: 'Statut',
     copyright: '© 2026 TIDE LABS — CONSTRUIT ON-CHAIN',
     disclaimer: "LE PAPER TRADING N'IMPLIQUE AUCUN CAPITAL RÉEL",
   },
@@ -186,37 +251,21 @@ const loaded = ref<boolean>(false)
 const t1 = ref<string>('--:--')
 const t2 = ref<string>('--:--')
 
-// Contrôle segmenté (École / Classement / Compétitions).
+// Contrôle segmenté (Arène / Classement / Récompenses).
 const active = ref<number>(0)
 const segButtons = ref<Array<HTMLButtonElement | null>>([null, null, null])
 const indicator = ref<HTMLSpanElement | null>(null)
-const segLabels = computed(
-  () => [t('segSchool'), t('segLeaderboard'), t('segCompetitions')] as const,
-)
+const segLabels = computed(() => [t('segArena'), t('segLeaderboard'), t('segRewards')] as const)
 // Chaque onglet renvoie vers sa page réelle (sinon le contrôle ne ferait rien).
-const SEG_ROUTES = ['/learn', '/leaderboard', '/competitions'] as const
-// L'apprentissage passe en tête : c'est la promesse d'entrée du produit.
+const SEG_ROUTES = ['/arena', '/leaderboard', '/competitions'] as const
 const featureLinks = computed(() => [
-  { path: '/learn', title: t('featureLearn'), body: t('featureLearnBody') },
   { path: '/dashboard', title: t('featureTrading'), body: t('featureTradingBody') },
   { path: '/portfolio', title: t('featurePortfolio'), body: t('featurePortfolioBody') },
   { path: '/leaderboard', title: t('featureLeaderboard'), body: t('featureLeaderboardBody') },
   { path: '/competitions', title: t('featureCompetitions'), body: t('featureCompetitionsBody') },
   { path: '/arena', title: t('featureArena'), body: t('featureArenaBody') },
+  { path: '/learn', title: t('featureLearn'), body: t('featureLearnBody') },
 ])
-
-// Les quatre pistes du cursus, dérivées du contenu réel (aucun chiffre en dur,
-// aucun appel réseau) : la section École affiche ce que `data/learn` contient.
-const learnTracks = computed(() =>
-  articlesByCategory(locale.value).map((group) => ({
-    id: group.id,
-    label: group.label,
-    count: group.articles.length,
-  })),
-)
-const learnLessonCount = computed(() =>
-  learnTracks.value.reduce((total, track) => total + track.count, 0),
-)
 
 // ---- Vitrine live : top traders + leader de saison (vraies données API) ----
 const START_EQUITY = 10_000
@@ -363,8 +412,8 @@ onUnmounted(() => {
       <div class="wrap">
         <div class="h-tag lab soft rv" v-reveal>{{ t('heroTag') }}</div>
         <h1 class="giant">
-          <span class="gl"><span>{{ t('heroTitleL1') }}</span></span>
-          <span class="gl"><span>{{ t('heroTitleL2') }}</span></span>
+          <span class="gl"><span>Onchain</span></span>
+          <span class="gl"><span>Trading</span></span>
         </h1>
         <!-- DARK SCREEN -->
         <div class="screen rv" v-reveal>
@@ -415,8 +464,8 @@ onUnmounted(() => {
     <!-- MARQUEE -->
     <div class="marq">
       <div class="marq-tr">
-        <span>Tide School</span><i>✕</i><span class="out">{{ t('marqPractice') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqFakeMoney') }}</span><i>✕</i><span>{{ t('marqRealSkill') }}</span><i>✕</i>
-        <span>Tide School</span><i>✕</i><span class="out">{{ t('marqPractice') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqFakeMoney') }}</span><i>✕</i><span>{{ t('marqRealSkill') }}</span><i>✕</i>
+        <span>Paper Trading</span><i>✕</i><span class="out">{{ t('marqCompetition') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqZeroRisk') }}</span><i>✕</i><span>{{ t('marqRealGlory') }}</span><i>✕</i>
+        <span>Paper Trading</span><i>✕</i><span class="out">{{ t('marqCompetition') }}</span><i>✕</i><span>On-chain</span><i>✕</i><span class="out">{{ t('marqZeroRisk') }}</span><i>✕</i><span>{{ t('marqRealGlory') }}</span><i>✕</i>
       </div>
     </div>
 
@@ -441,31 +490,28 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <!-- TIDE SCHOOL — la section pleine largeur du produit : c'est la promesse
-         d'entrée. Les pistes et le nombre de leçons sont dérivés de data/learn,
-         donc aucun chiffre en dur ne peut mentir sur le contenu réel. -->
-    <section class="ai-sec" id="school">
+    <!-- AI ARENA -->
+    <section class="ai-sec" id="ai-arena">
       <div class="wrap">
         <div class="ai rv" v-reveal>
           <div class="ai-glow"></div>
           <div class="ai-main">
-            <span class="lab">{{ t('learnLabel') }}</span>
-            <h2>{{ t('learnHeadL1') }}<br /><span class="d">{{ t('learnHeadL2') }}</span></h2>
-            <p>{{ t('learnLead') }}</p>
-            <a href="#/learn" class="big-pill" @click.prevent="emit('navigate', '/learn')">{{ t('learnCta') }}</a>
+            <span class="lab">{{ t('aiLabel') }}</span>
+            <h2>{{ t('aiHeadL1') }}<br /><span class="d">{{ t('aiHeadL2') }}</span></h2>
+            <p>{{ t('aiLead') }}</p>
+            <a href="#/arena" class="big-pill" @click.prevent="emit('navigate', '/arena')">{{ t('aiCta') }}</a>
             <div class="ai-specs">
-              <span v-for="track in learnTracks" :key="track.id" class="ai-chip mono">
-                {{ track.label }} · {{ t('learnTrackLessons', { n: track.count }) }}
-              </span>
+              <span class="ai-chip mono">{{ t('aiSpec1K') }} · {{ t('aiSpec1V') }}</span>
+              <span class="ai-chip mono">{{ t('aiSpec2K') }} · {{ t('aiSpec2V') }}</span>
+              <span class="ai-chip mono">{{ t('aiSpec3K') }} · {{ t('aiSpec3V') }}</span>
             </div>
           </div>
           <div class="ai-side">
-            <a class="ai-product" href="#/learn" @click.prevent="emit('navigate', '/learn')">
-              <span class="lab">{{ t('learnSideLabel') }}</span>
-              <strong>{{ t('learnSideBody') }}</strong>
+            <a class="ai-product" href="#/arena" @click.prevent="emit('navigate', '/arena')">
+              <span class="lab">{{ t('featureArena') }}</span>
+              <strong>{{ t('featureArenaBody') }}</strong>
               <i>→</i>
             </a>
-            <p class="ai-total mono">{{ t('learnTotal', { n: learnLessonCount }) }}</p>
           </div>
         </div>
       </div>
@@ -499,13 +545,7 @@ onUnmounted(() => {
       <div class="wrap">
         <h2 class="rv" v-reveal>{{ t('ctaHeadL1') }}<br />{{ t('ctaHeadL2') }}</h2>
         <p class="rv" v-reveal>{{ t('ctaP') }}</p>
-        <!-- Le bouton secondaire garde `walletEntry.show()` : c'est le seul point
-             d'entrée du funnel wallet Paper sur la landing, il ne doit pas
-             disparaître avec le repositionnement. -->
-        <div class="cta-actions rv" v-reveal>
-          <a href="#/learn" class="big-pill" @click.prevent="emit('navigate', '/learn')">{{ t('ctaBtn') }}</a>
-          <a href="#" class="big-pill ghost" @click.prevent="connectWallet">{{ t('ctaBtn2') }}</a>
-        </div>
+        <div class="rv" v-reveal><a href="#" class="big-pill" @click.prevent="connectWallet">{{ t('connectWallet') }}</a></div>
       </div>
     </section>
 
@@ -520,9 +560,10 @@ onUnmounted(() => {
           <div class="f-cols">
             <div class="f-col">
               <h4>{{ t('colProduct') }}</h4>
-              <a href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('linkTerminal') }}</a>
-              <a href="#/leaderboard" @click.prevent="emit('navigate', '/leaderboard')">{{ t('linkLeaderboard') }}</a>
               <a href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('linkCompetitions') }}</a>
+              <a href="#/leaderboard" @click.prevent="emit('navigate', '/leaderboard')">{{ t('linkLeaderboard') }}</a>
+              <a href="#/competitions" @click.prevent="emit('navigate', '/competitions')">{{ t('linkRewards') }}</a>
+              <a href="#/dashboard" @click.prevent="emit('navigate', '/dashboard')">{{ t('linkMarkets') }}</a>
             </div>
             <div class="f-col">
               <h4>{{ t('colResources') }}</h4>
@@ -542,11 +583,19 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* Plus de tokens locaux : la landing hérite de styles/tokens.css, source de
- * vérité unique (cf. docs/BRAND.md). Les anciens alias locaux --ink/--ink2/
- * --white/--hair sont devenus --panel/--panel2/--text/--line3. */
+/* Tokens locaux de la landing (diffèrent des tokens globaux). */
 .landing {
-  color: var(--text);
+  --ink: #161618;
+  --ink2: #1E1E22;
+  --white: #FFFFFF;
+  --soft: rgba(255, 255, 255, .62);
+  --hair: rgba(255, 255, 255, .22);
+  --up: #BFF6CE;
+  --down: #FFB9AC;
+  --disp: "Archivo", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --ease: cubic-bezier(.16, 1, .3, 1);
+  color: var(--white);
   font-family: var(--disp);
   line-height: 1.4;
 }
@@ -559,6 +608,7 @@ onUnmounted(() => {
 .wrap { max-width: 1500px; margin: 0 auto; padding: 0 40px; }
 @media (max-width: 680px) { .wrap { padding: 0 20px; } }
 .mono { font-family: var(--mono); }
+.lab { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; line-height: 1.5; }
 .soft { color: var(--soft); }
 
 .rv { opacity: 0; transform: translateY(26px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
@@ -582,7 +632,7 @@ onUnmounted(() => {
 .loc .pin.dim { background: var(--soft); }
 .loc .t { margin-left: auto; min-width: 96px; text-align: right; }
 .bar-cta { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
-.pill-cta { flex-shrink: 0; background: #fff; color: var(--panel); font-weight: 700; font-size: 15px; border-radius: 100px; padding: 14px 26px; transition: transform .3s var(--ease); }
+.pill-cta { flex-shrink: 0; background: #fff; color: var(--ink); font-weight: 700; font-size: 15px; border-radius: 100px; padding: 14px 26px; transition: transform .3s var(--ease); }
 @media (max-width: 1100px) { .bar-grp { display: none; } }
 
 /* ---------- HERO ---------- */
@@ -595,7 +645,7 @@ onUnmounted(() => {
 .gl:nth-child(2) > span { transition-delay: .08s; }
 
 /* ---------- DARK SCREEN ---------- */
-.screen { position: relative; background: var(--panel); border-radius: 22px; overflow: hidden; padding: 40px 40px 96px; min-height: 560px; margin-top: 56px; }
+.screen { position: relative; background: var(--ink); border-radius: 22px; overflow: hidden; padding: 40px 40px 96px; min-height: 560px; margin-top: 56px; }
 .scr-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 48px; }
 @media (max-width: 900px) { .scr-grid { grid-template-columns: 1fr; gap: 40px; } .screen { padding: 28px 24px 100px; } }
 .scr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
@@ -628,10 +678,10 @@ onUnmounted(() => {
 .seg { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; background: rgba(255, 255, 255, .12); backdrop-filter: blur(10px); border-radius: 100px; padding: 5px; z-index: 3; }
 .seg .ind { position: absolute; top: 5px; left: 5px; height: calc(100% - 10px); background: #fff; border-radius: 100px; transition: transform .4s var(--ease), width .4s var(--ease); z-index: 0; }
 .seg button { position: relative; z-index: 1; border: none; background: none; font-family: var(--disp); font-weight: 700; font-size: 15px; color: var(--soft); padding: 11px 26px; border-radius: 100px; cursor: pointer; transition: color .3s; white-space: nowrap; }
-.seg button.act { color: var(--panel); }
+.seg button.act { color: var(--ink); }
 
 /* ---------- MARQUEE ---------- */
-.marq { border-top: 1px solid var(--line3); border-bottom: 1px solid var(--line3); overflow: hidden; white-space: nowrap; padding: 20px 0; margin-top: 70px; }
+.marq { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); overflow: hidden; white-space: nowrap; padding: 20px 0; margin-top: 70px; }
 .marq-tr { display: inline-flex; align-items: center; gap: 34px; animation: scr 30s linear infinite; }
 .marq-tr span { font-weight: 900; text-transform: uppercase; font-size: clamp(28px, 4.6vw, 58px); letter-spacing: -.03em; }
 .marq-tr span.out { -webkit-text-stroke: 1.5px #fff; color: transparent; }
@@ -644,13 +694,22 @@ onUnmounted(() => {
 .mani h2 { font-size: clamp(28px, 4.2vw, 60px); font-weight: 600; line-height: 1.12; letter-spacing: -.02em; max-width: 1180px; }
 .mani h2 .d { color: rgba(255, 255, 255, .5); }
 
+/* ---------- STATS ---------- */
+.stats { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); display: grid; grid-template-columns: repeat(4, 1fr); }
+.st { padding: 50px 28px; border-left: 1px solid var(--hair); }
+.st:first-child { border-left: none; }
+.st .v { font-family: var(--mono); font-weight: 700; font-size: clamp(38px, 5vw, 60px); letter-spacing: -.03em; line-height: 1; }
+.st .c { font-size: 14px; color: var(--soft); margin-top: 14px; }
+@media (max-width: 820px) { .stats { grid-template-columns: repeat(2, 1fr); } .st:nth-child(3) { border-left: none; } }
+@media (max-width: 480px) { .stats { grid-template-columns: 1fr; } .st { border-left: none; border-top: 1px solid var(--hair); } .stats .st:first-child { border-top: none; } }
+
 /* ---------- STEPS ---------- */
 .steps { padding: 120px 0; }
 .s-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 64px; }
 .s-head h2 { font-weight: 900; text-transform: uppercase; font-size: clamp(40px, 7vw, 96px); letter-spacing: -.04em; line-height: .9; }
 .s-head p { max-width: 300px; font-size: 15px; color: var(--soft); text-align: right; }
-.step { display: grid; grid-template-columns: 110px 1fr auto; gap: 36px; align-items: baseline; padding: 42px 0; border-top: 1px solid var(--line3); transition: padding-left .4s var(--ease); }
-.step:last-child { border-bottom: 1px solid var(--line3); }
+.step { display: grid; grid-template-columns: 110px 1fr auto; gap: 36px; align-items: baseline; padding: 42px 0; border-top: 1px solid var(--hair); transition: padding-left .4s var(--ease); }
+.step:last-child { border-bottom: 1px solid var(--hair); }
 .step:hover { padding-left: 18px; }
 .step .n { font-family: var(--mono); font-size: 14px; color: #fff; }
 .step h3 { font-weight: 800; text-transform: uppercase; font-size: clamp(24px, 3.2vw, 42px); letter-spacing: -.02em; line-height: 1; }
@@ -659,7 +718,7 @@ onUnmounted(() => {
 
 /* AI ARENA — bento sombre avec halo bleu, renvoie vers /arena */
 .ai-sec { padding: 0 0 96px; }
-.ai { position: relative; overflow: hidden; background: linear-gradient(135deg, var(--panel2), var(--panel)); border-radius: 22px; padding: 56px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; align-items: center; }
+.ai { position: relative; overflow: hidden; background: linear-gradient(135deg, var(--ink2), var(--ink)); border-radius: 22px; padding: 56px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; align-items: center; }
 .ai-glow { position: absolute; top: -32%; right: -8%; width: 520px; height: 520px; border-radius: 50%; background: radial-gradient(circle, rgba(79, 106, 255, .5), transparent 60%); pointer-events: none; }
 .ai-main { position: relative; }
 .ai .lab { color: var(--soft); margin-bottom: 18px; display: block; }
@@ -668,29 +727,25 @@ onUnmounted(() => {
 .ai p { color: var(--soft); font-size: 16px; line-height: 1.6; max-width: 520px; margin: 20px 0 30px; }
 .ai-main .big-pill { font-size: 17px; padding: 18px 34px; }
 .ai-specs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
-.ai-chip { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); border: 1px solid var(--line3); border-radius: 100px; padding: 7px 13px; }
+.ai-chip { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); border: 1px solid var(--hair); border-radius: 100px; padding: 7px 13px; }
 .ai-side { position: relative; display: grid; gap: 12px; }
-.ai-product { position: relative; display: grid; gap: 12px; min-height: 145px; padding: 22px; border: 1px solid var(--line3); border-radius: 16px; background: rgba(0, 0, 0, .24); transition: border-color .25s, transform .25s var(--ease); }
+.ai-product { position: relative; display: grid; gap: 12px; min-height: 145px; padding: 22px; border: 1px solid var(--hair); border-radius: 16px; background: rgba(0, 0, 0, .24); transition: border-color .25s, transform .25s var(--ease); }
 .ai-product:hover { border-color: rgba(255, 255, 255, .38); transform: translateY(-2px); }
 .ai-product .lab { margin: 0; color: var(--blue); }
 .ai-product strong { max-width: 360px; font-size: 18px; line-height: 1.35; }
 .ai-product i { position: absolute; right: 20px; bottom: 17px; font-style: normal; font-size: 24px; color: var(--blue); }
-.ai-total { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--soft); text-align: center; }
 @media (max-width: 820px) { .ai { grid-template-columns: 1fr; gap: 34px; padding: 36px 28px; } }
 
 /* ---------- PRODUCT FEATURES ---------- */
 .features-sec { padding: 0 0 130px; }
 .feature-head { display: grid; grid-template-columns: 180px 1fr; gap: 28px; align-items: start; margin-bottom: 42px; }
 .feature-head h2 { max-width: 900px; font-size: clamp(36px, 5.5vw, 76px); line-height: .96; text-transform: uppercase; letter-spacing: -.04em; }
-.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line3); border-left: 1px solid var(--line3); }
-.feature-card { position: relative; display: grid; gap: 18px; min-height: 215px; padding: 28px; border-right: 1px solid var(--line3); border-bottom: 1px solid var(--line3); transition: background .25s, color .25s; }
-.feature-card:hover { background: #fff; color: var(--panel); }
-/* Au repos la carte est sur le bleu de marque : un titre `--blue` y était
- * invisible. Le bleu ne revient qu'au survol, quand le fond passe au blanc. */
-.feature-card .lab { color: var(--text); }
-.feature-card:hover .lab, .feature-card:hover i { color: var(--blue); }
+.feature-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--hair); border-left: 1px solid var(--hair); }
+.feature-card { position: relative; display: grid; gap: 18px; min-height: 215px; padding: 28px; border-right: 1px solid var(--hair); border-bottom: 1px solid var(--hair); transition: background .25s, color .25s; }
+.feature-card:hover { background: #fff; color: var(--ink); }
+.feature-card .lab { color: var(--blue); }
 .feature-card strong { max-width: 330px; font-size: 20px; line-height: 1.35; }
-.feature-card i { position: absolute; right: 26px; bottom: 22px; font-style: normal; font-size: 26px; color: var(--text); }
+.feature-card i { position: absolute; right: 26px; bottom: 22px; font-style: normal; font-size: 26px; color: var(--blue); }
 @media (max-width: 900px) { .feature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 620px) { .feature-head { grid-template-columns: 1fr; } .feature-grid { grid-template-columns: 1fr; } }
 
@@ -698,11 +753,7 @@ onUnmounted(() => {
 .cta { text-align: center; padding: 120px 0 130px; }
 .cta h2 { font-weight: 900; text-transform: uppercase; font-size: clamp(54px, 13vw, 210px); letter-spacing: -.045em; line-height: .84; }
 .cta p { font-size: 18px; color: var(--soft); max-width: 440px; margin: 30px auto 40px; }
-.big-pill { display: inline-flex; align-items: center; gap: 12px; background: #fff; color: var(--panel); font-weight: 800; font-size: 20px; border-radius: 100px; padding: 22px 44px; transition: transform .3s var(--ease); }
-.cta-actions { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; }
-/* Second CTA : ouvre le funnel wallet sans concurrencer « apprendre d'abord ». */
-.big-pill.ghost { background: transparent; color: var(--text); border: 1px solid var(--line3); }
-.big-pill.ghost:hover { border-color: var(--text); }
+.big-pill { display: inline-flex; align-items: center; gap: 12px; background: #fff; color: var(--ink); font-weight: 800; font-size: 20px; border-radius: 100px; padding: 22px 44px; transition: transform .3s var(--ease); }
 
 /* ---------- FOOTER ---------- */
 footer { padding: 60px 0 40px; }

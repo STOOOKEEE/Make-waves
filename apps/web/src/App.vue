@@ -25,6 +25,13 @@ const LocalAdminView = import.meta.env.DEV
   ? defineAsyncComponent(() => import("./views/AdminView.vue"))
   : null;
 
+// Archive de la landing d'avant le repositionnement « apprendre d'abord »,
+// consultable sur #/landing-classic en développement. Même mécanisme que
+// ci-dessus : l'import conditionnel est éliminé du build de production.
+const LocalLandingClassicView = import.meta.env.DEV
+  ? defineAsyncComponent(() => import("./views/LandingClassicView.vue"))
+  : null;
+
 const client = createClient();
 bootstrapAccountAuth(client);
 // Réinjecte une session cohérente avant tout appel API. Une adresse wallet
@@ -42,7 +49,7 @@ const { current, competitionId, routeId, navigate } = useRoute();
 <template>
   <div class="grain"></div>
   <AppBar
-    v-if="current !== '/landing'"
+    v-if="current !== '/landing' && current !== '/landing-classic'"
     :current="current"
     :client="client"
     @navigate="navigate"
@@ -74,6 +81,12 @@ const { current, competitionId, routeId, navigate } = useRoute();
     <component
       :is="LocalAdminView"
       v-else-if="current === '/admin' && LocalAdminView !== null"
+    />
+    <component
+      :is="LocalLandingClassicView"
+      v-else-if="current === '/landing-classic' && LocalLandingClassicView !== null"
+      :client="client"
+      @navigate="navigate"
     />
   </main>
 

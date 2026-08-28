@@ -17,6 +17,10 @@
   /* Lignes */
   --line: rgba(255, 255, 255, 0.08);
   --line2: rgba(255, 255, 255, 0.16);
+  /* Filets éditoriaux : séparateurs pleine largeur des pages de contenu
+     (marquee, étapes, grille de features). Plus marqués que --line2 parce
+     qu'ils structurent la page au lieu de border un composant. */
+  --line3: rgba(255, 255, 255, 0.22);
 
   /* Sémantique — RÉSERVÉE à la donnée, jamais décoratif */
   --up: #bff6ce; /* gain / P&L positif / long / hausse */

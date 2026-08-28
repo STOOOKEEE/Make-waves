@@ -3,9 +3,9 @@
  * LearnView — index de Tide School en ROADMAP verticale (beginner → pro).
  * Une ligne centrale descend ; les niveaux (jalons) sont posés dessus et les
  * leçons alternent gauche/droite autour. Vignette ASCII sur chaque carte.
- * Bilingue, sur le design system (docs/DESIGN.md) : bleu = seul accent.
+ * Bilingue, sur le design system (docs/BRAND.md) : bleu = seul accent.
  */
-import { computed, onMounted } from "vue";
+import { computed, watchEffect } from "vue";
 import { articlesByCategory } from "../data/learn";
 import type { Article, Category, Difficulty } from "../data/learn/types";
 import { useI18n } from "../i18n/useI18n";
@@ -123,8 +123,9 @@ function open(slug: string): void {
   emit("navigate", `/learn/${slug}`);
 }
 
-onMounted(() => {
-  document.title = "TIDE School — The trader's path | TIDE";
+// Le titre d'onglet suit la langue choisie : il restait en anglais en FR.
+watchEffect(() => {
+  document.title = `${t("eyebrow")} — ${t("title")} | TIDE`;
 });
 </script>
 
