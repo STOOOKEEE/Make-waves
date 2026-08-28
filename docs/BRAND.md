@@ -202,6 +202,7 @@ bleu) ; le reste est neutre + une sémantique stricte.
 | **Gain** | `up` | `#BFF6CE` | P&L positif, long, courbe en hausse |
 | **Perte** | `down` | `#FFB9AC` | P&L négatif, short |
 | **Récompense** | `gold` | `#FFD66B` | Cagnottes, podium, prix |
+| **Guidage** | `guide` | `#FF4D3D` | **Projecteur du tutoriel uniquement** : anneau et étiquette de la zone à regarder. Rouge franc, distinct du corail `down` — il ne dit pas « perte », il dit « regarde ici ». Interdit ailleurs. |
 
 **Règles d'or :**
 - `up` (menthe) et `down` (corail) sont **exclusivement sémantiques** — réservés

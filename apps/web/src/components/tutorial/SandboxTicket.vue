@@ -14,12 +14,14 @@ import {
   SIM_TAKER_FEE,
 } from "../../lib/sandbox/engine";
 import { plannedRisk, type SandboxSnapshot } from "../../lib/sandbox/goals";
+import { zoneClass } from "../../lib/sandbox/spotlight";
 import type { SpotlightTarget } from "../../data/tutorial";
 
 const props = defineProps<{
   snapshot: SandboxSnapshot;
   liquidity: "maker" | "taker";
   available: number;
+  limitPrice: number | null;
   spotlight?: SpotlightTarget | undefined;
 }>();
 
@@ -32,6 +34,7 @@ const emit = defineEmits<{
   leverage: [value: number];
   takeProfit: [value: number | null];
   stopLoss: [value: number | null];
+  limitPrice: [value: number | null];
   place: [];
 }>();
 
@@ -58,6 +61,7 @@ const { t } = useI18n({
     fees: "Est. fees",
     liq: "Liquidation",
     risk: "Risk at stop",
+    limitPrice: "Limit price",
     place: "Place simulated order",
     none: "—",
   },
@@ -83,6 +87,7 @@ const { t } = useI18n({
     fees: "Frais estimés",
     liq: "Liquidation",
     risk: "Risque au stop",
+    limitPrice: "Prix limite",
     place: "Passer l'ordre simulé",
     none: "—",
   },
@@ -137,7 +142,7 @@ function setPct(pct: number): void {
 <template>
   <div class="card ticket" data-tour="ticket">
     <div class="ticket-controls">
-      <div class="mini-field" data-tour="ticket.product" :class="{ lit: spotlight === 'ticket.product' }">
+      <div class="mini-field" data-tour="ticket.product" :class="zoneClass(spotlight, 'ticket.product')">
         <span>{{ t("product") }}</span>
         <div class="mini-seg">
           <button :class="{ on: snapshot.product === 'spot' }" @click="emit('product', 'spot')">
@@ -148,7 +153,7 @@ function setPct(pct: number): void {
           </button>
         </div>
       </div>
-      <div class="mini-field" data-tour="ticket.orderKind" :class="{ lit: spotlight === 'ticket.orderKind' }">
+      <div class="mini-field" data-tour="ticket.orderKind" :class="zoneClass(spotlight, 'ticket.orderKind')">
         <span>{{ t("orderType") }}</span>
         <div class="mini-seg">
           <button :class="{ on: snapshot.orderKind === 'market' }" @click="emit('orderKind', 'market')">
@@ -159,7 +164,7 @@ function setPct(pct: number): void {
           </button>
         </div>
       </div>
-      <div class="mini-field" data-tour="ticket.execution">
+      <div class="mini-field" data-tour="ticket.execution" :class="zoneClass(spotlight, 'ticket.execution')">
         <span>{{ t("execution") }}</span>
         <div class="mini-seg">
           <button :class="{ on: liquidity === 'taker' }" @click="emit('liquidity', 'taker')">
@@ -172,7 +177,7 @@ function setPct(pct: number): void {
       </div>
     </div>
 
-    <div class="bs" data-tour="ticket.side" :class="{ lit: spotlight === 'ticket.side' }">
+    <div class="bs" data-tour="ticket.side" :class="zoneClass(spotlight, 'ticket.side')">
       <button class="buy" :class="{ on: snapshot.side === 'buy' }" @click="emit('side', 'buy')">
         {{ t("buy") }}
       </button>
@@ -181,7 +186,30 @@ function setPct(pct: number): void {
       </button>
     </div>
 
-    <div class="field" data-tour="ticket.amount" :class="{ lit: spotlight === 'ticket.amount' }">
+    <!-- Le prix limite n'a de sens qu'en LIMIT : il apparaît avec le type d'ordre. -->
+    <div
+      v-if="snapshot.orderKind === 'limit'"
+      class="field compact-field"
+      data-tour="ticket.limit"
+      :class="zoneClass(spotlight, 'ticket.limit')"
+    >
+      <div class="fl">
+        <span class="k">{{ t("limitPrice") }}</span>
+        <span class="b mono">{{ money(snapshot.mark) }}</span>
+      </div>
+      <div class="inp">
+        <input
+          type="number"
+          min="0"
+          :value="limitPrice ?? ''"
+          :placeholder="String(Math.round(snapshot.mark))"
+          @input="emit('limitPrice', readPrice($event))"
+        />
+        <span class="suf">USD</span>
+      </div>
+    </div>
+
+    <div class="field" data-tour="ticket.amount" :class="zoneClass(spotlight, 'ticket.amount')">
       <div class="fl">
         <span class="k">{{ t("amount") }}</span>
         <span class="b">{{ t("available") }} {{ money(available) }}</span>
@@ -192,7 +220,7 @@ function setPct(pct: number): void {
       </div>
     </div>
 
-    <div class="pcts">
+    <div class="pcts" data-tour="ticket.pcts" :class="zoneClass(spotlight, 'ticket.pcts')">
       <button v-for="pct in [25, 50, 75, 100]" :key="pct" @click="setPct(pct)">{{ pct }}%</button>
     </div>
 
@@ -200,7 +228,7 @@ function setPct(pct: number): void {
       v-if="snapshot.product === 'perp'"
       class="lev"
       data-tour="ticket.leverage"
-      :class="{ lit: spotlight === 'ticket.leverage' }"
+      :class="zoneClass(spotlight, 'ticket.leverage')"
     >
       <div class="fl">
         <span class="k">{{ t("leverage") }}</span>
@@ -226,15 +254,15 @@ function setPct(pct: number): void {
       </div>
     </div>
 
-    <div class="risk-grid" data-tour="ticket.risk" :class="{ lit: spotlight === 'ticket.risk' }">
-      <div class="field compact-field">
+    <div class="risk-grid">
+      <div class="field compact-field" data-tour="ticket.tp" :class="zoneClass(spotlight, 'ticket.tp')">
         <div class="fl"><span class="k">{{ t("takeProfit") }}</span></div>
         <div class="inp">
           <input type="number" min="0" :value="snapshot.takeProfit ?? ''" @input="emit('takeProfit', readPrice($event))" />
           <span class="suf">TP</span>
         </div>
       </div>
-      <div class="field compact-field">
+      <div class="field compact-field" data-tour="ticket.sl" :class="zoneClass(spotlight, 'ticket.sl')">
         <div class="fl"><span class="k">{{ t("stopLoss") }}</span></div>
         <div class="inp">
           <input type="number" min="0" :value="snapshot.stopLoss ?? ''" @input="emit('stopLoss', readPrice($event))" />
@@ -243,7 +271,7 @@ function setPct(pct: number): void {
       </div>
     </div>
 
-    <div class="summary" data-tour="ticket.summary" :class="{ lit: spotlight === 'ticket.summary' }">
+    <div class="summary" data-tour="ticket.summary" :class="zoneClass(spotlight, 'ticket.summary')">
       <div class="r"><span>{{ t("exposure") }}</span><b>{{ money(notional) }}</b></div>
       <div class="r"><span>{{ t("margin") }}</span><b>{{ money(snapshot.amount) }}</b></div>
       <div class="r"><span>{{ t("fees") }}</span><b>{{ money(fee) }}</b></div>
@@ -260,7 +288,7 @@ function setPct(pct: number): void {
     <button
       class="placebtn"
       data-tour="ticket.place"
-      :class="{ sell: snapshot.side === 'sell', lit: spotlight === 'ticket.place' }"
+      :class="[{ sell: snapshot.side === 'sell' }, zoneClass(spotlight, 'ticket.place')]"
       :disabled="!canPlace"
       @click="emit('place')"
     >
@@ -316,6 +344,28 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .placebtn { padding: 14px 0; border-radius: 10px; background: var(--up); color: #06231a; font-weight: 800; font-size: 14px; }
 .placebtn.sell { background: var(--down); color: #2a0a06; }
 .placebtn:disabled { opacity: .4; }
-/* Mise en lumière pilotée par l'étape : une classe, aucune géométrie. */
-.lit { outline: 2px solid var(--blue); outline-offset: 4px; border-radius: 8px; }
+/* Projecteur — voir `lib/sandbox/spotlight.ts`. La zone visée est cerclée de
+ * rouge et respire ; tout le reste est flouté et atténué. Aucune géométrie
+ * n'est calculée : ce sont deux classes posées sur des conteneurs. */
+.zone-spot {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid var(--guide);
+  outline-offset: 5px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 6px var(--guide-glow);
+  animation: pulse 1.9s var(--ease) infinite;
+}
+.zone-dim {
+  filter: blur(2.5px) saturate(.5);
+  opacity: .3;
+  transition: opacity .35s var(--ease), filter .35s var(--ease);
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 6px var(--guide-glow); }
+  50% { box-shadow: 0 0 0 11px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zone-spot { animation: none; }
+}
 </style>

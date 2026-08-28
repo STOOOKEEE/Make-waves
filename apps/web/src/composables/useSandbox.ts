@@ -59,6 +59,7 @@ export function useSandbox(feed: SandboxFeed, now: () => number = () => Date.now
   const leverage = ref(1);
   const takeProfit = ref<number | null>(null);
   const stopLoss = ref<number | null>(null);
+  const limitPrice = ref<number | null>(null);
   const chartMode = ref<"candles" | "line">("line");
 
   // Compte simulé
@@ -81,6 +82,7 @@ export function useSandbox(feed: SandboxFeed, now: () => number = () => Date.now
     symbol: symbol.value,
     product: product.value,
     orderKind: orderKind.value,
+    liquidity: liquidity.value,
     side: side.value,
     amount: amount.value,
     leverage: leverage.value,
@@ -211,6 +213,7 @@ export function useSandbox(feed: SandboxFeed, now: () => number = () => Date.now
     leverage.value = 1;
     takeProfit.value = null;
     stopLoss.value = null;
+    limitPrice.value = null;
     drift = 0;
   }
 
@@ -229,6 +232,7 @@ export function useSandbox(feed: SandboxFeed, now: () => number = () => Date.now
     leverage,
     takeProfit,
     stopLoss,
+    limitPrice,
     chartMode,
     positions,
     fills,

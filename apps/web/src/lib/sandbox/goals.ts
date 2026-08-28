@@ -7,7 +7,14 @@
  * géométrie, aucun DOM — donc entièrement testable sous happy-dom, où
  * `getBoundingClientRect()` renvoie des zéros.
  */
-import type { SimClosed, SimFill, SimPosition, SimProduct, SimSide } from "./engine";
+import type {
+  SimClosed,
+  SimFill,
+  SimLiquidity,
+  SimPosition,
+  SimProduct,
+  SimSide,
+} from "./engine";
 import { riskAtStop } from "./engine";
 
 export type StepGoal =
@@ -16,6 +23,7 @@ export type StepGoal =
   | { kind: "chart-mode"; value: "candles" | "line" }
   | { kind: "select-product"; value: SimProduct }
   | { kind: "select-order-kind"; value: "market" | "limit" }
+  | { kind: "select-execution"; value: SimLiquidity }
   | { kind: "select-side"; value: SimSide }
   | { kind: "set-amount"; min: number }
   | { kind: "set-leverage"; min: number }
@@ -31,6 +39,7 @@ export interface SandboxSnapshot {
   readonly symbol: string;
   readonly product: SimProduct;
   readonly orderKind: "market" | "limit";
+  readonly liquidity: SimLiquidity;
   readonly side: SimSide;
   readonly amount: number;
   readonly leverage: number;
@@ -66,6 +75,8 @@ export function isGoalMet(goal: StepGoal, s: SandboxSnapshot, since: number): bo
       return s.product === goal.value;
     case "select-order-kind":
       return s.orderKind === goal.value;
+    case "select-execution":
+      return s.liquidity === goal.value;
     case "select-side":
       return s.side === goal.value;
     case "set-amount":

@@ -71,11 +71,43 @@ describe("programme du tutoriel", () => {
     }
   });
 
-  it("consacre au moins un tiers du parcours aux perps et au risque", () => {
-    const core = STEPS.filter(
-      (step) => step.chapter === "perps" || step.chapter === "risk",
-    ).length;
-    expect(core / STEPS.length).toBeGreaterThanOrEqual(0.33);
+  it("garde les perps et le risque comme de vrais chapitres, jamais une mention", () => {
+    // Ce sont les deux sujets que les plateformes classiques n'expliquent pas,
+    // et la liste de coupe ne doit jamais les entamer. On mesure une taille
+    // absolue plutôt qu'un ratio : depuis que chaque contrôle du ticket a son
+    // étape, le chapitre « ordres » est légitimement le plus gros.
+    const count = (chapter: string) => STEPS.filter((s) => s.chapter === chapter).length;
+    expect(count("perps")).toBeGreaterThanOrEqual(5);
+    expect(count("risk")).toBeGreaterThanOrEqual(4);
+    expect(count("perps") + count("risk")).toBeGreaterThanOrEqual(9);
+  });
+
+  it("présente chaque contrôle du ticket au moins une fois", () => {
+    // La demande est explicite : le tutoriel doit passer sur chaque bouton.
+    const lit = new Set(STEPS.map((step) => step.spotlight).filter(Boolean));
+    for (const control of [
+      "ticket.product",
+      "ticket.orderKind",
+      "ticket.limit",
+      "ticket.execution",
+      "ticket.side",
+      "ticket.amount",
+      "ticket.pcts",
+      "ticket.leverage",
+      "ticket.tp",
+      "ticket.sl",
+      "ticket.summary",
+      "ticket.place",
+    ]) {
+      expect(lit.has(control as never), `contrôle jamais présenté : ${control}`).toBe(true);
+    }
+  });
+
+  it("présente aussi les zones hors ticket", () => {
+    const lit = new Set(STEPS.map((step) => step.spotlight).filter(Boolean));
+    for (const zone of ["watchlist", "chart.price", "chart.mode", "book", "blotter", "blotter.equity", "blotter.close", "accelerate"]) {
+      expect(lit.has(zone as never), `zone jamais présentée : ${zone}`).toBe(true);
+    }
   });
 
   it("ne promet jamais l'absence de risque (règle de promotion financière)", () => {

@@ -8,6 +8,7 @@ function snapshot(overrides: Partial<SandboxSnapshot> = {}): SandboxSnapshot {
     symbol: "BTC",
     product: "spot",
     orderKind: "market",
+    liquidity: "taker",
     side: "buy",
     amount: 0,
     leverage: 1,

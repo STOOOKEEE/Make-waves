@@ -31,6 +31,12 @@
   --live: #ff9d3c; /* ambre : mode Live actif, garde-fou anti-erreur */
   --live-dk: #e8862a;
 
+  /* Guidage pédagogique — RÉSERVÉ au projecteur du tutoriel.
+     Rouge franc, volontairement distinct du corail `--down` : ici la couleur
+     ne dit pas « perte », elle dit « regarde ici ». */
+  --guide: #ff4d3d;
+  --guide-glow: rgba(255, 77, 61, 0.3);
+
   /* Typo */
   --disp: "Archivo", Helvetica, Arial, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;

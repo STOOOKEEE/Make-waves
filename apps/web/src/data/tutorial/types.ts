@@ -22,18 +22,25 @@ export type ChapterId = "why" | "read" | "orders" | "perps" | "risk" | "next";
 export type SpotlightTarget =
   | "watchlist"
   | "chart"
+  | "chart.price"
   | "chart.mode"
   | "book"
   | "ticket"
   | "ticket.product"
   | "ticket.orderKind"
+  | "ticket.execution"
   | "ticket.side"
+  | "ticket.limit"
   | "ticket.amount"
+  | "ticket.pcts"
   | "ticket.leverage"
-  | "ticket.risk"
+  | "ticket.tp"
+  | "ticket.sl"
   | "ticket.summary"
   | "ticket.place"
   | "blotter"
+  | "blotter.equity"
+  | "blotter.close"
   | "accelerate";
 
 /** État imposé au bac à sable à l'entrée d'une étape (mise en scène). */

@@ -10,15 +10,17 @@
  * `placeOrder` ou `claimPaperWallet` depuis cet arbre est une erreur de
  * compilation, pas une convention : le funnel wallet ne peut pas être touché.
  */
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import CoachPanel from "../components/tutorial/CoachPanel.vue";
 import SandboxTicket from "../components/tutorial/SandboxTicket.vue";
+import SandboxBook from "../components/tutorial/SandboxBook.vue";
 import LangToggle from "../components/LangToggle.vue";
 import BrandMark from "../components/BrandMark.vue";
 import { useSandbox, type SandboxFeed } from "../composables/useSandbox";
 import { useTutorial } from "../composables/useTutorial";
 import { chapterLabel, localizedSteps, stepIndexById } from "../data/tutorial";
 import { isGoalMet } from "../lib/sandbox/goals";
+import { zoneClass } from "../lib/sandbox/spotlight";
 import { buildChart, priceToY } from "../lib/sandbox/chart";
 import { liquidationPrice, unrealizedPnl } from "../lib/sandbox/engine";
 import { useI18n } from "../i18n/useI18n";
@@ -125,6 +127,7 @@ onMounted(async () => {
   tutorial.start(props.stepId);
   await sandbox.load();
   applyPreset();
+  void revealSpotlight();
   timer = setInterval(() => sandbox.tick(), 1_200);
   window.addEventListener("keydown", onKey);
 });
@@ -160,11 +163,37 @@ watch(met, (value) => {
   if (value && step.value !== undefined) tutorial.markCompleted(step.value.id);
 });
 
+/**
+ * Amène la zone visée sous les yeux. Le ticket défile, et plusieurs contrôles
+ * (levier, TP/SL, résumé, bouton d'envoi) sont sous la ligne de flottaison :
+ * un projecteur sur un élément invisible ne sert à rien. `nextTick` attend que
+ * le preset de l'étape ait été appliqué, car il peut faire apparaître le
+ * contrôle lui-même (le curseur de levier n'existe qu'en perp).
+ */
+async function revealSpotlight(): Promise<void> {
+  const target = step.value?.spotlight;
+  if (target === undefined) return;
+  await nextTick();
+  const el = document.querySelector(`[data-tour="${target}"]`);
+  // `scrollIntoView` n'existe pas sous happy-dom : on ne casse pas les tests.
+  if (el instanceof HTMLElement && typeof el.scrollIntoView === "function") {
+    // Un contrôle (`ticket.leverage`) se centre ; un conteneur (`ticket`) se
+    // cale en haut, sinon on tomberait au milieu d'un panneau haut. Le point
+    // dans l'identifiant suffit à les distinguer, sans mesurer quoi que ce soit.
+    const block = target.includes(".") ? "center" : "start";
+    // Défilement instantané, pas `smooth` : le prix se rafraîchit toutes les
+    // 1,2 s et le patch DOM annule l'animation en cours — la zone visée ne
+    // bougeait alors jamais. Instantané, on est simplement au bon endroit.
+    el.scrollIntoView({ block, behavior: "auto" });
+  }
+}
+
 watch(
   () => tutorial.stepId.value,
   () => {
     enteredAt.value = Date.now();
     applyPreset();
+    void revealSpotlight();
   },
 );
 
@@ -226,11 +255,11 @@ function money(value: number): string {
       />
 
       <section class="sandbox">
-        <div class="sb-top">
+        <div class="sb-left">
           <aside
             class="card watch"
             data-tour="watchlist"
-            :class="{ lit: step?.spotlight === 'watchlist' }"
+            :class="zoneClass(step?.spotlight, 'watchlist')"
           >
             <div class="wt-head"><span class="lab soft">{{ t("markets") }}</span></div>
             <button
@@ -244,14 +273,22 @@ function money(value: number): string {
               <span class="mono">{{ money(row.price) }}</span>
             </button>
           </aside>
+        </div>
 
-          <div class="card chartcard" data-tour="chart" :class="{ lit: step?.spotlight === 'chart' }">
+        <div class="sb-center">
+          <div class="card chartcard" data-tour="chart" :class="zoneClass(step?.spotlight, 'chart')">
             <div class="chart-bar">
-              <div class="bigprice mono">{{ money(sandbox.mark.value) }}</div>
+              <div
+                class="bigprice mono"
+                data-tour="chart.price"
+                :class="zoneClass(step?.spotlight, 'chart.price')"
+              >
+                {{ money(sandbox.mark.value) }}
+              </div>
               <div
                 class="ct-type"
                 data-tour="chart.mode"
-                :class="{ lit: step?.spotlight === 'chart.mode' }"
+                :class="zoneClass(step?.spotlight, 'chart.mode')"
               >
                 <button
                   :class="{ on: sandbox.chartMode.value === 'candles' }"
@@ -269,7 +306,7 @@ function money(value: number): string {
               <button
                 class="fastbtn"
                 data-tour="accelerate"
-                :class="{ lit: step?.spotlight === 'accelerate' }"
+                :class="zoneClass(step?.spotlight, 'accelerate')"
                 @click="sandbox.fastForward()"
               >
                 ▶▶ {{ t("fast") }}
@@ -302,13 +339,15 @@ function money(value: number): string {
               </g>
             </svg>
           </div>
-        </div>
 
-        <div class="sb-bottom">
-          <div class="card blotter" data-tour="blotter" :class="{ lit: step?.spotlight === 'blotter' }">
+          <div class="card blotter" data-tour="blotter" :class="zoneClass(step?.spotlight, 'blotter')">
             <div class="wt-head">
               <span class="lab soft">{{ t("positions") }}</span>
-              <span class="lab soft">{{ t("equity") }} {{ money(sandbox.equity.value) }}</span>
+              <span
+                class="lab soft"
+                data-tour="blotter.equity"
+                :class="zoneClass(step?.spotlight, 'blotter.equity')"
+              >{{ t("equity") }} {{ money(sandbox.equity.value) }}</span>
             </div>
             <p v-if="sandbox.positions.value.length === 0" class="empty soft">
               {{ t("noPositions") }}
@@ -323,14 +362,23 @@ function money(value: number): string {
               >
                 {{ money(unrealizedPnl(position, sandbox.mark.value)) }}
               </span>
-              <button class="closebtn" @click="sandbox.close(position)">{{ t("close") }}</button>
+              <button
+                class="closebtn"
+                data-tour="blotter.close"
+                :class="zoneClass(step?.spotlight, 'blotter.close')"
+                @click="sandbox.close(position)"
+              >{{ t("close") }}</button>
             </div>
           </div>
 
+        </div>
+
+        <div class="sb-right">
           <SandboxTicket
             :snapshot="sandbox.snapshot.value"
             :liquidity="sandbox.liquidity.value"
             :available="sandbox.available.value"
+            :limit-price="sandbox.limitPrice.value"
             :spotlight="step?.spotlight"
             @product="sandbox.product.value = $event"
             @order-kind="sandbox.orderKind.value = $event"
@@ -340,8 +388,13 @@ function money(value: number): string {
             @leverage="sandbox.leverage.value = $event"
             @take-profit="sandbox.takeProfit.value = $event"
             @stop-loss="sandbox.stopLoss.value = $event"
+            @limit-price="sandbox.limitPrice.value = $event"
             @place="sandbox.place()"
           />
+
+          <div data-tour="book" :class="zoneClass(step?.spotlight, 'book')" class="bookzone">
+            <SandboxBook :book="sandbox.book.value" :mark="sandbox.mark.value" />
+          </div>
         </div>
       </section>
     </div>
@@ -372,9 +425,15 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .tut-progress { flex: 1; min-width: 120px; height: 3px; background: var(--line2); border-radius: 100px; overflow: hidden; }
 .tut-progress span { display: block; height: 100%; background: var(--up); transition: width .4s var(--ease); }
 .tut-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 400px 1fr; gap: 12px; }
-.sandbox { display: grid; grid-template-rows: 1.15fr 1fr; gap: 12px; min-height: 0; }
-.sb-top { display: grid; grid-template-columns: 180px 1fr; gap: 12px; min-height: 0; }
-.sb-bottom { display: grid; grid-template-columns: 1fr 320px; gap: 12px; min-height: 0; }
+/* Trois colonnes, comme le vrai terminal : la watchlist à gauche, le graphique
+ * et les positions au centre, le ticket et le carnet à droite. Le ticket a
+ * ainsi toute la hauteur — il en a besoin, il porte une douzaine de contrôles. */
+.sandbox { display: grid; grid-template-columns: 170px 1fr 320px; gap: 12px; min-height: 0; }
+.sb-left { min-height: 0; display: flex; }
+.sb-left > * { flex: 1; }
+.sb-center { display: grid; grid-template-rows: 1.35fr 1fr; gap: 12px; min-height: 0; }
+.sb-right { display: grid; grid-template-rows: 1fr auto; gap: 12px; min-height: 0; }
+.bookzone { min-height: 0; overflow: hidden; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .watch { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 .wt-head { display: flex; justify-content: space-between; margin-bottom: 6px; }
@@ -406,7 +465,30 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .prow .up { color: var(--up); }
 .prow .down { color: var(--down); }
 .closebtn { padding: 5px 12px; border-radius: 100px; border: 1px solid var(--line2); font-size: 11px; color: var(--soft); }
-.lit { outline: 2px solid var(--blue); outline-offset: 3px; }
+/* Projecteur — voir `lib/sandbox/spotlight.ts`. Une seule zone est nette et
+ * cerclée de rouge ; tout le reste recule. C'est ce qui rend l'étape lisible
+ * d'un coup d'œil, sans avoir à lire pour savoir où regarder. */
+.zone-spot {
+  position: relative;
+  z-index: 2;
+  outline: 2px solid var(--guide);
+  outline-offset: 5px;
+  border-radius: 12px;
+  box-shadow: 0 0 0 7px var(--guide-glow);
+  animation: pulse 1.9s var(--ease) infinite;
+}
+.zone-dim {
+  filter: blur(3px) saturate(.45);
+  opacity: .28;
+  transition: opacity .35s var(--ease), filter .35s var(--ease);
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 7px var(--guide-glow); }
+  50% { box-shadow: 0 0 0 13px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zone-spot { animation: none; }
+}
 .quit-overlay { position: fixed; inset: 0; z-index: 1300; display: grid; place-items: center; background: rgba(8, 8, 12, .72); backdrop-filter: blur(6px); }
 .quit-card { background: var(--panel); border: 1px solid var(--line2); border-radius: 16px; padding: 26px; max-width: 380px; display: grid; gap: 10px; }
 .quit-card h3 { font-size: 20px; font-weight: 700; }
@@ -416,7 +498,8 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .quit-actions .ghost { border: 1px solid var(--line2); color: var(--text); }
 @media (max-width: 1080px) {
   .tut-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .sb-top { grid-template-columns: 1fr; }
-  .sb-bottom { grid-template-columns: 1fr; }
+  .sandbox { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, auto); }
+  .sb-center { grid-template-rows: 260px 200px; }
+  .bookzone { display: none; }
 }
 </style>
