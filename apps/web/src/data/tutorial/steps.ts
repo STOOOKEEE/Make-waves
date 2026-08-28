@@ -891,8 +891,32 @@ export const STEPS: readonly RawTutorialStep[] = [
         },
       },
       {
+        type: "callout",
+        variant: "info",
+        title: { en: "It's drawn for you", fr: "Il est tracé pour toi" },
+        text: {
+          en: "Once the position is open, that level appears as an amber line on the chart. You can see exactly how much room you have.",
+          fr: "Dès que la position est ouverte, ce niveau apparaît en ambre sur le graphique. Tu vois exactement la marge qu'il te reste.",
+        },
+      },
+    ],
+    goal: { kind: "read" },
+    spotlight: "ticket.summary",
+    lesson: "leverage-and-margin",
+    preset: { product: "perp" },
+  },
+  {
+    id: "liquidation-room",
+    chapter: "perps",
+    title: { en: "How much room you get", fr: "La marge d'erreur qui te reste" },
+    key: {
+      en: "2x forgives 50 %. 20x forgives 5 %.",
+      fr: "2x pardonne 50 %. 20x pardonne 5 %.",
+    },
+    blocks: [
+      {
         type: "example",
-        title: { en: "How much room each level buys you", fr: "La marge d'erreur que chaque niveau achète" },
+        title: { en: "Distance to liquidation", fr: "Distance à la liquidation" },
         rows: [
           { k: { en: "2x", fr: "2x" }, v: { en: "50 % move against you", fr: "50 % de mouvement contre toi" } },
           { k: { en: "5x", fr: "5x" }, v: { en: "20 %", fr: "20 %" } },
@@ -909,18 +933,11 @@ export const STEPS: readonly RawTutorialStep[] = [
           fr: "Un levier élevé ne te donne pas plus de chances d'avoir raison. Il te donne beaucoup plus de chances d'être fermé avant d'avoir eu l'occasion d'avoir raison.",
         },
       },
-      {
-        type: "p",
-        text: {
-          en: "Push the slider to 10x and watch the **Liquidation** line move towards the current price. Once you open the position, that level is drawn straight onto the chart.",
-          fr: "Pousse le curseur à 10x et regarde la ligne **Liquidation** se rapprocher du prix courant. Dès que tu ouvres la position, ce niveau est tracé directement sur le graphique.",
-        },
-      },
     ],
     task: { en: "Push leverage to 10x.", fr: "Pousse le levier à 10x." },
     done: { en: "That's how little room you have left.", fr: "Voilà la marge d'erreur qu'il te reste." },
     goal: { kind: "set-leverage", min: 10 },
-    spotlight: "ticket.summary",
+    spotlight: "ticket.leverage",
     lesson: "leverage-and-margin",
     preset: { product: "perp" },
   },
@@ -1044,8 +1061,8 @@ export const STEPS: readonly RawTutorialStep[] = [
       {
         type: "p",
         text: {
-          en: "This is the step that separates people who last from people who don't. You don't pick a position size because it feels right. You work backwards from the loss you're willing to take.",
-          fr: "C'est l'étape qui sépare ceux qui durent de ceux qui ne durent pas. Tu ne choisis pas une taille au feeling. Tu pars de la perte que tu acceptes, et tu remontes.",
+          en: "You don't pick a position size because it feels right. You work backwards from the loss you're willing to take.",
+          fr: "Tu ne choisis pas une taille au feeling. Tu pars de la perte que tu acceptes, et tu remontes.",
         },
       },
       {
@@ -1056,11 +1073,25 @@ export const STEPS: readonly RawTutorialStep[] = [
           { en: "Size the position so hitting the stop costs exactly that, no more.", fr: "Dimensionne pour que toucher le stop coûte exactement ça, pas plus." },
         ],
       },
+    ],
+    goal: { kind: "read" },
+    spotlight: "ticket.summary",
+    lesson: "risk-management-101",
+  },
+  {
+    id: "risk-budget",
+    chapter: "risk",
+    title: { en: "Size it for real", fr: "Dimensionne pour de vrai" },
+    key: {
+      en: "One line does the arithmetic. Get it under 1 %.",
+      fr: "Une ligne fait le calcul. Passe sous 1 %.",
+    },
+    blocks: [
       {
         type: "p",
         text: {
-          en: "The **Risk at stop** line does this arithmetic live, in dollars and as a share of your equity. Bring it under 1 % by lowering the amount, moving the stop closer, or both. It turns green when you're there.",
-          fr: "La ligne **Risque au stop** fait ce calcul en direct, en dollars et en part de ton équité. Fais-la passer sous 1 % en baissant le montant, en rapprochant le stop, ou les deux. Elle passe au vert quand c'est bon.",
+          en: "The **Risk at stop** line shows, live, what hitting your stop would cost — in dollars and as a share of your equity. Lower the amount, move the stop closer, or both. It turns green under 1 %.",
+          fr: "La ligne **Risque au stop** montre en direct ce que coûterait un stop touché — en dollars et en part de ton équité. Baisse le montant, rapproche le stop, ou les deux. Elle passe au vert sous 1 %.",
         },
       },
       {

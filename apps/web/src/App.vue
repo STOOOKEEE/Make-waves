@@ -19,6 +19,7 @@ import ArenaView from "./views/ArenaView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
 import TutorialView from "./views/TutorialView.vue";
+import TutorialOfferModal from "./components/tutorial/TutorialOfferModal.vue";
 
 // La console d'administration est un outil local : cet import conditionnel est
 // éliminé du build Vite de production, donc son code n'est jamais publié.
@@ -104,6 +105,9 @@ const { current, competitionId, routeId, navigate } = useRoute();
   <SignModal :client="client" />
   <WalletEntryModal :client="client" />
   <AccountModal :client="client" @logged-out="navigate('/landing')" />
+  <!-- Proposé une seule fois, au premier passage sur le terminal. Monté ici
+       comme les autres modales : `DashboardView` n'est pas touché. -->
+  <TutorialOfferModal v-if="current === '/dashboard'" @navigate="navigate" />
 </template>
 
 <style scoped>

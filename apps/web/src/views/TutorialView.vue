@@ -14,6 +14,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import CoachPanel from "../components/tutorial/CoachPanel.vue";
 import SandboxTicket from "../components/tutorial/SandboxTicket.vue";
 import SandboxBook from "../components/tutorial/SandboxBook.vue";
+import ConfettiBurst from "../components/tutorial/ConfettiBurst.vue";
 import LangToggle from "../components/LangToggle.vue";
 import BrandMark from "../components/BrandMark.vue";
 import { useSandbox, type SandboxFeed } from "../composables/useSandbox";
@@ -22,7 +23,7 @@ import { chapterLabel, localizedSteps, stepIndexById } from "../data/tutorial";
 import { isGoalMet } from "../lib/sandbox/goals";
 import { zoneClass } from "../lib/sandbox/spotlight";
 import { buildChart, priceToY } from "../lib/sandbox/chart";
-import { liquidationPrice, unrealizedPnl } from "../lib/sandbox/engine";
+import { SIM_STARTING_EQUITY, liquidationPrice, unrealizedPnl } from "../lib/sandbox/engine";
 import { useI18n } from "../i18n/useI18n";
 import { locale } from "../i18n/locale";
 
@@ -80,6 +81,21 @@ const step = computed(
 );
 const enteredAt = ref(Date.now());
 const confirmQuit = ref(false);
+/** Salve de confettis : tirée une seule fois, à l'arrivée sur la dernière étape. */
+const celebrating = ref(false);
+
+/** Ce que l'utilisateur a réellement fait, chiffré. Plus parlant qu'un « bravo ». */
+const recap = computed(() => {
+  if (!tutorial.isLast.value) return undefined;
+  const equity = sandbox.equity.value;
+  const delta = equity - SIM_STARTING_EQUITY;
+  return {
+    trades: sandbox.fills.value.length,
+    equity: money(equity),
+    delta: `${delta >= 0 ? "+" : "−"}${money(Math.abs(delta)).slice(1)}`,
+    up: delta >= 0,
+  };
+});
 
 const met = computed(() =>
   step.value === undefined
@@ -128,6 +144,7 @@ onMounted(async () => {
   await sandbox.load();
   applyPreset();
   void revealSpotlight();
+  celebrating.value = tutorial.isLast.value;
   timer = setInterval(() => sandbox.tick(), 1_200);
   window.addEventListener("keydown", onKey);
 });
@@ -194,6 +211,12 @@ watch(
     enteredAt.value = Date.now();
     applyPreset();
     void revealSpotlight();
+    // La célébration se déclenche à l'arrivée sur la dernière étape, pas au
+    // clic final : c'est là que le parcours est terminé, et une couche non
+    // cliquable laisse lire le récapitulatif pendant qu'elle tombe.
+    // Remise à faux en quittant l'étape, sinon le `v-if` ne remonte jamais le
+    // composant et la salve ne repart pas si on y revient.
+    celebrating.value = tutorial.isLast.value;
   },
 );
 
@@ -248,6 +271,7 @@ function money(value: number): string {
         :chapter="chapter"
         :met="met"
         :is-last="tutorial.isLast.value"
+        :recap="recap"
         @next="tutorial.next()"
         @back="tutorial.back()"
         @skip="onSkip"
@@ -399,6 +423,8 @@ function money(value: number): string {
       </section>
     </div>
 
+    <ConfettiBurst v-if="celebrating" />
+
     <div v-if="confirmQuit" class="quit-overlay" role="dialog" aria-modal="true">
       <div class="quit-card">
         <h3>{{ t("quitTitle") }}</h3>
@@ -424,7 +450,7 @@ button { background: none; border: none; color: inherit; padding: 0; }
 .sim-note { font-size: 12px; }
 .tut-progress { flex: 1; min-width: 120px; height: 3px; background: var(--line2); border-radius: 100px; overflow: hidden; }
 .tut-progress span { display: block; height: 100%; background: var(--up); transition: width .4s var(--ease); }
-.tut-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 400px 1fr; gap: 12px; }
+.tut-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 440px 1fr; gap: 12px; }
 /* Trois colonnes, comme le vrai terminal : la watchlist à gauche, le graphique
  * et les positions au centre, le ticket et le carnet à droite. Le ticket a
  * ainsi toute la hauteur — il en a besoin, il porte une douzaine de contrôles. */
