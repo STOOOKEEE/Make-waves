@@ -10,6 +10,7 @@ const PUBLIC_ROUTES = [
   "/competition",
   "/arena",
   "/learn",
+  "/tutorial",
 ] as const;
 
 /**
@@ -46,6 +47,10 @@ function parseHash(hash: string): ParsedRoute {
   }
   if (first === "learn") {
     return { path: "/learn", id: second || undefined };
+  }
+  // `#/tutorial/:stepId` : reprise à une étape précise, et deep-link de démo.
+  if (first === "tutorial") {
+    return { path: "/tutorial", id: second || undefined };
   }
   if ((ROUTES as readonly string[]).includes(candidate)) {
     return { path: candidate };

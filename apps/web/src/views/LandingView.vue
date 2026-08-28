@@ -460,7 +460,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div class="ai-side">
-            <a class="ai-product" href="#/learn" @click.prevent="emit('navigate', '/learn')">
+            <a class="ai-product" href="#/tutorial" @click.prevent="emit('navigate', '/tutorial')">
               <span class="lab">{{ t('learnSideLabel') }}</span>
               <strong>{{ t('learnSideBody') }}</strong>
               <i>→</i>

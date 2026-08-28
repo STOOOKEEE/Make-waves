@@ -64,7 +64,8 @@ const CATEGORY_LABELS: Record<Category, Localized> = {
 };
 const CATEGORY_ORDER: Category[] = ["basics", "perps", "strategies", "platform"];
 
-function localizeBlock(b: RawBlock, l: Locale): Block {
+/** Exporté pour que le tutoriel interactif réutilise le même rendu de blocs. */
+export function localizeBlock(b: RawBlock, l: Locale): Block {
   switch (b.type) {
     case "h":
       return { type: "h", text: b.text[l] };

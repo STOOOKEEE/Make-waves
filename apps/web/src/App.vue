@@ -18,6 +18,7 @@ import CompetitionView from "./views/CompetitionView.vue";
 import ArenaView from "./views/ArenaView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
+import TutorialView from "./views/TutorialView.vue";
 
 // La console d'administration est un outil local : cet import conditionnel est
 // éliminé du build Vite de production, donc son code n'est jamais publié.
@@ -49,7 +50,9 @@ const { current, competitionId, routeId, navigate } = useRoute();
 <template>
   <div class="grain"></div>
   <AppBar
-    v-if="current !== '/landing' && current !== '/landing-classic'"
+    v-if="
+      current !== '/landing' && current !== '/landing-classic' && current !== '/tutorial'
+    "
     :current="current"
     :client="client"
     @navigate="navigate"
@@ -76,6 +79,14 @@ const { current, competitionId, routeId, navigate } = useRoute();
     <LearnArticleView
       v-else-if="current === '/learn'"
       :slug="routeId"
+      @navigate="navigate"
+    />
+    <!-- `:feed="client"` s'élargit vers `SandboxFeed`, qui n'expose que trois
+         méthodes de lecture : le tutoriel ne peut pas écrire côté serveur. -->
+    <TutorialView
+      v-else-if="current === '/tutorial'"
+      :feed="client"
+      :step-id="routeId"
       @navigate="navigate"
     />
     <component
