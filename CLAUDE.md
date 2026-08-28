@@ -47,7 +47,7 @@ make-waves/
 ├── docs/              # SPEC, ROADMAP, DEVLOG, audit-2026-07-07
 └── CLAUDE.md          # ce fichier (état courant)
 ```
-*Branches : `main` = base consolidée (2026-08-28). Travail front en cours sur `feat/front-app`. Équipe 2-3, full-time.*
+*Branches : `main` = tout est fusionné (consolidation + pivot « apprendre d'abord » + tutoriel, 2026-08-28). Équipe 2-3, full-time.*
 
 ## Commandes
 
