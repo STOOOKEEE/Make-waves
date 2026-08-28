@@ -1,5 +1,7 @@
 import Fastify from "fastify";
 import { timingSafeEqual } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import { createRateLimiter } from "./rate-limiter";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -204,6 +206,8 @@ export interface ServerDeps {
  */
 export interface AdminServerDeps {
   readonly admin: NonNullable<ServerDeps["admin"]>;
+  /** Build Vite opérateur servi sur le même port privé que les routes admin. */
+  readonly adminUiDir?: string;
   /** Coffre de seeds : injecté uniquement dans le serveur opérateur privé. */
   readonly managedWalletAdmin?: ManagedExternalWalletService;
   readonly paper: PaperService;
@@ -1299,8 +1303,61 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 export function buildAdminServer(deps: AdminServerDeps): FastifyInstance {
   const app = Fastify({ logger: false });
   void app.register(cors, { origin: deps.corsOrigin ?? false });
+  if (deps.adminUiDir !== undefined) {
+    registerAdminUi(app, deps.adminUiDir);
+  }
   registerAdminRoutes(app, deps);
   return app;
+}
+
+const ADMIN_UI_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+/**
+ * Sert uniquement les fichiers produits par Vite. Le dossier n'est monté que
+ * dans le process admin privé ; aucune route équivalente n'existe sur l'API
+ * publique. Les noms d'assets sont réduits à basename pour exclure tout path
+ * traversal, même après décodage URL par Fastify.
+ */
+function registerAdminUi(app: FastifyInstance, directory: string): void {
+  const root = resolve(directory);
+  const send = async (file: string, reply: FastifyReply, subdirectory = "") => {
+    const safeName = basename(file);
+    const target = safeName === file ? resolve(root, subdirectory, safeName) : "";
+    if (target === "") {
+      reply.code(404);
+      return { error: "not found" };
+    }
+    try {
+      const body = await readFile(target);
+      reply
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Referrer-Policy", "no-referrer")
+        .header("Cache-Control", safeName === "index.html" ? "no-store" : "public, max-age=31536000, immutable")
+        .type(ADMIN_UI_CONTENT_TYPES[extname(safeName)] ?? "application/octet-stream");
+      return reply.send(body);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        reply.code(404);
+        return { error: "not found" };
+      }
+      throw error;
+    }
+  };
+
+  app.get("/", (_request, reply) => send("index.html", reply));
+  app.get("/index.html", (_request, reply) => send("index.html", reply));
+  app.get<{ Params: { file: string } }>("/assets/:file", (request, reply) =>
+    send(request.params.file, reply, "assets"),
+  );
+  app.get("/favicon.svg", (_request, reply) => send("favicon.svg", reply));
 }
 
 function adminDepsFromServer(deps: ServerDeps): AdminServerDeps {

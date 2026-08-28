@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/dist-admin/**",
       "**/node_modules/**",
       "**/.nuxt/**",
       "**/.output/**",

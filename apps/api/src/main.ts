@@ -1,4 +1,5 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
+import { fileURLToPath } from "node:url";
 import { connectXrplClient, XrplCustodialWalletGateway, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
 import { isValidClassicAddress } from "xrpl";
@@ -695,6 +696,8 @@ async function main(): Promise<void> {
     }
     const adminApp = buildAdminServer({
       ...privateAdmin,
+      adminUiDir: process.env["TIDE_PRIVATE_ADMIN_UI_DIR"]?.trim()
+        || fileURLToPath(new URL("../../web/dist-admin/", import.meta.url)),
       corsOrigin: ["http://127.0.0.1:5173", "http://localhost:5173"],
     });
     await adminApp.listen({ port: privateAdminRuntime.port, host: "0.0.0.0" });

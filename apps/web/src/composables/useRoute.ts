@@ -15,21 +15,16 @@ const PUBLIC_ROUTES = [
   "/roadmap",
 ] as const;
 
-/**
- * Routes réservées au serveur de développement local : la console admin, et
- * l'archive de la landing d'avant le repositionnement « apprendre d'abord »
- * (gardée pour référence visuelle, cf. `LandingClassicView.vue`).
- */
+/** L'archive visuelle reste locale ; la console existe aussi dans le build privé. */
 const DEV_ROUTES = ["/admin", "/landing-classic"] as const;
-
 export type RoutePath = (typeof PUBLIC_ROUTES)[number] | (typeof DEV_ROUTES)[number];
 export const ROUTES: readonly RoutePath[] = import.meta.env.DEV
   ? [...PUBLIC_ROUTES, ...DEV_ROUTES]
-  : PUBLIC_ROUTES;
+  : import.meta.env.MODE === "admin" ? [...PUBLIC_ROUTES, "/admin"] : PUBLIC_ROUTES;
 
 // Le domaine nu accueille les visiteurs sur la landing ; le terminal reste
 // accessible depuis son CTA et via #/dashboard.
-const DEFAULT_ROUTE: RoutePath = "/landing";
+const DEFAULT_ROUTE: RoutePath = import.meta.env.MODE === "admin" ? "/admin" : "/landing";
 
 export interface ParsedRoute {
   path: RoutePath;

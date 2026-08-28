@@ -18,8 +18,13 @@ import type { AdminClient } from "../composables/useAdmin";
 import { API_BASE } from "./client";
 import { createFetchTransport } from "./transport";
 
-/** Port opérateur privé, généralement rejoint par un tunnel SSH local. */
-export const ADMIN_API_BASE = import.meta.env.VITE_ADMIN_API_BASE ?? API_BASE;
+/**
+ * Le build admin est servi par l'API opérateur elle-même : les appels restent
+ * same-origin. En dev, une base explicite permet toujours le tunnel port 3101.
+ */
+export const ADMIN_API_BASE = import.meta.env.MODE === "admin"
+  ? ""
+  : import.meta.env.VITE_ADMIN_API_BASE ?? API_BASE;
 
 async function expectBody<T>(
   transport: ApiTransport,

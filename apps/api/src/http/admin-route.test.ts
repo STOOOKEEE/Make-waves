@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { buildAdminServer as buildPrivateAdminServer, buildServer } from "./server";
 import { AdminService } from "../services/admin-service";
 import { PaperService } from "../services/paper-service";
@@ -39,6 +42,47 @@ function buildAdminServer(walletAdmin?: PaperWalletAdminService) {
 }
 
 describe("GET /admin/overview", () => {
+  it("sert le build admin sur le port privé sans exposer les routes produit", async () => {
+    const uiDir = await mkdtemp(join(tmpdir(), "tide-admin-ui-"));
+    await mkdir(join(uiDir, "assets"));
+    await writeFile(join(uiDir, "index.html"), "<!doctype html><title>Tide Admin</title>");
+    await writeFile(join(uiDir, "assets", "admin.js"), "export const ready = true;");
+
+    const paper = new PaperService(undefined, new InMemoryAccountStore());
+    const service = new AdminService({
+      paper,
+      agents: new InMemoryAgentStore(),
+      mandates: new InMemoryMandateStore(),
+      actions: new InMemoryAgentActionsStore(),
+      prizePoolAddress: null,
+      operatorUserIds: new Set<string>(),
+    });
+    const app = buildPrivateAdminServer({
+      paper,
+      competition: new CompetitionService(new InMemoryCompetitionStore()),
+      getPrices: () => ({ XRP: 0.5 }),
+      admin: { token: ADMIN_TOKEN, service },
+      adminUiDir: uiDir,
+    });
+
+    try {
+      const page = await app.inject({ method: "GET", url: "/" });
+      const asset = await app.inject({ method: "GET", url: "/assets/admin.js" });
+      const productRoute = await app.inject({ method: "GET", url: "/leaderboard" });
+
+      expect(page.statusCode).toBe(200);
+      expect(page.headers["content-type"]).toContain("text/html");
+      expect(page.headers["cache-control"]).toBe("no-store");
+      expect(page.body).toContain("Tide Admin");
+      expect(asset.statusCode).toBe(200);
+      expect(asset.headers["content-type"]).toContain("text/javascript");
+      expect(productRoute.statusCode).toBe(404);
+    } finally {
+      await app.close();
+      await rm(uiDir, { recursive: true, force: true });
+    }
+  });
+
   it("monte uniquement les routes opérateur sur le serveur privé", async () => {
     const paper = new PaperService(undefined, new InMemoryAccountStore());
     paper.openAccount("visitor");

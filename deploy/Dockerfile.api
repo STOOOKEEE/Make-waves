@@ -11,7 +11,8 @@ WORKDIR /app
 COPY . .
 # Pas de --frozen-lockfile : packages/evm est exclu du contexte, le lockfile
 # global n'est donc pas strictement satisfait. On laisse pnpm résoudre.
-RUN pnpm install --filter @tide/api...
+RUN pnpm install --filter @tide/api... --filter @tide/web...
+RUN pnpm --filter @tide/web build:admin
 
 ENV NODE_ENV=production \
     PORT=3000 \

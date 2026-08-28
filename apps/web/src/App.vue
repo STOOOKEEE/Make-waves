@@ -26,9 +26,10 @@ import TutorialOfferModal from "./components/tutorial/TutorialOfferModal.vue";
 // autrement que par le footer de la landing.
 const RoadmapView = defineAsyncComponent(() => import("./views/RoadmapView.vue"));
 
-// La console d'administration est un outil local : cet import conditionnel est
-// éliminé du build Vite de production, donc son code n'est jamais publié.
-const LocalAdminView = import.meta.env.DEV
+// La console d'administration est disponible en dev et dans le build dédié
+// `vite --mode admin`. Le build public de tidetrade.xyz continue de l'éliminer.
+const adminConsoleEnabled = import.meta.env.DEV || import.meta.env.MODE === "admin";
+const LocalAdminView = adminConsoleEnabled
   ? defineAsyncComponent(() => import("./views/AdminView.vue"))
   : null;
 
@@ -57,7 +58,7 @@ const { current, competitionId, routeId, navigate } = useRoute();
   <div class="grain"></div>
   <AppBar
     v-if="
-      current !== '/landing' && current !== '/landing-classic' && current !== '/tutorial'
+      current !== '/landing' && current !== '/landing-classic' && current !== '/tutorial' && current !== '/admin'
     "
     :current="current"
     :client="client"
@@ -113,12 +114,13 @@ const { current, competitionId, routeId, navigate } = useRoute();
     />
   </main>
 
-  <SignModal :client="client" />
-  <WalletEntryModal :client="client" />
-  <AccountModal :client="client" @logged-out="navigate('/landing')" />
-  <!-- Proposé une seule fois, au premier passage sur le terminal. Monté ici
-       comme les autres modales : `DashboardView` n'est pas touché. -->
-  <TutorialOfferModal v-if="current === '/dashboard'" @navigate="navigate" />
+  <template v-if="current !== '/admin'">
+    <SignModal :client="client" />
+    <WalletEntryModal :client="client" />
+    <AccountModal :client="client" @logged-out="navigate('/landing')" />
+    <!-- Proposé une seule fois, au premier passage sur le terminal. -->
+    <TutorialOfferModal v-if="current === '/dashboard'" @navigate="navigate" />
+  </template>
 </template>
 
 <style scoped>

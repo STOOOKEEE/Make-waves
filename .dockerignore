@@ -2,6 +2,7 @@ node_modules
 **/node_modules
 .git
 **/dist
+**/dist-admin
 apps/web/dist
 packages/contracts/lib
 packages/contracts/out
