@@ -2580,3 +2580,53 @@ du wallet 2 lorsqu'une offre NFT existe déjà sur un wallet externe lié.
 Dans l'AppBar, les onglets conservent leur placement et leur taille ; seuls les
 états actif et survol sont retravaillés avec un contour blanc et un fond léger.
 L'onglet actif expose également `aria-current="page"`.
+
+## 2026-08-28 — Consolidation du dépôt + audit de dette front
+
+**Quoi.** `main` remis au niveau du travail réel, puis audit du front pour ouvrir
+le chantier `feat/front-app`.
+
+Trois choses. (1) `main` était **48 commits derrière** `fix/live-claim-nav` (six
+semaines de travail d'Armand : funnel wallet à deux étages, wallet entry, purge
+des données fictives, console admin étendue, coffre de seeds chiffré) et en était
+un **ancêtre strict** — fast-forward, aucune fusion à arbitrer. Base vérifiée
+avant de pousser : **1077 tests, typecheck 8/8, lint 0**. (2) Le système growth
+(archive des posts, règles de voix, générateurs de mèmes) est fusionné ; les PNG
+maîtres sont gitignorés, régénérables via `growth/assets/make_meme*.py`, seuls
+les JPG postés sont versionnés. (3) La route `GET /admin/agent-actions` est
+**réécrite**, pas fusionnée.
+
+**Pourquoi la réécriture plutôt que la fusion.** La PR #8 visait la structure
+d'origine, où les routes admin étaient déclarées inline dans `buildServer` avec
+leur garde de token recopiée à chaque handler. Cette structure a été refactorisée
+depuis en `registerAdminRoutes` + `hasAdminToken`, partagée entre le serveur
+public et le serveur opérateur privé. Le diff ne s'appliquait plus (3 fichiers en
+conflit) et l'appliquer de force aurait réintroduit le style abandonné. La
+lecture passe donc par une nouvelle méthode `AdminService.agentActions` — le
+store d'actions était déjà une dépendance du service, aucun câblage nouveau à
+faire remonter jusqu'à `AdminServerDeps`. Même contrat qu'en PR #8 (`agentId`
+requis, `limit` entier dans [1, 200]), +5 tests.
+
+**Cheminement.** `feat/roadmap-lots` s'est révélée entièrement absorbée par la
+PR #7 : `AdminView.vue` et `useAdmin.ts` sont identiques bit-à-bit sur `main`.
+Son dernier commit `ba5e82d` corrigeait la doc (« garde admin = comparaison
+directe, pas timing-safe ») — cette correction est **obsolète** : le code de
+`main` utilise bien `timingSafeEqual` avec égalité de longueur préalable. Rien
+n'est perdu, la branche est supprimable.
+
+**Audit front (rapport complet reporté dans CLAUDE.md).** Cinq points, par coût
+de non-traitement : `DashboardView.vue` à **3405 lignes sans aucun test** alors
+qu'il porte le funnel wallet, le chart, le carnet, le ticket et le blotter ;
+`/arena` rend un écran vide de 37 lignes pendant qu'`AgentView.vue` (688 l., 12
+tests) n'est branchée sur **aucune route**, rendant toute la grappe agent
+inatteignable au runtime ; le design system a forké (`LandingView` redéfinit ses
+tokens, trois vues ont leur CSS minifié sur une ligne, `docs/DESIGN.md` et
+`docs/BRAND.md` sont deux copies bit-à-bit) ; code mort (`useMarket.ts`,
+`useCountdown.ts`, ~24 clés i18n orphelines) ; couverture déséquilibrée (~30 cas
+sur la stack agent non atteignable, ~16 sur le funnel wallet, zéro sur le
+routing).
+
+**Dette tracée.** Le funnel deux-wallets **n'a toujours jamais tourné de bout en
+bout en production** — aucun claim déclenché pour ne pas dépenser de vrais XRP.
+Le scénario manuel en 8 étapes est prêt dans `docs/devlogs.md`. C'est la
+vérification qui manque avant de considérer le funnel acquis.
