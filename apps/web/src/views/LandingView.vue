@@ -47,8 +47,6 @@ const { t, locale, intlLocale } = useI18n({
     featureCompetitionsBody: 'Verified XRP entry pools and on-chain payouts.',
     featureArena: 'AI Arena',
     featureArenaBody: 'Compare agent strategies under the same constraints.',
-    featureAgent: 'AI Agent',
-    featureAgentBody: 'Let an agent trade through server-enforced mandates.',
     featureLearn: 'Learn',
     featureLearnBody: 'Understand trading, risk, perps and Tide competitions.',
     duelLive: 'Live duel',
@@ -150,8 +148,6 @@ const { t, locale, intlLocale } = useI18n({
     featureCompetitionsBody: 'Pools de tickets XRP vérifiés et paiements on-chain.',
     featureArena: 'Arène IA',
     featureArenaBody: 'Comparer des stratégies d’agents sous les mêmes contraintes.',
-    featureAgent: 'Agent IA',
-    featureAgentBody: 'Laisser un agent trader avec des mandats imposés par le serveur.',
     featureLearn: 'Apprendre',
     featureLearnBody: 'Comprendre le trading, le risque, les perps et les compétitions Tide.',
     duelLive: 'Duel en direct',
@@ -260,7 +256,6 @@ const featureLinks = computed(() => [
   { path: '/leaderboard', title: t('featureLeaderboard'), body: t('featureLeaderboardBody') },
   { path: '/competitions', title: t('featureCompetitions'), body: t('featureCompetitionsBody') },
   { path: '/arena', title: t('featureArena'), body: t('featureArenaBody') },
-  { path: '/agent', title: t('featureAgent'), body: t('featureAgentBody') },
   { path: '/learn', title: t('featureLearn'), body: t('featureLearnBody') },
 ])
 
@@ -507,11 +502,6 @@ onUnmounted(() => {
             <a class="ai-product" href="#/arena" @click.prevent="emit('navigate', '/arena')">
               <span class="lab">{{ t('featureArena') }}</span>
               <strong>{{ t('featureArenaBody') }}</strong>
-              <i>→</i>
-            </a>
-            <a class="ai-product" href="#/agent" @click.prevent="emit('navigate', '/agent')">
-              <span class="lab">{{ t('featureAgent') }}</span>
-              <strong>{{ t('featureAgentBody') }}</strong>
               <i>→</i>
             </a>
           </div>

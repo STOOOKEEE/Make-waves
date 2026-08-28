@@ -16,7 +16,6 @@ import LeaderboardView from "./views/LeaderboardView.vue";
 import CompetitionsView from "./views/CompetitionsView.vue";
 import CompetitionView from "./views/CompetitionView.vue";
 import ArenaView from "./views/ArenaView.vue";
-import AgentView from "./views/AgentView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
 
@@ -66,7 +65,6 @@ const { current, competitionId, routeId, navigate } = useRoute();
       @navigate="navigate"
     />
     <ArenaView v-else-if="current === '/arena'" @navigate="navigate" />
-    <AgentView v-else-if="current === '/agent'" :client="client" />
     <LearnView v-else-if="current === '/learn' && !routeId" @navigate="navigate" />
     <LearnArticleView
       v-else-if="current === '/learn'"

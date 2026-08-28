@@ -113,14 +113,21 @@ button {
 }
 .tabs {
   display: flex;
+  align-items: center;
   gap: 4px;
   margin-left: 6px;
 }
 .tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-weight: 600;
   font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
   color: rgba(255, 255, 255, 0.6);
-  padding: 8px 15px;
+  min-height: 34px;
+  padding: 7px 13px;
   border: 1px solid transparent;
   border-radius: 100px;
   background: transparent;

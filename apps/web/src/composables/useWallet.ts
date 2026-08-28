@@ -1,7 +1,14 @@
 import { ref } from "vue";
 import { TideApiError } from "@tide/client";
 import type { ExecSide, SignRequest, TideClient } from "@tide/client";
-import { getAddress, getPublicKey, isInstalled, signMessage, submitTransaction } from "@gemwallet/api";
+import {
+  acceptNFTOffer,
+  getAddress,
+  getPublicKey,
+  isInstalled,
+  signMessage,
+  submitTransaction,
+} from "@gemwallet/api";
 import type { BadgeAcceptTx } from "@tide/client";
 import type { BadgeClaimContext } from "./useBadges";
 import { useSession } from "./useSession";
@@ -489,10 +496,12 @@ export function useWallet(client: TideClient) {
     phase.value = "pending";
     open.value = true;
     try {
-      // Le serveur a construit l'accept déjà taggé (SourceTag Tide) : on le
-      // soumet tel quel via GemWallet.
-      const result = await submitTransaction({
-        transaction: acceptTx as unknown as Parameters<typeof submitTransaction>[0]["transaction"],
+      // GemWallet expose un flux NFT dédié : il ouvre directement l'écran
+      // d'acceptation, autofill/signe/soumet la transaction et conserve le
+      // SourceTag Tide. L'offre est déjà réservée au wallet connecté.
+      const result = await acceptNFTOffer({
+        NFTokenSellOffer: acceptTx.NFTokenSellOffer,
+        sourceTag: acceptTx.SourceTag,
       });
       if (!isCurrentFlow(generation)) return null;
       const hash = result.result?.hash ?? null;
@@ -501,7 +510,16 @@ export function useWallet(client: TideClient) {
     } catch (e) {
       if (!isCurrentFlow(generation)) return null;
       phase.value = "error";
-      error.value = errorMessage(e);
+      // Les erreurs de l'extension traversent une frontière de realm : elles
+      // ne sont pas toujours reconnues comme `Error`. Garde leur message réel
+      // au lieu de les réduire systématiquement à « Network error ».
+      const walletMessage =
+        typeof e === "object" &&
+        e !== null &&
+        typeof (e as Record<string, unknown>)["message"] === "string"
+          ? String((e as Record<string, unknown>)["message"])
+          : "";
+      error.value = walletMessage.trim() === "" ? errorMessage(e) : walletMessage;
       return null;
     }
   }

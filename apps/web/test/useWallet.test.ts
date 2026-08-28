@@ -1,12 +1,19 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthTokenDto, PayloadStatus, TideClient } from "@tide/client";
-import { getAddress, getPublicKey, isInstalled, signMessage } from "@gemwallet/api";
+import {
+  acceptNFTOffer,
+  getAddress,
+  getPublicKey,
+  isInstalled,
+  signMessage,
+} from "@gemwallet/api";
 import type { ResponseType } from "@gemwallet/api/_constants";
 import { useSession } from "../src/composables/useSession";
 import { useWallet } from "../src/composables/useWallet";
 
 vi.mock("@gemwallet/api", () => ({
+  acceptNFTOffer: vi.fn(),
   getAddress: vi.fn(),
   getPublicKey: vi.fn(),
   isInstalled: vi.fn(),
@@ -199,6 +206,63 @@ describe("useWallet — connexion Xaman", () => {
     expect(localStorage.getItem("tide.sessionToken")).toBe("second-jwt");
     expect(client.setToken).not.toHaveBeenCalledWith("first-jwt");
     expect(wallet.phase.value).toBe("signed");
+    wallet.close();
+  });
+});
+
+describe("useWallet — claim NFT GemWallet", () => {
+  it("reprend l'offre via le flux NFT dédié en conservant le SourceTag", async () => {
+    useSession().setWallet(ACCOUNT, "gem");
+    vi.mocked(acceptNFTOffer).mockResolvedValue({
+      type: GEM_RESPONSE,
+      result: { hash: "ACCEPT_HASH" },
+    });
+    const wallet = useWallet(fakeGemClient(Promise.resolve({
+      token: "wallet-jwt",
+      address: ACCOUNT,
+    })));
+
+    const hash = await wallet.signBadgeAccept(
+      {
+        TransactionType: "NFTokenAcceptOffer",
+        Account: ACCOUNT,
+        NFTokenSellOffer: "A".repeat(64),
+        SourceTag: 2606210009,
+      },
+      { userId: ACCOUNT, code: "first_trade", walletAddress: ACCOUNT },
+    );
+
+    expect(acceptNFTOffer).toHaveBeenCalledWith({
+      NFTokenSellOffer: "A".repeat(64),
+      sourceTag: 2606210009,
+    });
+    expect(hash).toBe("ACCEPT_HASH");
+    expect(wallet.phase.value).toBe("signed");
+    wallet.close();
+  });
+
+  it("affiche le message réel renvoyé par l'extension", async () => {
+    useSession().setWallet(ACCOUNT, "gem");
+    vi.mocked(acceptNFTOffer).mockRejectedValue({
+      message: "GemWallet mainnet indisponible",
+    });
+    const wallet = useWallet(fakeGemClient(Promise.resolve({
+      token: "wallet-jwt",
+      address: ACCOUNT,
+    })));
+
+    const hash = await wallet.signBadgeAccept(
+      {
+        TransactionType: "NFTokenAcceptOffer",
+        Account: ACCOUNT,
+        NFTokenSellOffer: "B".repeat(64),
+        SourceTag: 2606210009,
+      },
+      { userId: ACCOUNT, code: "first_trade", walletAddress: ACCOUNT },
+    );
+
+    expect(hash).toBeNull();
+    expect(wallet.error.value).toBe("GemWallet mainnet indisponible");
     wallet.close();
   });
 });

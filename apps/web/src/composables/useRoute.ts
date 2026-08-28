@@ -9,7 +9,6 @@ const PUBLIC_ROUTES = [
   "/competitions",
   "/competition",
   "/arena",
-  "/agent",
   "/learn",
 ] as const;
 
