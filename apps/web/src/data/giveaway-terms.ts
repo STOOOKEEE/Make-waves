@@ -21,14 +21,16 @@ export type Localized = Record<Locale, string>;
  */
 export const TERMS_VERSION = "2026-09-09";
 
-/** Identité de l'organisateur, telle qu'elle apparaît dans le règlement. */
+/**
+ * Identité de l'organisateur, telle qu'elle apparaît dans le règlement.
+ *
+ * Aucune mention d'immatriculation ni de siège n'est publiée : tant qu'aucune
+ * entité n'est nommée ici, l'organisateur au sens juridique est la personne
+ * physique derrière TideTrade.
+ */
 export const ORGANISER = {
-  /** Raison sociale. À remplacer par l'entité immatriculée. */
-  name: "TIDE LABS",
-  /** Forme juridique et numéro d'immatriculation. */
-  registration: "[forme juridique et numéro d'immatriculation à compléter]",
-  /** Siège social. */
-  address: "[adresse du siège social à compléter]",
+  /** Nom sous lequel l'opération est organisée. */
+  name: "TideTrade",
   /** Canal de contact public. */
   contact: "https://x.com/tidetradexyz",
 } as const;
@@ -55,8 +57,8 @@ export const TERMS: readonly TermsArticle[] = [
     title: { en: "Organiser", fr: "Organisateur" },
     paragraphs: [
       {
-        en: `This promotional operation is organised by ${ORGANISER.name}, ${ORGANISER.registration}, whose registered office is at ${ORGANISER.address} (the "Organiser"), operator of the tidetrade.xyz website.`,
-        fr: `La présente opération promotionnelle est organisée par ${ORGANISER.name}, ${ORGANISER.registration}, dont le siège social est situé ${ORGANISER.address} (l'« Organisateur »), éditeur du site tidetrade.xyz.`,
+        en: `This promotional operation is organised by ${ORGANISER.name} (the "Organiser"), operator of the tidetrade.xyz website.`,
+        fr: `La présente opération promotionnelle est organisée par ${ORGANISER.name} (l'« Organisateur »), éditeur du site tidetrade.xyz.`,
       },
       {
         en: `Any question about the operation is addressed to the Organiser through its public account at ${ORGANISER.contact}.`,

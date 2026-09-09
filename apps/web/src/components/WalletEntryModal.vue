@@ -24,32 +24,32 @@ const connected = computed(() => session.walletConnected.value);
 
 const { t } = useI18n({
   en: {
-    title: "Connect wallet",
-    subtitle: "Choose how you want to trade on Tide.",
-    createTitle: "Create a Paper wallet",
-    createBody: "Tide creates and funds a custodial XRPL wallet with 2.22 XRP. Trade in Paper, then reveal your First Trade NFT reward.",
-    createCta: "Create and fund",
-    connectTitle: "Connect an existing wallet",
-    connectBody: "Use Xaman or GemWallet. Your Paper trade unlocks the option to claim the First Trade NFT on this wallet.",
+    title: "Start on Tide",
+    subtitle: "Two ways in. Both are free.",
+    createTitle: "Start in Paper",
+    createBody: "Jump straight into the terminal with virtual capital. Nothing to install and nothing to pay.",
+    createCta: "Start now",
+    connectTitle: "Connect your XRPL wallet",
+    connectBody: "Xaman or GemWallet. Signing once creates your Tide account, and your first paper trade unlocks the First Trade NFT on it.",
     connectCta: "Connect wallet",
-    connected: "Wallet already connected",
+    connected: "Already connected",
     close: "Close",
-    creating: "Creating wallet…",
+    creating: "Setting things up…",
     preparing: "Preparing your Paper session…",
     chooseAnother: "Disconnect first to choose another wallet",
   },
   fr: {
-    title: "Connecter un wallet",
-    subtitle: "Choisis comment tu veux trader sur Tide.",
-    createTitle: "Créer un wallet Paper",
-    createBody: "Tide crée et finance un wallet XRPL custodial avec 2,22 XRP. Trade en Paper, puis révèle ton NFT First Trade.",
-    createCta: "Créer et financer",
-    connectTitle: "Connecter un wallet existant",
-    connectBody: "Utilise Xaman ou GemWallet. Ton trade Paper débloque ensuite le claim du NFT First Trade sur ce wallet.",
+    title: "Commencer sur Tide",
+    subtitle: "Deux façons d'entrer. Les deux sont gratuites.",
+    createTitle: "Commencer en Paper",
+    createBody: "Entre directement dans le terminal avec du capital virtuel. Rien à installer, rien à payer.",
+    createCta: "Commencer",
+    connectTitle: "Connecter ton wallet XRPL",
+    connectBody: "Xaman ou GemWallet. Une signature crée ton compte Tide, et ton premier trade paper y débloque le NFT First Trade.",
     connectCta: "Connecter le wallet",
-    connected: "Wallet déjà connecté",
+    connected: "Déjà connecté",
     close: "Fermer",
-    creating: "Création du wallet…",
+    creating: "Préparation…",
     preparing: "Préparation de ta session Paper…",
     chooseAnother: "Déconnecte d'abord le wallet pour en choisir un autre",
   },
@@ -97,7 +97,7 @@ async function connectExistingWallet(): Promise<void> {
   <div v-if="open" class="entry-overlay" @click.self="close">
     <section class="entry-modal" role="dialog" aria-modal="true" :aria-label="t('title')">
       <button type="button" class="entry-close" :aria-label="t('close')" @click="close">×</button>
-      <p class="entry-eyebrow">TIDE WALLET</p>
+      <p class="entry-eyebrow">TIDE</p>
       <h2>{{ t('title') }}</h2>
       <p class="entry-subtitle">{{ t('subtitle') }}</p>
 
