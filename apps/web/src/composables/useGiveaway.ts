@@ -12,13 +12,14 @@ import { errorMessage } from "./messages";
  *
  * C'est la SEULE couture entre la page et les données : `GiveawayView` ne parle
  * jamais au client directement. Aujourd'hui ce composable recompose ce que le
- * produit sait déjà (compte lié + mérite du badge `first_trade`) ; quand la
- * route serveur existera (cf. docs/superpowers/specs/2026-09-09-giveaway-entries-design.md)
- * il suffira de remplacer la source ici, sans toucher à la vue.
+ * produit sait déjà (wallet XRPL connecté + mérite du badge `first_trade`) ;
+ * quand la route serveur existera (cf.
+ * docs/superpowers/specs/2026-09-09-giveaway-entries-design.md) il suffira de
+ * remplacer la source ici, sans toucher à la vue.
  */
 
 /** Identifiant d'une règle d'entrée. */
-export type GiveawayRuleId = "account" | "first_trade" | "referral";
+export type GiveawayRuleId = "wallet" | "first_trade" | "referral";
 
 export interface GiveawayRule {
   readonly id: GiveawayRuleId;
@@ -47,11 +48,11 @@ export interface GiveawayApi {
   readonly closed: ComputedRef<boolean>;
   readonly loading: Ref<boolean>;
   readonly error: Ref<string>;
-  load(userId: string, signedIn: boolean): Promise<void>;
+  load(userId: string, hasWallet: boolean): Promise<void>;
 }
 
 export function useGiveaway(client: GiveawayClient): GiveawayApi {
-  const hasAccount = ref(false);
+  const hasWallet = ref(false);
   const hasFirstTrade = ref(false);
   const loading = ref(false);
   const error = ref("");
@@ -59,9 +60,9 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
 
   const rules = computed<readonly GiveawayRule[]>(() => [
     {
-      id: "account",
-      weight: GIVEAWAY_WEIGHTS.account,
-      done: hasAccount.value,
+      id: "wallet",
+      weight: GIVEAWAY_WEIGHTS.wallet,
+      done: hasWallet.value,
       pending: false,
     },
     {
@@ -86,20 +87,20 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
 
   const closed = computed(() => now.value >= GIVEAWAY_CLOSES_AT);
 
-  // La connexion d'un compte et la résolution de l'identité arrivent par deux
-  // chemins asynchrones : ce jeton ignore la réponse d'un chargement dépassé
-  // plutôt que de laisser la dernière réponse arrivée gagner.
+  // La connexion du wallet et la lecture des badges arrivent par deux chemins
+  // asynchrones : ce jeton ignore la réponse d'un chargement dépassé plutôt que
+  // de laisser la dernière réponse arrivée gagner.
   let generation = 0;
 
   /**
-   * `signedIn` vient de `useAccountAuth` : seule une identité e-mail/Google
-   * compte comme « compte créé ». Une session `paper:*` anonyme vit dans le
-   * localStorage et se refabrique en un clic — elle ne prouve rien.
+   * `walletConnected` vient de `useSession` : sur Tide, un compte EST un wallet
+   * XRPL signé (Xaman ou GemWallet). Il n'y a pas d'inscription par e-mail, et
+   * c'est cette signature qui rattache les entrées à quelqu'un de réel.
    */
-  async function load(userId: string, signedIn: boolean): Promise<void> {
+  async function load(userId: string, walletConnected: boolean): Promise<void> {
     const current = (generation += 1);
     now.value = Date.now();
-    hasAccount.value = signedIn;
+    hasWallet.value = walletConnected;
     if (userId.trim() === "") {
       hasFirstTrade.value = false;
       return;

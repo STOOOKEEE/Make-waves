@@ -58,6 +58,25 @@ describe("GiveawayView — hygiène du dictionnaire i18n", () => {
     }
   });
 
+  it("n'écrit aucun tiret cadratin dans la copie affichée", () => {
+    // Règle de voix : les tirets cadratins (— et –) sont bannis de tout ce qui
+    // est lu par un visiteur. Le test ne regarde que les dictionnaires, pas les
+    // commentaires du fichier, qui eux ont le droit d'en contenir.
+    for (const [lang, block] of [["en", enBlock], ["fr", frBlock]] as const) {
+      const offenders = block
+        .split("\n")
+        .filter((line) => line.includes("\u2014") || line.includes("\u2013"));
+      expect({ lang, offenders }).toEqual({ lang, offenders: [] });
+    }
+  });
+
+  it("ne recrée pas un parcours de compte hors wallet", () => {
+    // Sur Tide, un compte EST un wallet XRPL signé. La page ne doit jamais
+    // rouvrir une inscription e-mail/Google en parallèle du funnel wallet.
+    expect(SOURCE).not.toContain("useAccountAuth");
+    expect(SOURCE).toContain("useWalletEntry");
+  });
+
   it("n'emploie pas les couleurs sémantiques du P&L en décoratif", () => {
     const style = SOURCE.split("<style scoped>")[1] ?? "";
     // `--up` / `--down` sont réservés au P&L, `--guide` au projecteur du tutoriel.

@@ -20,7 +20,17 @@ export const FIRST_TRADE_BADGE_CODE = "first_trade";
 
 /** Poids des règles, en entrées. */
 export const GIVEAWAY_WEIGHTS = {
-  account: 1,
+  wallet: 1,
   firstTrade: 3,
   referral: 2,
 } as const;
+
+/** Applications de wallet XRPL vers lesquelles la page envoie les nouveaux venus. */
+export const XAMAN_URL = "https://xaman.app";
+export const GEMWALLET_URL = "https://gemwallet.app";
+
+/**
+ * Réserve de base XRPL : un compte n'existe sur le registre qu'à partir de ce
+ * solde. C'est le seul prérequis matériel pour créer un compte Tide.
+ */
+export const XRPL_BASE_RESERVE_XRP = 1;

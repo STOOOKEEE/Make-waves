@@ -1,46 +1,21 @@
 // @vitest-environment happy-dom
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Ref } from "vue";
 import type { TideClient } from "@tide/client";
 import GiveawayView from "../src/views/GiveawayView.vue";
 import { reveal } from "../src/directives/reveal";
 import { setLocale } from "../src/i18n/locale";
 import { useSession } from "../src/composables/useSession";
+import { useWalletEntry } from "../src/composables/useWalletEntry";
+
+const WALLET = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe";
 
 /**
- * `useAccountAuth` est un singleton de module qui lit son profil au chargement :
- * écrire dans localStorage depuis un test arrive trop tard. On l'injecte donc
- * ici pour piloter l'état « compte lié », qui est la seule chose que la page
- * lui demande.
- */
-const auth = vi.hoisted(() => ({
-  // Rempli par la factory du mock, qui est la première à pouvoir importer Vue.
-  signedIn: undefined as unknown as Ref<boolean>,
-  open: vi.fn(),
-}));
-
-vi.mock("../src/composables/useAccountAuth", async () => {
-  const { ref } = await import("vue");
-  auth.signedIn = ref(false);
-  return { useAccountAuth: () => ({ signedIn: auth.signedIn, open: auth.open }) };
-});
-
-/**
- * La page ne lit que les badges : `first_trade.earned` est la preuve serveur
- * qu'un premier trade paper a eu lieu.
- */
-const PAPER_USER = "paper:u1";
-
-/**
- * La page résout d'abord l'identité comptable (session Paper), puis lit les
- * badges : `first_trade.earned` est la preuve serveur d'un premier trade.
+ * Sur Tide un compte EST un wallet XRPL : la page lit l'adresse connectée, puis
+ * les badges, où `first_trade.earned` est la preuve serveur d'un premier trade.
  */
 function fakeClient(firstTradeEarned: boolean) {
   return {
-    setToken: vi.fn(),
-    authRefreshPaper: vi.fn().mockResolvedValue({ token: "jwt", userId: PAPER_USER }),
-    authPaper: vi.fn().mockResolvedValue({ token: "jwt", userId: PAPER_USER }),
     badges: vi.fn().mockResolvedValue([
       {
         code: "first_trade",
@@ -50,7 +25,7 @@ function fakeClient(firstTradeEarned: boolean) {
         earned: firstTradeEarned,
         status: "unclaimed",
         nftTokenId: null,
-        claimMode: "paper_reward",
+        claimMode: "external_wallet",
       },
     ]),
   } as unknown as TideClient;
@@ -63,23 +38,19 @@ async function mountGiveaway(firstTradeEarned = false) {
     global: { directives: { reveal } },
   });
   await flushPromises();
-  await flushPromises();
   return Object.assign(wrapper, { client });
 }
 
-/** Simule un compte e-mail/Google lié et l'identité comptable qui va avec. */
-function signIn(): void {
-  auth.signedIn.value = true;
-  useSession().setPaperUser(PAPER_USER);
+/** Connecte un wallet XRPL, le seul « compte » qui existe sur Tide. */
+function connectWallet(): void {
+  useSession().setWallet(WALLET, "gem");
 }
 
 beforeEach(() => {
   localStorage.clear();
   setLocale("en");
-  auth.signedIn.value = false;
-  auth.open.mockClear();
   useSession().disconnectWallet();
-  useSession().setPaperUser("");
+  useWalletEntry().close();
 });
 
 describe("GiveawayView — page tombola", () => {
@@ -104,27 +75,25 @@ describe("GiveawayView — page tombola", () => {
       "+3 entries",
       "+2 entries",
     ]);
+    expect(rules[0]?.text()).toContain("Connect your wallet");
     wrapper.unmount();
   });
 
-  it("part de zéro entrée pour un visiteur anonyme", async () => {
+  it("part de zéro entrée sans wallet, et ne lit rien côté serveur", async () => {
     const wrapper = await mountGiveaway(true);
     expect(wrapper.get(".entries-total strong").text()).toBe("0");
-    // Le badge est bien gagné côté serveur, mais sans compte lié rien n'est
-    // attribuable à une personne : la règle « compte » reste à faire.
     expect(wrapper.find(".entries-note").exists()).toBe(true);
-    // Aucune session anonyme n'est ouverte au passage sur la page.
+    // Sans wallet il n'y a pas d'identité : rien à demander au serveur.
     expect(wrapper.client.badges).not.toHaveBeenCalled();
-    expect(wrapper.client.authPaper).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
-  it("compte 1 pour un compte lié, 4 avec le premier trade", async () => {
-    signIn();
+  it("compte 1 pour un wallet connecté, 4 avec le premier trade", async () => {
+    connectWallet();
 
     const noTrade = await mountGiveaway(false);
     expect(noTrade.get(".entries-total strong").text()).toBe("1");
-    expect(noTrade.client.badges).toHaveBeenCalledWith(PAPER_USER);
+    expect(noTrade.client.badges).toHaveBeenCalledWith(WALLET);
     noTrade.unmount();
 
     const withTrade = await mountGiveaway(true);
@@ -133,22 +102,57 @@ describe("GiveawayView — page tombola", () => {
     withTrade.unmount();
   });
 
-  it("annonce le parrainage sans le compter tant que le backend n'existe pas", async () => {
-    signIn();
+  it("recalcule les entrées quand le wallet se connecte page ouverte", async () => {
     const wrapper = await mountGiveaway(true);
+    expect(wrapper.get(".entries-total strong").text()).toBe("0");
 
-    const referral = wrapper.findAll(".rule")[2];
-    expect(referral?.classes()).toContain("pending");
-    expect(referral?.get(".soon").text()).toBe("Opening soon");
-    // +2 annoncées, mais le total reste 1 + 3.
+    connectWallet();
+    await flushPromises();
+    await flushPromises();
+
     expect(wrapper.get(".entries-total strong").text()).toBe("4");
+    wrapper.unmount();
+  });
+
+  it("envoie toutes ses invites vers le funnel wallet partagé", async () => {
+    const wrapper = await mountGiveaway();
+    const entry = useWalletEntry();
+    expect(entry.open.value).toBe(false);
+
+    await wrapper.findAll(".rule")[0]?.get(".rule-cta").trigger("click");
+    expect(entry.open.value).toBe(true);
 
     wrapper.unmount();
   });
 
+  it("explique comment obtenir un wallet plutôt que de le supposer acquis", async () => {
+    const wrapper = await mountGiveaway();
+    const text = wrapper.text();
+    expect(text).toContain("Xaman");
+    expect(text).toContain("GemWallet");
+    expect(text).toContain("1 XRP");
+    // Les deux applications sont téléchargeables depuis la page.
+    const links = wrapper.findAll(".wallet-apps a").map((a) => a.attributes("href"));
+    expect(links).toEqual(["https://xaman.app", "https://gemwallet.app"]);
+    wrapper.unmount();
+  });
+
+  it("dit dans les deux langues que le wallet EST le compte", async () => {
+    const en = await mountGiveaway();
+    expect(en.text().toLowerCase()).toContain("your wallet is your account");
+    expect(en.text().toLowerCase()).toContain("no email");
+    en.unmount();
+
+    setLocale("fr");
+    const fr = await mountGiveaway();
+    expect(fr.text().toLowerCase()).toContain("ton wallet est ton compte");
+    expect(fr.text().toLowerCase()).toContain("pas d'e-mail");
+    fr.unmount();
+  });
+
   it("n'affiche aucun total global d'entrées (règle growth sur la traction)", async () => {
+    connectWallet();
     const wrapper = await mountGiveaway(true);
-    // Le seul compteur de la page est le compteur personnel.
     expect(wrapper.findAll(".entries-total")).toHaveLength(1);
     expect(wrapper.text()).toContain("Your entries");
     for (const forbidden of ["participants", "people entered", "total entries"]) {
@@ -157,11 +161,12 @@ describe("GiveawayView — page tombola", () => {
     wrapper.unmount();
   });
 
-  it("porte les deux mentions obligatoires, Apple et X", async () => {
+  it("porte les mentions obligatoires Apple, X et la licence du modèle 3D", async () => {
     const wrapper = await mountGiveaway();
     const text = wrapper.text();
     expect(text).toContain("Apple is not a sponsor of this promotion");
     expect(text).toContain("in no way sponsored, endorsed or administered by, or associated with, X");
+    expect(text).toContain("CC BY 4.0");
     wrapper.unmount();
   });
 
@@ -185,7 +190,7 @@ describe("GiveawayView — page tombola", () => {
   });
 
   it("renvoie vers le terminal et le tutoriel quand le trade manque", async () => {
-    signIn();
+    connectWallet();
     const wrapper = await mountGiveaway(false);
 
     const tradeRule = wrapper.findAll(".rule")[1];
