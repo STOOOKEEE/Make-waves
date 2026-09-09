@@ -11,6 +11,7 @@ const PUBLIC_ROUTES = [
   "/arena",
   "/learn",
   "/tutorial",
+  "/giveaway",
 ] as const;
 
 /**

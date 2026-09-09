@@ -103,4 +103,17 @@ describe("LandingView — repositionnement « apprendre d'abord »", () => {
     expect(wrapper.find(".stats").exists()).toBe(false);
     wrapper.unmount();
   });
+
+  it("ouvre la tombola depuis le footer, et depuis nulle part ailleurs", async () => {
+    const wrapper = mountLanding();
+    const links = wrapper.findAll('a[href="#/giveaway"]');
+    expect(links).toHaveLength(1);
+    // Le seul point d'entrée est la colonne « Ressources » du footer.
+    expect(wrapper.get("footer").findAll('a[href="#/giveaway"]')).toHaveLength(1);
+
+    await links[0]?.trigger("click");
+    expect(wrapper.emitted("navigate")).toContainEqual(["/giveaway"]);
+
+    wrapper.unmount();
+  });
 });

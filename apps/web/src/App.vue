@@ -19,6 +19,7 @@ import ArenaView from "./views/ArenaView.vue";
 import LearnView from "./views/LearnView.vue";
 import LearnArticleView from "./views/LearnArticleView.vue";
 import TutorialView from "./views/TutorialView.vue";
+import GiveawayView from "./views/GiveawayView.vue";
 import TutorialOfferModal from "./components/tutorial/TutorialOfferModal.vue";
 
 // La console d'administration est un outil local : cet import conditionnel est
@@ -90,6 +91,9 @@ const { current, competitionId, routeId, navigate } = useRoute();
       :step-id="routeId"
       @navigate="navigate"
     />
+    <!-- Page de campagne : atteignable uniquement par le footer de la landing,
+         volontairement absente des onglets de l'app-bar. -->
+    <GiveawayView v-else-if="current === '/giveaway'" :client="client" @navigate="navigate" />
     <component
       :is="LocalAdminView"
       v-else-if="current === '/admin' && LocalAdminView !== null"

@@ -83,6 +83,7 @@ const { t, locale, intlLocale } = useI18n({
     linkCompetitions: 'Competitions',
     linkSchool: 'Tide School',
     linkDocumentation: 'First lesson',
+    linkGiveaway: 'AirPods Max giveaway',
     copyright: '© 2026 TIDE LABS — BUILT ON-CHAIN',
     disclaimer: 'PAPER TRADING INVOLVES NO REAL CAPITAL',
   },
@@ -156,6 +157,7 @@ const { t, locale, intlLocale } = useI18n({
     linkCompetitions: 'Compétitions',
     linkSchool: 'Tide School',
     linkDocumentation: 'Première leçon',
+    linkGiveaway: 'Tombola AirPods Max',
     copyright: '© 2026 TIDE LABS — CONSTRUIT ON-CHAIN',
     disclaimer: "LE PAPER TRADING N'IMPLIQUE AUCUN CAPITAL RÉEL",
   },
@@ -528,6 +530,7 @@ onUnmounted(() => {
               <h4>{{ t('colResources') }}</h4>
               <a href="#/learn" @click.prevent="emit('navigate', '/learn')">{{ t('linkSchool') }}</a>
               <a href="#/learn/what-is-trading" @click.prevent="emit('navigate', '/learn/what-is-trading')">{{ t('linkDocumentation') }}</a>
+              <a href="#/giveaway" @click.prevent="emit('navigate', '/giveaway')">{{ t('linkGiveaway') }}</a>
             </div>
           </div>
         </div>
