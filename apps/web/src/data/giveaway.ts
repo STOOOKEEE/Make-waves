@@ -8,8 +8,18 @@
 /** Clôture des participations : 19 septembre 2026, 23:59 UTC. */
 export const GIVEAWAY_CLOSES_AT = Date.UTC(2026, 8, 19, 23, 59, 0);
 
-/** Annonce du gagnant, le lendemain de la clôture. */
-export const GIVEAWAY_ANNOUNCED_AT = Date.UTC(2026, 8, 20, 12, 0, 0);
+/*
+ * Il n'y a volontairement PAS de date d'annonce du gagnant.
+ * L'attribution dépend des résultats de Make Waves, dont l'Organisateur ne
+ * maîtrise pas le calendrier : le règlement fixe un délai relatif (tirage sous
+ * `DRAW_WINDOW_DAYS` jours après la publication officielle) plutôt qu'une date
+ * qu'il faudrait corriger au premier décalage.
+ */
+
+/** Le hackathon dont dépend l'attribution du lot. */
+export const MAKE_WAVES_NAME = "Make Waves";
+export const MAKE_WAVES_ORGANISER = "XRPL Commons";
+export const MAKE_WAVES_URL = "https://www.xrpl-commons.org";
 
 /** Compte X de Tide (`growth/context/05-facts.md` § Access). */
 export const GIVEAWAY_X_HANDLE = "tidetradexyz";

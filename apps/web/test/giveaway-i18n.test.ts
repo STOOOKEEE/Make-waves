@@ -85,3 +85,31 @@ describe("GiveawayView — hygiène du dictionnaire i18n", () => {
     }
   });
 });
+
+describe("TermsPanel — source", () => {
+  const SOURCE = readFileSync(
+    fileURLToPath(new URL("../src/components/giveaway/TermsPanel.vue", import.meta.url)),
+    "utf-8",
+  );
+
+  it("n'écrit aucun tiret cadratin dans ses libellés", () => {
+    const script = SOURCE.split("<template>")[0] ?? "";
+    const dicts = (script.split("  en: {")[1] ?? "").split("\n  },")[0] ?? "";
+    const frDict = (script.split("  fr: {")[1] ?? "").split("\n  },")[0] ?? "";
+    for (const [name, block] of [["en", dicts], ["fr", frDict]] as const) {
+      const offenders = block
+        .split("\n")
+        .filter((line) => line.includes("—") || line.includes("–"));
+      expect({ name, offenders }).toEqual({ name, offenders: [] });
+    }
+  });
+
+  it("garde la case d'acceptation hors du repli du règlement", () => {
+    const template = SOURCE.split("<template>")[1] ?? "";
+    const detailsEnd = template.indexOf("</details>");
+    const checkbox = template.indexOf('class="terms-accept"');
+    // Une case enterrée dans un bloc replié ne serait jamais vue.
+    expect(detailsEnd).toBeGreaterThan(0);
+    expect(checkbox).toBeGreaterThan(detailsEnd);
+  });
+});

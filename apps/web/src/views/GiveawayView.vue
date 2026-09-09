@@ -6,19 +6,24 @@
 import { computed, onMounted, watch, watchEffect } from "vue";
 import type { TideClient } from "@tide/client";
 import ProductViewer from "../components/giveaway/ProductViewer.vue";
+import TermsPanel from "../components/giveaway/TermsPanel.vue";
 import { useCountdown } from "../composables/useCountdown";
 import { useGiveaway, type GiveawayRuleId } from "../composables/useGiveaway";
+import { useGiveawayTerms } from "../composables/useGiveawayTerms";
 import { useSession } from "../composables/useSession";
 import { useWalletEntry } from "../composables/useWalletEntry";
 import {
   GEMWALLET_URL,
-  GIVEAWAY_ANNOUNCED_AT,
   GIVEAWAY_CLOSES_AT,
   GIVEAWAY_X_HANDLE,
   GIVEAWAY_X_URL,
+  MAKE_WAVES_NAME,
+  MAKE_WAVES_ORGANISER,
+  MAKE_WAVES_URL,
   XAMAN_URL,
   XRPL_BASE_RESERVE_XRP,
 } from "../data/giveaway";
+import { CARRY_OVER_MONTHS, DRAW_WINDOW_DAYS } from "../data/giveaway-terms";
 import { useI18n } from "../i18n/useI18n";
 // Assets importés en module (convention de `BrandMark.vue`) : Vite les
 // empreinte et les résout aussi bien au build qu'en test.
@@ -34,7 +39,8 @@ const { t, intlLocale } = useI18n({
     eyebrow: "Giveaway · Free to enter",
     titleA: "Win a pair of",
     titleB: "AirPods Max",
-    lead: "We are giving away a pair of AirPods Max to celebrate Make Waves. Entry is free, takes about thirty seconds, and every step you take inside Tide adds entries to your name.",
+    conditionBadge: "If Tide wins {hackathon}",
+    lead: "One condition, and we would rather you read it here than in the small print: the prize is awarded only if Tide wins the {hackathon} grand prize. If we win, one of you leaves with a pair of AirPods Max. Entry is free and takes about thirty seconds.",
     ctaPrimary: "Enter now",
     ctaSecondary: "See how entries work",
     viewerHint: "Drag to rotate",
@@ -46,6 +52,18 @@ const { t, intlLocale } = useI18n({
     cdLabel: "Entries close in",
     closedLabel: "Entries are closed",
     closedBody: "The draw is done. We reach the winner through the XRPL wallet they entered with.",
+    condLabel: "The condition, in plain sight",
+    condTitle: "We win, you win.",
+    condBody: "Tide is competing in {hackathon}, the hackathon run by {org}. If our project takes the grand prize, we draw one of you and send a pair of AirPods Max. If it does not, no prize is awarded, and we would rather you know that before entering than after.",
+    condWhy: "Why tie the two together?",
+    condWhyBody: "Because a giveaway where nothing is at stake for us is just a lottery. Here we are asking you to back a project, and the project pays it forward if it wins. That is a fairer deal than pretending the outcome is already decided.",
+    condOnlyGrand: "Grand prize only",
+    condOnlyGrandBody: "A category prize, a special mention or a place on the podium do not trigger the award. Only the grand prize does. It is written that way in Article 3 so nobody has to guess.",
+    condTiming: "When we will know",
+    condTimingBody: "Entries close on {close}. The draw is held within {draw} days of {org} publishing the official results. No date is promised for those results, because we do not control the schedule.",
+    condLoss: "If we do not win",
+    condLossBody: "Your entries are kept and carried over to our next draw, if we hold one within {months} months. And the Tide account you created stays yours either way, free, with everything the platform does.",
+    condRules: "Read Article 3",
     stepsLabel: "Three steps",
     stepsTitleA: "Thirty seconds,",
     stepsTitleB: "then you are in.",
@@ -96,17 +114,6 @@ const { t, intlLocale } = useI18n({
     prizeUnitAmount: "01",
     prizeShip: "Shipping",
     prizeShipAmount: "On us",
-    rulesTitle: "Full rules",
-    rulesEligibility: "Open to anyone aged 18 or over, worldwide, wherever this kind of promotion is permitted by local law.",
-    rulesFree: "Entry is free. No purchase, no payment and no deposit is required at any point. The {reserve} XRP base reserve stays in your own wallet.",
-    rulesDates: "Entries close on {close}. The winner is drawn and announced on {announce}.",
-    rulesDraw: "The winner is drawn at random. Each entry is one chance, so three entries are three chances in the same draw.",
-    rulesContact: "We reach the winner through the XRPL wallet they entered with, and ask for their X handle to check the follow and the repost. If they do not answer within seven days, we draw again.",
-    rulesOne: "One entry set per person. Duplicate wallets are removed from the draw.",
-    rulesApple: "Apple and AirPods Max are trademarks of Apple Inc. Apple is not a sponsor of this promotion and is in no way associated with it.",
-    rulesX: "This promotion is in no way sponsored, endorsed or administered by, or associated with, X.",
-    rulesModel: "3D model by Empty on Sketchfab, used under CC BY 4.0.",
-    rulesOrg: "Organised by TIDE LABS. Questions go to our X account.",
     finalTitle: "Good luck",
     finalBody: "Thirty seconds to enter. Then a free account you get to keep whether or not you win.",
     finalCta: "Connect my wallet",
@@ -117,7 +124,8 @@ const { t, intlLocale } = useI18n({
     eyebrow: "Tombola · Participation gratuite",
     titleA: "Gagne une paire d'",
     titleB: "AirPods Max",
-    lead: "On met en jeu une paire d'AirPods Max pour fêter Make Waves. La participation est gratuite, elle prend une trentaine de secondes, et chaque étape franchie dans Tide ajoute des entrées à ton nom.",
+    conditionBadge: "Si Tide gagne {hackathon}",
+    lead: "Une condition, et on préfère que tu la lises ici plutôt que dans les petites lignes : le lot n'est attribué que si Tide remporte le grand prix {hackathon}. Si on gagne, l'un de vous repart avec une paire d'AirPods Max. La participation est gratuite et prend une trentaine de secondes.",
     ctaPrimary: "Participer",
     ctaSecondary: "Voir comment gagner des entrées",
     viewerHint: "Fais-le tourner",
@@ -129,6 +137,18 @@ const { t, intlLocale } = useI18n({
     cdLabel: "Fin des participations dans",
     closedLabel: "Les participations sont closes",
     closedBody: "Le tirage a eu lieu. On joint le gagnant via le wallet XRPL avec lequel il a participé.",
+    condLabel: "La condition, en clair",
+    condTitle: "On gagne, tu gagnes.",
+    condBody: "Tide est en compétition sur {hackathon}, le hackathon organisé par {org}. Si notre projet décroche le grand prix, on tire l'un de vous au sort et on envoie une paire d'AirPods Max. Sinon, aucun lot n'est attribué, et on préfère que tu le saches avant de participer plutôt qu'après.",
+    condWhy: "Pourquoi lier les deux ?",
+    condWhyBody: "Parce qu'un giveaway où on ne risque rien n'est qu'une loterie. Là, on te demande de soutenir un projet, et le projet renvoie l'ascenseur s'il gagne. C'est un marché plus honnête que de faire comme si le résultat était acquis.",
+    condOnlyGrand: "Le grand prix, et lui seul",
+    condOnlyGrandBody: "Un prix de catégorie, une mention spéciale ou une place sur le podium ne déclenchent pas l'attribution. Seul le grand prix la déclenche. C'est écrit ainsi à l'article 3 pour que personne n'ait à deviner.",
+    condTiming: "Quand on saura",
+    condTimingBody: "Les participations closent le {close}. Le tirage a lieu dans les {draw} jours suivant la publication des résultats officiels par {org}. Aucune date n'est promise pour ces résultats : on ne maîtrise pas ce calendrier.",
+    condLoss: "Si on ne gagne pas",
+    condLossBody: "Tes entrées sont conservées et reportées sur notre prochain tirage, si on en organise un dans les {months} mois. Et le compte Tide que tu as créé te reste, gratuitement, avec tout ce que fait la plateforme.",
+    condRules: "Lire l'article 3",
     stepsLabel: "Trois étapes",
     stepsTitleA: "Trente secondes,",
     stepsTitleB: "et c'est fait.",
@@ -179,17 +199,6 @@ const { t, intlLocale } = useI18n({
     prizeUnitAmount: "01",
     prizeShip: "Livraison",
     prizeShipAmount: "Offerte",
-    rulesTitle: "Règlement complet",
-    rulesEligibility: "Ouvert à toute personne de 18 ans ou plus, partout dans le monde, là où ce type d'opération est autorisé par la loi locale.",
-    rulesFree: "La participation est gratuite. Aucun achat, aucun paiement et aucun dépôt n'est demandé à aucun moment. La réserve de base de {reserve} XRP reste dans ton propre wallet.",
-    rulesDates: "Les participations closent le {close}. Le gagnant est tiré au sort et annoncé le {announce}.",
-    rulesDraw: "Le gagnant est tiré au sort. Chaque entrée est une chance : trois entrées valent donc trois chances dans le même tirage.",
-    rulesContact: "On joint le gagnant via le wallet XRPL avec lequel il a participé, et on lui demande son pseudo X pour vérifier l'abonnement et le repost. Sans réponse sous sept jours, on retire au sort.",
-    rulesOne: "Un seul jeu d'entrées par personne. Les wallets en double sont retirés du tirage.",
-    rulesApple: "Apple et AirPods Max sont des marques d'Apple Inc. Apple n'est pas sponsor de cette opération et n'y est associée d'aucune manière.",
-    rulesX: "Cette opération n'est en aucune façon sponsorisée, soutenue ou administrée par X, ni associée à X.",
-    rulesModel: "Modèle 3D par Empty sur Sketchfab, utilisé sous licence CC BY 4.0.",
-    rulesOrg: "Organisée par TIDE LABS. Les questions se posent sur notre compte X.",
     finalTitle: "Bonne chance",
     finalBody: "Trente secondes pour participer. Et un compte gratuit que tu gardes, que tu gagnes ou non.",
     finalCta: "Connecter mon wallet",
@@ -199,6 +208,7 @@ const { t, intlLocale } = useI18n({
 
 const session = useSession();
 const walletEntry = useWalletEntry();
+const terms = useGiveawayTerms();
 const giveaway = useGiveaway(props.client);
 const { dd, hh, mm, ss, expired } = useCountdown({ until: GIVEAWAY_CLOSES_AT });
 
@@ -236,7 +246,6 @@ function formatDate(timestamp: number): string {
 }
 
 const closeDate = computed(() => formatDate(GIVEAWAY_CLOSES_AT));
-const announceDate = computed(() => formatDate(GIVEAWAY_ANNOUNCED_AT));
 
 /**
  * Identité comptable à interroger. Sur Tide un compte EST un wallet XRPL
@@ -251,8 +260,28 @@ async function refresh(): Promise<void> {
   await giveaway.load(resolveUserId(), session.walletConnected.value);
 }
 
-/** Point d'entrée unique du funnel wallet, partagé avec la landing et l'app-bar. */
+/**
+ * Ouvre le règlement et amène à l'article 3. Le règlement est replié par
+ * défaut : un simple lien d'ancre ne défilerait pas vers un contenu fermé.
+ */
+function openCondition(): void {
+  const doc = document.querySelector<HTMLDetailsElement>(".terms-doc");
+  if (doc !== null) doc.open = true;
+  document.getElementById("terms-condition")?.scrollIntoView({ block: "center" });
+}
+
+/**
+ * Point d'entrée unique du funnel wallet, partagé avec la landing et l'app-bar.
+ * Tant que le règlement n'est pas accepté, le bouton n'ouvre pas le wallet : il
+ * emmène à la case à cocher et la met en évidence. On ne peut pas opposer une
+ * condition suspensive à quelqu'un qui n'a jamais eu l'occasion de la refuser.
+ */
 function connectWallet(): void {
+  if (!terms.accepted.value) {
+    document.getElementById("terms")?.scrollIntoView({ block: "center" });
+    document.querySelector<HTMLInputElement>(".terms-accept input")?.focus();
+    return;
+  }
   walletEntry.show();
 }
 
@@ -279,7 +308,11 @@ watchEffect(() => {
       <div class="hero-copy">
         <p class="lab">{{ t("eyebrow") }}</p>
         <h1><span>{{ t("titleA") }}</span><em>{{ t("titleB") }}</em></h1>
-        <p class="hero-lead">{{ t("lead") }}</p>
+        <p class="cond-badge">
+          <span class="dot" aria-hidden="true"></span>
+          {{ t("conditionBadge", { hackathon: MAKE_WAVES_NAME }) }}
+        </p>
+        <p class="hero-lead">{{ t("lead", { hackathon: MAKE_WAVES_NAME }) }}</p>
 
         <dl v-if="!closed" class="hero-count">
           <div><dt class="lab">{{ t("cdDays") }}</dt><dd class="mono">{{ dd }}</dd></div>
@@ -308,6 +341,47 @@ watchEffect(() => {
         </ProductViewer>
       </div>
     </header>
+
+    <!-- LA CONDITION. Placée avant les étapes, parce qu'annoncer un lot
+         conditionnel sans dire la condition sur la face de la page relève de la
+         pratique commerciale trompeuse. Elle n'est pas dans les petites lignes. -->
+    <section class="gw-cond rv" v-reveal>
+      <div class="cond-head">
+        <p class="lab">{{ t("condLabel") }}</p>
+        <h2>{{ t("condTitle") }}</h2>
+        <p class="cond-lead">
+          {{ t("condBody", { hackathon: MAKE_WAVES_NAME, org: MAKE_WAVES_ORGANISER }) }}
+        </p>
+        <div class="cond-links">
+          <a class="cond-link" :href="MAKE_WAVES_URL" target="_blank" rel="noopener noreferrer">
+            {{ MAKE_WAVES_ORGANISER }}
+          </a>
+          <button type="button" class="cond-link" @click="openCondition">
+            {{ t("condRules") }}
+          </button>
+        </div>
+      </div>
+      <ul class="cond-grid">
+        <li>
+          <h3>{{ t("condOnlyGrand") }}</h3>
+          <p>{{ t("condOnlyGrandBody") }}</p>
+        </li>
+        <li>
+          <h3>{{ t("condTiming") }}</h3>
+          <p>
+            {{ t("condTimingBody", { close: closeDate, draw: DRAW_WINDOW_DAYS, org: MAKE_WAVES_ORGANISER }) }}
+          </p>
+        </li>
+        <li>
+          <h3>{{ t("condLoss") }}</h3>
+          <p>{{ t("condLossBody", { months: CARRY_OVER_MONTHS }) }}</p>
+        </li>
+        <li>
+          <h3>{{ t("condWhy") }}</h3>
+          <p>{{ t("condWhyBody") }}</p>
+        </li>
+      </ul>
+    </section>
 
     <!-- COMMENT PARTICIPER -->
     <section class="gw-steps">
@@ -448,23 +522,9 @@ watchEffect(() => {
       </dl>
     </section>
 
-    <!-- RÈGLEMENT -->
-    <section class="gw-rules rv" v-reveal>
-      <details>
-        <summary>{{ t("rulesTitle") }}</summary>
-        <ul>
-          <li>{{ t("rulesEligibility") }}</li>
-          <li>{{ t("rulesFree", { reserve }) }}</li>
-          <li>{{ t("rulesDates", { close: closeDate, announce: announceDate }) }}</li>
-          <li>{{ t("rulesDraw") }}</li>
-          <li>{{ t("rulesContact") }}</li>
-          <li>{{ t("rulesOne") }}</li>
-          <li>{{ t("rulesApple") }}</li>
-          <li>{{ t("rulesX") }}</li>
-          <li>{{ t("rulesModel") }}</li>
-          <li>{{ t("rulesOrg") }}</li>
-        </ul>
-      </details>
+    <!-- RÈGLEMENT COMPLET + ACCEPTATION -->
+    <section id="terms" class="gw-rules rv" v-reveal>
+      <TermsPanel />
     </section>
 
     <!-- CTA FINAL -->
@@ -512,6 +572,21 @@ watchEffect(() => {
 .hero-orbit { width: 92%; aspect-ratio: 1; border: 1px solid rgba(125, 145, 255, .24); border-radius: 50%; }
 .orbit-one { transform: rotate(16deg); }
 .orbit-two { width: 66%; transform: rotate(-24deg); }
+
+/* ---------- LA CONDITION ---------- */
+.cond-badge { display: inline-flex; align-items: center; gap: 10px; margin-top: 22px; padding: 9px 16px; border: 1px solid var(--gold); border-radius: 100px; font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+.cond-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); }
+
+.gw-cond { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.05fr); gap: 56px; }
+.cond-head h2 { margin-top: 16px; font-size: clamp(32px, 4.6vw, 62px); font-weight: 900; line-height: .94; letter-spacing: -.04em; text-transform: uppercase; }
+.cond-lead { max-width: 520px; margin-top: 20px; font-size: 16px; line-height: 1.6; color: var(--soft); }
+.cond-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.cond-link { display: inline-flex; background: transparent; color: var(--text); cursor: pointer; padding: 9px 18px; border: 1px solid var(--line3); border-radius: 100px; font-family: var(--disp); font-size: 13px; font-weight: 700; transition: background .2s, color .2s, border-color .2s; }
+.cond-link:hover { background: #fff; border-color: #fff; color: var(--panel); }
+.cond-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border-top: 1px solid var(--line3); border-left: 1px solid var(--line3); list-style: none; }
+.cond-grid li { padding: 26px; border-right: 1px solid var(--line3); border-bottom: 1px solid var(--line3); }
+.cond-grid h3 { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.cond-grid p { margin-top: 9px; font-size: 14px; line-height: 1.6; color: var(--soft); }
 
 /* ---------- ÉTAPES ---------- */
 .s-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 56px; }
@@ -579,14 +654,6 @@ watchEffect(() => {
 .prize-specs dt { margin-bottom: 6px; }
 .prize-specs dd { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
 
-/* ---------- RÈGLEMENT ---------- */
-.gw-rules details { border-top: 1px solid var(--line3); border-bottom: 1px solid var(--line3); }
-.gw-rules summary { padding: 26px 0; font-family: var(--disp); font-size: 18px; font-weight: 800; letter-spacing: -.01em; cursor: pointer; list-style: none; }
-.gw-rules summary::-webkit-details-marker { display: none; }
-.gw-rules summary::after { content: "+"; float: right; font-family: var(--mono); font-weight: 400; color: var(--soft); }
-.gw-rules details[open] summary::after { content: "\2212"; }
-.gw-rules ul { display: grid; gap: 12px; max-width: 780px; margin: 0 0 32px; padding-left: 18px; }
-.gw-rules li { font-size: 14px; line-height: 1.6; color: var(--soft); }
 
 /* ---------- CTA FINAL ---------- */
 .gw-final { text-align: center; padding: 30px 0 20px; }
@@ -597,6 +664,7 @@ watchEffect(() => {
   .gw-hero { grid-template-columns: 1fr; padding: 44px 32px; }
   .hero-visual { order: -1; min-height: 340px; }
   .gw-wallet { grid-template-columns: 1fr; gap: 34px; padding: 40px 30px; }
+  .gw-cond { grid-template-columns: 1fr; gap: 34px; }
   .gw-prize { grid-template-columns: 1fr; gap: 30px; }
   .prize-specs { justify-content: flex-start; }
   .prize-specs > div:first-child { padding-left: 0; }
@@ -609,6 +677,7 @@ watchEffect(() => {
   .step-cta { justify-self: start; }
   .rule { grid-template-columns: 1fr; gap: 14px; }
   .rule-state { justify-content: flex-start; }
+  .cond-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
   .gw-hero { padding: 32px 22px; }

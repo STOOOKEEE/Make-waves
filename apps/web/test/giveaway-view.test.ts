@@ -7,6 +7,7 @@ import { reveal } from "../src/directives/reveal";
 import { setLocale } from "../src/i18n/locale";
 import { useSession } from "../src/composables/useSession";
 import { useWalletEntry } from "../src/composables/useWalletEntry";
+import { useGiveawayTerms } from "../src/composables/useGiveawayTerms";
 
 const WALLET = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe";
 
@@ -51,6 +52,7 @@ beforeEach(() => {
   setLocale("en");
   useSession().disconnectWallet();
   useWalletEntry().close();
+  useGiveawayTerms().setAccepted(false);
 });
 
 describe("GiveawayView — page tombola", () => {
@@ -114,14 +116,46 @@ describe("GiveawayView — page tombola", () => {
     wrapper.unmount();
   });
 
-  it("envoie toutes ses invites vers le funnel wallet partagé", async () => {
+  it("n'ouvre le funnel wallet qu'une fois le règlement accepté", async () => {
     const wrapper = await mountGiveaway();
     const entry = useWalletEntry();
+
+    // Sans acceptation, le bouton ne fait pas entrer : on ne peut pas opposer
+    // une condition suspensive à quelqu'un qui n'a pas eu l'occasion de la lire.
+    await wrapper.findAll(".rule")[0]?.get(".rule-cta").trigger("click");
     expect(entry.open.value).toBe(false);
+
+    await wrapper.get(".terms-accept input").setValue(true);
+    expect(useGiveawayTerms().accepted.value).toBe(true);
 
     await wrapper.findAll(".rule")[0]?.get(".rule-cta").trigger("click");
     expect(entry.open.value).toBe(true);
 
+    wrapper.unmount();
+  });
+
+  it("annonce la condition sur la page, pas seulement dans le règlement", async () => {
+    for (const [lang, badge, title] of [
+      ["en", "If Tide wins Make Waves", "We win, you win."],
+      ["fr", "Si Tide gagne Make Waves", "On gagne, tu gagnes."],
+    ] as const) {
+      setLocale(lang);
+      const wrapper = await mountGiveaway();
+      // Le bandeau est collé au titre, pas relégué dans les petites lignes :
+      // c'est ce qui sépare une promesse conditionnelle d'une promesse trompeuse.
+      expect(wrapper.get(".cond-badge").text()).toContain(badge);
+      expect(wrapper.get(".gw-cond").text()).toContain(title);
+      // Et le fait que rien n'est remis en cas de défaite est dit avant le règlement.
+      expect(wrapper.get(".gw-cond").text().length).toBeGreaterThan(400);
+      wrapper.unmount();
+    }
+  });
+
+  it("conserve les entrées si la condition échoue, sans promettre une suite", async () => {
+    const wrapper = await mountGiveaway();
+    const text = wrapper.get(".gw-cond").text();
+    expect(text).toContain("carried over");
+    expect(text).toContain("12 months");
     wrapper.unmount();
   });
 
@@ -164,9 +198,10 @@ describe("GiveawayView — page tombola", () => {
   it("porte les mentions obligatoires Apple, X et la licence du modèle 3D", async () => {
     const wrapper = await mountGiveaway();
     const text = wrapper.text();
-    expect(text).toContain("Apple is not a sponsor of this promotion");
+    expect(text).toContain("Apple is not a sponsor of this operation");
     expect(text).toContain("in no way sponsored, endorsed or administered by, or associated with, X");
-    expect(text).toContain("CC BY 4.0");
+    expect(text).toContain("XRPL Commons organises the Make Waves hackathon but does not organise this operation");
+    expect(text).toContain("Creative Commons Attribution 4.0");
     wrapper.unmount();
   });
 

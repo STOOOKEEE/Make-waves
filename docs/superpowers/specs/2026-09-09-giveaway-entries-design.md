@@ -12,7 +12,7 @@ deux sont **déjà réelles** parce qu'elles se dérivent de données que le pro
 
 | Règle | Poids | Source aujourd'hui | Reste à faire |
 |---|---|---|---|
-| Compte créé | +1 | `useAccountAuth().signedIn` (identité Supabase) | rien pour l'affichage ; le tirage a besoin de la liste |
+| Wallet XRPL connecté | +1 | `session.walletConnected` (Xaman ou GemWallet signé) | rien pour l'affichage ; le tirage a besoin de la liste |
 | Premier trade paper | +3 | `client.badges(userId)` → `first_trade.earned` | idem |
 | Parrainer un ami | +2 / ami | **rien** | tout : code, lien, attribution, comptage |
 
@@ -50,13 +50,16 @@ Concrètement : `client.badges()` disparaît au profit de `client.giveawayStatus
 
 | Axe | Décision | Raison |
 |---|---|---|
-| Identité | Dédup sur l'identité **Supabase** (`external_identities`) | un `paper:<uuid>` est un localStorage : il se refabrique en un clic, il ne prouve rien |
-| Déclencheur du parrainage | Les +2 tombent **quand le filleul fait son premier trade paper**, pas à l'inscription | rend une ferme de comptes coûteuse, et transforme la mécanique en activation plutôt qu'en collecte d'adresses |
+| Identité | Dédup sur l'**adresse XRPL signée**. Sur Tide, un compte EST un wallet : il n'y a ni e-mail ni mot de passe | une session `paper:<uuid>` est un localStorage, elle se refabrique en un clic et ne prouve rien ; une adresse signée engage une clé |
+| Coût du sybil | La **réserve de base d'1 XRP** par compte XRPL est le seul frein natif | elle ne rend pas la fraude impossible, elle la rend payante ; c'est à croiser avec la règle de parrainage ci-dessous, pas à considérer comme suffisant |
+| Déclencheur du parrainage | Les +2 tombent **quand le filleul fait son premier trade paper**, pas à la connexion du wallet | rend une ferme de comptes coûteuse, et transforme la mécanique en activation plutôt qu'en collecte d'adresses |
 | Idempotence | Clé primaire `(user_id, rule)` sur les entrées | une règle ne peut rapporter qu'une fois, quel que soit le nombre d'appels |
 | Un seul parrain | Clé primaire sur le **filleul** dans `referrals` | on ne peut pas se faire parrainer deux fois, structurellement |
 | Activation | Routes montées seulement si le store est fourni (`if (deps.giveaway !== undefined)`) | même câblage « activé par config » que les badges et la console admin |
 | Total public | **Jamais exposé** par une route publique | règle de copie `05-facts.md` ; le total ne sort que par `/admin` |
-| Conditions X | Ni stockées ni vérifiées par le serveur | décision produit : on vérifie follow et repost **à la main sur le seul gagnant tiré**, par e-mail. Pas d'API X payante, pas d'OAuth X. |
+| Conditions X | Ni stockées ni vérifiées par le serveur | décision produit : on vérifie follow et repost **à la main sur le seul gagnant tiré**, via son wallet puis son pseudo X. Pas d'API X payante, pas d'OAuth X. |
+| Condition suspensive | Le lot n'est dû **que si Tide remporte le grand prix Make Waves** (règlement, art. 3) | décision produit du 09/09. Elle est affichée sur la face de la page, pas dans les petites lignes : un lot conditionnel annoncé sans sa condition est une pratique commerciale trompeuse. |
+| Acceptation | À **enregistrer côté serveur** avec la version du règlement et un horodatage | la case cochée vit en `localStorage` : elle bloque la participation mais ne prouve rien. Avec une condition suspensive, cette preuve est précisément la pièce à produire en cas de contestation. |
 
 ## 4. Modèle de données
 
@@ -64,12 +67,25 @@ Migration datée `apps/api/src/store/migrations/2026-09-XX-giveaway.ts` (patron 
 `2026-08-27-wallet-links.ts`), appelée dans `apps/api/src/main.ts` (~l. 300) avec les autres.
 
 ```sql
+-- `operation_id` dès la première migration : en cas d'échec de la condition
+-- suspensive, les entrées sont REPORTÉES sur une opération suivante (règlement,
+-- art. 17). Sans cette colonne, le report obligerait à réécrire la table.
 CREATE TABLE IF NOT EXISTS giveaway_entries (
-  user_id    TEXT    NOT NULL,
-  rule       TEXT    NOT NULL,   -- 'account' | 'first_trade' | 'referral'
+  operation_id TEXT  NOT NULL DEFAULT 'airpods-max-2026',
+  user_id    TEXT    NOT NULL,   -- adresse XRPL signée
+  rule       TEXT    NOT NULL,   -- 'wallet' | 'first_trade' | 'referral'
   weight     INTEGER NOT NULL,
   awarded_at INTEGER NOT NULL,
-  PRIMARY KEY (user_id, rule)
+  PRIMARY KEY (operation_id, user_id, rule)
+);
+
+-- Preuve d'acceptation du règlement, écrite en même temps que la première entrée.
+CREATE TABLE IF NOT EXISTS giveaway_consent (
+  operation_id  TEXT    NOT NULL,
+  user_id       TEXT    NOT NULL,
+  terms_version TEXT    NOT NULL,
+  accepted_at   INTEGER NOT NULL,
+  PRIMARY KEY (operation_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_giveaway_entries_user ON giveaway_entries(user_id);
 
@@ -128,6 +144,7 @@ Un fichier par ligne, dans l'ordre où les toucher.
 | Route | Rôle | Auth |
 |---|---|---|
 | `GET /accounts/:userId/giveaway` | État des règles + total personnel + code de parrainage du user | propriétaire (règle par défaut du guard sur `:userId`) |
+| `POST /giveaway/consent` | `{ userId, termsVersion }` — enregistre l'acceptation du règlement, idempotent | `body.userId === me` |
 | `POST /giveaway/referral/redeem` | `{ userId, code }` — enregistre le parrainage. Refuse l'auto-parrainage (`ReferralSelfError`, 400) et le second parrainage (`ReferralAlreadySetError`, 409) | `body.userId === me` |
 | `GET /admin/giveaway` | Liste des participants + entrées, pour le tirage | header `x-admin-token`, comme `GET /admin/overview` |
 
@@ -137,13 +154,18 @@ entrant en localStorage et appelle `redeem` **une fois le compte lié** — avan
 
 ## 7. Tirage
 
-`GET /admin/giveaway` renvoie, par participant : identité Supabase, e-mail, total d'entrées, détail
-des règles. Le tirage lui-même reste **manuel** (une ligne de script, un `random` sur la liste
+`GET /admin/giveaway` renvoie, par participant : adresse XRPL, version du règlement acceptée et sa
+date, total d'entrées, détail des règles. Le tirage lui-même reste **manuel** (une ligne de script, un `random` sur la liste
 pondérée) : automatiser un tirage qu'on ne fera qu'une fois n'a aucun intérêt, et laisser un humain
 regarder la liste avant de tirer est précisément ce qui permet d'écarter les doublons évidents.
 
-Une fois le gagnant tiré : on le contacte par e-mail, on lui demande son pseudo X, on vérifie
-l'abonnement et le repost. Sans réponse sous sept jours, on retire — c'est écrit dans le règlement
+**Le tirage ne peut pas avoir lieu tant que les résultats Make Waves ne sont pas publiés**, et il
+n'a lieu que si Tide remporte le grand prix. Le règlement fixe un délai relatif de 7 jours après
+cette publication, sans date fixe, l'Organisateur ne maîtrisant pas ce calendrier. `/admin/giveaway`
+doit donc rester interrogeable bien après la clôture des participations.
+
+Une fois le gagnant tiré : on le joint via son wallet, on lui demande son pseudo X, on vérifie
+l'abonnement et le repost. Sans réponse sous sept jours, on retire, c'est écrit dans le règlement
 affiché sur la page.
 
 ## 8. Tests attendus
