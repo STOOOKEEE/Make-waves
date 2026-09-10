@@ -5,7 +5,7 @@ import StatusBadge from "../components/StatusBadge.vue";
 import SegControl from "../components/SegControl.vue";
 import { useCompetitions } from "../composables/useCompetitions";
 import { useI18n } from "../i18n/useI18n";
-import giveawayHero from "../assets/giveaway/airpods-max-hero.webp";
+import GiveawayView from "./GiveawayView.vue";
 
 const props = defineProps<{ client: TideClient }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
@@ -29,12 +29,6 @@ const { t, locale } = useI18n({
     details: "View competition",
     paper: "Paper trading",
     liveMode: "Live trading",
-    giveawayLabel: "TideTrade giveaway",
-    giveawayTitle: "Win a pair of AirPods Max",
-    giveawayDescription: "A free prize draw for the Tide community. The prize is awarded only if Tide wins Make Waves.",
-    giveawayCondition: "Make Waves condition",
-    giveawayCta: "Open giveaway",
-    giveawayImageAlt: "AirPods Max prize",
   },
   fr: {
     title: "Compétitions de trading",
@@ -52,12 +46,6 @@ const { t, locale } = useI18n({
     details: "Voir la compétition",
     paper: "Paper trading",
     liveMode: "Trading Live",
-    giveawayLabel: "Tombola TideTrade",
-    giveawayTitle: "Gagne une paire d'AirPods Max",
-    giveawayDescription: "Un tirage gratuit pour la communauté Tide. Le lot est remis uniquement si Tide gagne Make Waves.",
-    giveawayCondition: "Condition Make Waves",
-    giveawayCta: "Ouvrir la tombola",
-    giveawayImageAlt: "Lot AirPods Max",
   },
 });
 
@@ -91,63 +79,50 @@ function xrp(value: number): string {
 
 <template>
   <div class="page competitions-page">
-    <header class="page-head">
-      <div>
-        <h1>{{ t("title") }}</h1>
-        <p>{{ t("subtitle") }}</p>
-      </div>
-      <SegControl v-model="filter" :options="filters" />
-    </header>
+    <GiveawayView :client="client" @navigate="(path) => emit('navigate', path)" />
 
-    <a
-      class="card giveaway-card"
-      href="#/giveaway"
-      @click.prevent="emit('navigate', '/giveaway')"
-    >
-      <img class="giveaway-art" :src="giveawayHero" :alt="t('giveawayImageAlt')" />
-      <div class="giveaway-copy">
-        <div class="card-top">
-          <span class="giveaway-label">{{ t("giveawayLabel") }}</span>
-          <span class="mode">{{ t("giveawayCondition") }}</span>
+    <section class="trading-competitions">
+      <header class="page-head">
+        <div>
+          <h1>{{ t("title") }}</h1>
+          <p>{{ t("subtitle") }}</p>
         </div>
-        <h2>{{ t("giveawayTitle") }}</h2>
-        <p>{{ t("giveawayDescription") }}</p>
-        <span class="giveaway-cta">{{ t("giveawayCta") }} →</span>
-      </div>
-    </a>
+        <SegControl v-model="filter" :options="filters" />
+      </header>
 
-    <div v-if="competitions.loading.value" class="card state">Loading…</div>
-    <div v-else-if="competitions.error.value" class="card state error">
-      {{ competitions.error.value }}
-    </div>
-    <div v-else-if="visible.length === 0" class="card state empty">
-      <strong>{{ t("empty") }}</strong>
-      <span>{{ t("emptyHint") }}</span>
-    </div>
-    <div v-else class="competition-grid">
-      <article
-        v-for="competition in visible"
-        :key="competition.id"
-        class="card competition-card"
-        @click="emit('navigate', `/competition/${competition.id}`)"
-      >
-        <div class="card-top">
-          <StatusBadge :status="competition.status" />
-          <span class="mode">{{ t(competition.mode === "paper" ? "paper" : "liveMode") }}</span>
-        </div>
-        <h2>{{ nameOf(competition) }}</h2>
-        <p>{{ descriptionOf(competition) }}</p>
-        <div class="economy">
-          <div><span>{{ t("ticket") }}</span><b>{{ xrp(competition.buyIn) }}</b></div>
-          <div><span>{{ t("pot") }}</span><b class="pool">{{ xrp(competition.pot) }}</b></div>
-          <div><span>{{ t("players") }}</span><b>{{ competition.participants }}</b></div>
-        </div>
-        <div class="winner">{{ t("winner") }}</div>
-        <button @click.stop="emit('navigate', `/competition/${competition.id}`)">
-          {{ t("details") }} →
-        </button>
-      </article>
-    </div>
+      <div v-if="competitions.loading.value" class="card state">Loading…</div>
+      <div v-else-if="competitions.error.value" class="card state error">
+        {{ competitions.error.value }}
+      </div>
+      <div v-else-if="visible.length === 0" class="card state empty">
+        <strong>{{ t("empty") }}</strong>
+        <span>{{ t("emptyHint") }}</span>
+      </div>
+      <div v-else class="competition-grid">
+        <article
+          v-for="competition in visible"
+          :key="competition.id"
+          class="card competition-card"
+          @click="emit('navigate', `/competition/${competition.id}`)"
+        >
+          <div class="card-top">
+            <StatusBadge :status="competition.status" />
+            <span class="mode">{{ t(competition.mode === "paper" ? "paper" : "liveMode") }}</span>
+          </div>
+          <h2>{{ nameOf(competition) }}</h2>
+          <p>{{ descriptionOf(competition) }}</p>
+          <div class="economy">
+            <div><span>{{ t("ticket") }}</span><b>{{ xrp(competition.buyIn) }}</b></div>
+            <div><span>{{ t("pot") }}</span><b class="pool">{{ xrp(competition.pot) }}</b></div>
+            <div><span>{{ t("players") }}</span><b>{{ competition.participants }}</b></div>
+          </div>
+          <div class="winner">{{ t("winner") }}</div>
+          <button @click.stop="emit('navigate', `/competition/${competition.id}`)">
+            {{ t("details") }} →
+          </button>
+        </article>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -156,14 +131,7 @@ function xrp(value: number): string {
 .page-head { display:flex; justify-content:space-between; align-items:flex-end; gap:20px; margin-bottom:22px; }
 .page-head h1 { font-size:clamp(34px,5vw,58px); text-transform:uppercase; letter-spacing:-.045em; }
 .page-head p { color:var(--soft); margin-top:8px; }
-.giveaway-card { display:grid; grid-template-columns:minmax(160px,.38fr) 1fr; min-height:220px; overflow:hidden; color:inherit; text-decoration:none; }
-.giveaway-card:hover .giveaway-cta { color:var(--blue); }
-.giveaway-art { width:100%; height:100%; min-height:220px; object-fit:cover; background:var(--panel2); }
-.giveaway-copy { display:flex; flex-direction:column; padding:26px; }
-.giveaway-copy h2 { margin:18px 0 10px; }
-.giveaway-copy p { max-width:700px; color:var(--soft); line-height:1.6; }
-.giveaway-label,.giveaway-cta { color:var(--gold); font:700 10px var(--mono); letter-spacing:.09em; text-transform:uppercase; }
-.giveaway-cta { margin-top:auto; padding-top:22px; }
+.trading-competitions { margin-top:96px; padding-top:56px; border-top:1px solid var(--line2); }
 .competition-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; }
 .competition-card { padding:24px; cursor:pointer; display:flex; flex-direction:column; min-height:360px; }
 .card-top { display:flex; align-items:center; justify-content:space-between; }
@@ -178,5 +146,5 @@ h2 { margin:25px 0 10px; font-size:25px; text-transform:uppercase; }
 button { margin-top:auto; border:1px solid var(--line2); background:transparent; color:#fff; padding:13px; border-radius:10px; font-weight:750; }
 .state { padding:50px; display:flex; flex-direction:column; align-items:center; gap:8px; color:var(--soft); }
 .state strong { color:#fff; font-size:19px; }.error { color:var(--down); }
-@media(max-width:720px){.page-head{align-items:flex-start;flex-direction:column}.giveaway-card{grid-template-columns:1fr}.giveaway-art{height:180px;min-height:0}.economy{grid-template-columns:1fr}}
+@media(max-width:720px){.page-head{align-items:flex-start;flex-direction:column}.economy{grid-template-columns:1fr}}
 </style>

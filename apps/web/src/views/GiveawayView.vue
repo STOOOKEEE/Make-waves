@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Page tombola, accessible UNIQUEMENT depuis le footer de la landing. Elle
-// n'est pas dans l'app-bar : c'est une surface de campagne, pas une section du
-// produit. Aucun total public d'entrées n'est affiché : `growth/context/05-facts.md`
-// interdit de publier nos chiffres de traction. Le seul compteur est personnel.
+// Page tombola, intégrée à la section Compétitions et gardée comme route directe
+// pour les liens existants. Aucun total public d'entrées n'est affiché :
+// `growth/context/05-facts.md` interdit de publier nos chiffres de traction.
+// Le seul compteur est personnel.
 import { computed, onMounted, watch, watchEffect } from "vue";
 import type { TideClient } from "@tide/client";
 import ProductViewer from "../components/giveaway/ProductViewer.vue";

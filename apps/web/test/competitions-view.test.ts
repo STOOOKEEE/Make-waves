@@ -14,13 +14,16 @@ describe("CompetitionsView — tombola", () => {
     const wrapper = mount(CompetitionsView, {
       props: { client: fakeClient() },
       attrs: { onNavigate: navigate },
+      global: {
+        stubs: {
+          GiveawayView: { template: '<div class="giveaway-page-stub" />' },
+        },
+      },
     });
     await flushPromises();
 
-    const giveaway = wrapper.get(".giveaway-card");
-    expect(giveaway.text()).toContain("AirPods Max");
-    await giveaway.trigger("click");
-    expect(navigate).toHaveBeenCalledWith("/giveaway");
+    expect(wrapper.find(".giveaway-page-stub").exists()).toBe(true);
+    expect(wrapper.text()).toContain("No real competition is open yet.");
 
     wrapper.unmount();
   });
