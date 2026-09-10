@@ -62,4 +62,13 @@ describe("AppBar — hiérarchie de navigation", () => {
     expect(active?.text()).toBe("Competitions");
     wrapper.unmount();
   });
+
+  it("marque l'onglet Compétitions actif sur la tombola", () => {
+    const wrapper = mountBar("/giveaway");
+    const active = wrapper
+      .findAll(".tabs button, .tabs a")
+      .find((t) => t.attributes("aria-current") === "page");
+    expect(active?.text()).toBe("Competitions");
+    wrapper.unmount();
+  });
 });

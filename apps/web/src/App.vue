@@ -91,8 +91,7 @@ const { current, competitionId, routeId, navigate } = useRoute();
       :step-id="routeId"
       @navigate="navigate"
     />
-    <!-- Page de campagne : atteignable uniquement par le footer de la landing,
-         volontairement absente des onglets de l'app-bar. -->
+    <!-- Page de campagne : son entrée principale vit dans Compétitions. -->
     <GiveawayView v-else-if="current === '/giveaway'" :client="client" @navigate="navigate" />
     <component
       :is="LocalAdminView"

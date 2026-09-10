@@ -135,7 +135,7 @@ function go(path: string): void {
 }
 
 function isActiveTab(path: RoutePath): boolean {
-  return props.current === path || (path === "/competitions" && props.current === "/competition");
+  return props.current === path || (path === "/competitions" && ["/competition", "/giveaway"].includes(props.current));
 }
 </script>
 
