@@ -1,6 +1,7 @@
 import "dotenv/config"; // charge apps/api/.env (clés XUMM, etc.) dans process.env
 import { connectXrplClient, XrplCustodialWalletGateway, XrplNftIssuer } from "@tide/xrpl";
 import type { XrplClient } from "@tide/xrpl";
+import { isValidClassicAddress } from "xrpl";
 import { buildAgentChatCtxFactory } from "./agent/chat-context";
 import { AuthService } from "./auth/auth-service";
 import { InMemoryChallengeStore } from "./auth/challenge-store";
@@ -30,6 +31,7 @@ import { PaperService } from "./services/paper-service";
 import { PaperWalletService } from "./services/paper-wallet-service";
 import { WeeklyRewardService } from "./services/weekly-reward-service";
 import { FirstTradeRewardService } from "./services/first-trade-reward-service";
+import { GiveawayService } from "./services/giveaway-service";
 import {
   PaperWalletAdminService,
   XrplPaperWalletAdminGateway,
@@ -56,8 +58,10 @@ import { migrateExternalIdentityTables } from "./store/migrations/2026-07-22-ext
 import { migrateWalletDeleteColumns } from "./store/migrations/2026-08-27-wallet-delete";
 import { migrateWalletLinkTables } from "./store/migrations/2026-08-27-wallet-links";
 import { migrateManagedExternalWalletTables } from "./store/migrations/2026-08-28-managed-external-wallets";
+import { migrateGiveawayTables } from "./store/migrations/2026-09-11-giveaway";
 import { SqliteWalletLinkStore } from "./store/sqlite-wallet-link-store";
 import { SqliteManagedExternalWalletStore } from "./store/sqlite-managed-external-wallet-store";
+import { SqliteGiveawayStore } from "./store/sqlite-giveaway-store";
 import {
   createFirstTradeExternalGuard,
   createFirstTradeManagedGuard,
@@ -298,6 +302,7 @@ async function main(): Promise<void> {
   migrateWalletDeleteColumns(db);
   migrateWalletLinkTables(db);
   migrateManagedExternalWalletTables(db);
+  migrateGiveawayTables(db);
 
   // Client XRPL partagé (feed on-chain + indexeur), si un nœud est configuré.
   const wsUrl = env.readOnchainWsUrl();
@@ -408,11 +413,15 @@ async function main(): Promise<void> {
   // explicite d'une compétition réelle depuis la console locale.
   const competitionStore = new SqliteCompetitionStore(db);
   const prizePoolAddress = env.readPrizePoolAddress();
+  const competitionPaymentsServerUrl = wsUrl ?? paperWalletRuntime?.serverUrl;
+  const competitionPaymentsSourceTag = sourceTag ?? paperWalletRuntime?.sourceTag;
   const competitionPayments =
-    wsUrl !== undefined && sourceTag !== undefined && prizePoolAddress !== undefined
+    competitionPaymentsServerUrl !== undefined &&
+    competitionPaymentsSourceTag !== undefined &&
+    prizePoolAddress !== undefined
       ? new CompetitionPaymentService({
-          serverUrl: wsUrl,
-          sourceTag,
+          serverUrl: competitionPaymentsServerUrl,
+          sourceTag: competitionPaymentsSourceTag,
           prizePoolAddress,
         })
       : undefined;
@@ -426,6 +435,25 @@ async function main(): Promise<void> {
     paper,
     env.readArenaSimulationConfig(),
   );
+  const giveaway = new GiveawayService({
+    store: new SqliteGiveawayStore(db),
+    resolveIdentity: async (userId) => {
+      const paperWallet =
+        userId.startsWith("paper:") && paperRewardRuntime !== undefined
+          ? await paperRewardRuntime.wallets.get(userId)
+          : null;
+      let hasFirstTrade = false;
+      try {
+        hasFirstTrade = paper.tradeCountOf(userId) > 0;
+      } catch {
+        // Un wallet externe peut ne pas encore avoir de compte Paper.
+      }
+      return {
+        walletAddress: paperWallet?.address ?? (isValidClassicAddress(userId) ? userId : null),
+        hasFirstTrade,
+      };
+    },
+  });
 
   const paperWalletAdmin =
     paperWalletAdminGateway === undefined ||
@@ -603,6 +631,7 @@ async function main(): Promise<void> {
     badgeStore,
     weeklyRewards,
     firstTradeRewards,
+    giveaway,
     ...(firstTradeExternalGuard !== undefined
       ? { firstTradeExternalGuard }
       : {}),

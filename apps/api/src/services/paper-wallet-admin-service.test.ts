@@ -176,41 +176,37 @@ describe("PaperWalletAdminService", () => {
 
     expect(result).toMatchObject({
       userId: USER_ID,
-      walletAddress: `rReward${USER_ID.slice(-10)}`,
+      walletAddress: WALLET_ADDRESS,
       nftTokenId: "nft-id",
       claimHash: "claim-hash",
     });
     expect(issuer.issueBadge).toHaveBeenCalledWith({
       uri: "https://api.test/nft-metadata/first_trade",
       taxon: 1,
-      destination: `rReward${USER_ID.slice(-10)}`,
+      destination: WALLET_ADDRESS,
     });
     expect(gateway.acceptNft).toHaveBeenCalledWith("sTestSeed", "offer-id");
     expect(await rewards.get(USER_ID, "first_trade")).toMatchObject({ status: "claimed" });
   });
 
-  it("exécute le workflow complet vers le wallet 2 puis ferme le wallet 1", async () => {
+  it("exécute le workflow complet sur le wallet principal sans AccountDelete", async () => {
     const { service, store, rewardStore, gateway, issuer } = await fixture();
 
     const result = await service.setupPaperWorkflowBatch([USER_ID], "ten_trades");
 
     expect(result).toMatchObject({ requested: 1, succeeded: 1, failed: 0, badgeCode: "ten_trades" });
     expect(issuer.issueBadge).toHaveBeenCalledWith(expect.objectContaining({
-      destination: `rReward${USER_ID.slice(-10)}`,
+      destination: WALLET_ADDRESS,
       taxon: 2,
     }));
-    expect(gateway.deleteAccount).toHaveBeenCalledWith(
-      "sTestSeed",
-      `rReward${USER_ID.slice(-10)}`,
-      "200000",
-    );
-    expect((await store.get(USER_ID))?.status).toBe("deleted");
-    expect((await store.get(USER_ID))?.encryptedSeed).toBe("");
-    expect((await rewardStore.get(USER_ID))?.status).toBe("funded");
+    expect(gateway.deleteAccount).not.toHaveBeenCalled();
+    expect((await store.get(USER_ID))?.status).toBe("funded");
+    expect((await store.get(USER_ID))?.encryptedSeed).toBe("encrypted");
+    expect(await rewardStore.get(USER_ID)).toBeNull();
 
     const retry = await service.setupPaperWorkflowBatch([USER_ID], "ten_trades");
     expect(retry).toMatchObject({ requested: 1, succeeded: 1, failed: 0 });
-    expect(gateway.deleteAccount).toHaveBeenCalledTimes(1);
+    expect(gateway.deleteAccount).not.toHaveBeenCalled();
   });
 
   it("utilise le service First Trade canonique pour le parcours par défaut", async () => {
@@ -219,12 +215,12 @@ describe("PaperWalletAdminService", () => {
       claim: vi.fn(async (): Promise<FirstTradeRewardStatus> => ({
         network: "mainnet",
         walletAddress: WALLET_ADDRESS,
-        walletStatus: "deleted",
+        walletStatus: "funded",
         fundingTxHash: "funding",
-        walletDeleteTxHash: "delete-hash",
-        rewardWalletAddress: "rRewardFirstTrade",
+        walletDeleteTxHash: null,
+        rewardWalletAddress: WALLET_ADDRESS,
         rewardWalletStatus: "funded",
-        rewardFundingTxHash: "reward-funding",
+        rewardFundingTxHash: null,
         rewardFundingSourceAddress: WALLET_ADDRESS,
         rewardStatus: "claimed",
         nftTokenId: "nft-first-trade",
@@ -250,15 +246,15 @@ describe("PaperWalletAdminService", () => {
     expect(result.results.map((item) => item.userId)).toEqual([USER_ID, "paper:second"]);
   });
 
-  it("cible et récupère le wallet NFT secondaire lorsqu'il existe", async () => {
+  it("utilise le wallet principal mais récupère encore une ancienne ligne wallet 2", async () => {
     const { service, store, rewardStore, issuer } = await fixture();
     const rewardWallet = { ...WALLET, address: "rRewardWallet", fundingTxHash: "linked" };
     await rewardStore.create(rewardWallet);
 
     const grant = await service.grantBadge(USER_ID, "first_trade");
-    expect(grant.walletAddress).toBe(rewardWallet.address);
+    expect(grant.walletAddress).toBe(WALLET_ADDRESS);
     expect(issuer.issueBadge).toHaveBeenCalledWith(expect.objectContaining({
-      destination: rewardWallet.address,
+      destination: WALLET_ADDRESS,
     }));
 
     await service.startReclaimOne(USER_ID, USER_ID);

@@ -113,6 +113,19 @@ export function parseCompetitionJoin(
   };
 }
 
+export function parseGiveawayConsent(body: unknown): {
+  userId: string;
+  xHandle: string;
+  termsVersion: string;
+} {
+  const obj = asRecord(body, "giveawayConsent");
+  return {
+    userId: str(obj, "userId", "giveawayConsent"),
+    xHandle: str(obj, "xHandle", "giveawayConsent"),
+    termsVersion: str(obj, "termsVersion", "giveawayConsent"),
+  };
+}
+
 /**
  * Corps d'une intention de swap Live : QUOI échanger (base/side/quantité) et avec
  * quelle tolérance de slippage. Les montants bornés (`gives`/`wants`), l'attribution

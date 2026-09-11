@@ -28,7 +28,7 @@ export interface WeeklyRewardDto {
 
 export interface WeeklyRewardServiceDeps {
   readonly store: WeeklyRewardStore;
-  readonly wallets: Pick<PaperWalletService, "requireRewardFunded" | "decryptSeed">;
+  readonly wallets: Pick<PaperWalletService, "requireFunded" | "decryptSeed">;
   readonly issuer: NftIssuer;
   readonly gateway: Pick<XrplCustodialWalletGateway, "acceptNft">;
   readonly metadataBaseUrl: string;
@@ -79,9 +79,8 @@ export class WeeklyRewardService {
     const reward = await this.deps.store.get(userId, week);
     if (reward === null) throw new WeeklyRewardNotEligibleError();
     if (reward.status === "claimed") throw new WeeklyRewardAlreadyClaimedError();
-    // Toutes les preuves NFT vivent dans le compte secondaire. Son claim First
-    // Trade explicite doit donc avoir eu lieu avant une récompense hebdomadaire.
-    const wallet = await this.deps.wallets.requireRewardFunded(userId);
+    // Les récompenses vivent sur le wallet Paper principal.
+    const wallet = await this.deps.wallets.requireFunded(userId);
 
     let pending = reward;
     if (pending.status === "eligible") {

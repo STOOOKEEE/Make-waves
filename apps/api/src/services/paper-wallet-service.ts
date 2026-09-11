@@ -8,16 +8,11 @@ import {
 import type { XrplCustodialWalletGateway } from "@tide/xrpl";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
 
-/** Wallet 2 : réserve de base + première NFTokenPage + marge de frais. */
+/** Un wallet Paper : réserve de base + première NFTokenPage + marge de frais. */
 export const PAPER_REWARD_WALLET_FUNDING_DROPS = "1210000";
 
-/**
- * Wallet 1 : réserve de base + budget transféré au wallet 2 (1,21) + coût
- * spécial de l'AccountDelete de clôture (0,2) + restant transmis à la
- * destination du delete (wallet 2 par défaut). Minimum pratique pour garder
- * la réserve du wallet 1 pendant le Payment vers le wallet 2.
- */
-export const PAPER_WALLET_FUNDING_DROPS = "2220000";
+/** Nouveau parcours : un seul wallet financé directement par le funder. */
+export const PAPER_WALLET_FUNDING_DROPS = PAPER_REWARD_WALLET_FUNDING_DROPS;
 
 /** Coût spécial d'un AccountDelete (owner reserve, 0,2 XRP — doc XRPL vérifiée le 27/08/2026). */
 export const ACCOUNT_DELETE_FEE_DROPS = "200000";
@@ -78,11 +73,7 @@ export interface PaperWalletServiceDeps {
   readonly now?: () => number;
 }
 
-/**
- * Paire de wallets XRPL du funnel Paper. Le premier est réclamé explicitement
- * avant de trader ; le second est réclamé après le premier trade et financé
- * par le premier. Les clés sont chiffrées AES-GCM et ne sortent jamais du back.
- */
+/** Wallet XRPL du funnel Paper. Sa seed est chiffrée et ne sort jamais du back. */
 export class PaperWalletService {
   private readonly now: () => number;
   private readonly funding = new Map<string, Promise<PaperWallet>>();
@@ -105,7 +96,7 @@ export class PaperWalletService {
     }
   }
 
-  /** Claim du wallet 2, financé et activé par le wallet 1 déjà réclamé. */
+  /** Compatibilité avec les anciennes lignes wallet 2 ; le nouveau parcours ne l'appelle plus. */
   async ensureRewardFunded(userId: string): Promise<PaperWallet> {
     const key = `reward:${userId}`;
     const running = this.funding.get(key);
@@ -167,15 +158,14 @@ export class PaperWalletService {
   /** Garde backend : le clic de claim du wallet 1 doit précéder tout trade. */
   async requireFunded(userId: string): Promise<PaperWallet> {
     const wallet = await this.deps.store.get(userId);
-    // "deleted" = financé puis clôturé par AccountDelete après le claim du
-    // wallet 2 : le compte a bien été réclamé, les trades restent autorisés.
+    // Les anciennes lignes peuvent être "deleted" ; un nouveau wallet reste funded.
     if (wallet?.status !== "funded" && wallet?.status !== "deleted") {
       throw new PaperWalletNotClaimedError();
     }
     return wallet;
   }
 
-  /** Les récompenses suivantes restent cantonnées au wallet 2. */
+  /** Compatibilité des anciennes lignes wallet 2. */
   async requireRewardFunded(userId: string): Promise<PaperWallet> {
     const wallet = await this.deps.rewardStore.get(userId);
     if (wallet?.status !== "funded") throw new PaperRewardWalletNotClaimedError();
@@ -305,12 +295,12 @@ export class PaperWalletService {
     }
   }
 
-  /** Clôture tracée du wallet 1 (AccountDelete) après le claim du wallet 2. */
+  /** Compatibilité opérateur pour les anciennes récupérations. */
   async markDeleted(userId: string, deleteTxHash: string): Promise<void> {
     await this.deps.store.markDeleted(userId, deleteTxHash);
   }
 
-  /** Efface la seed après un AccountDelete validé, en conservant le tombstone. */
+  /** Efface la seed après une récupération validée, en conservant le tombstone. */
   async eraseSeed(userId: string): Promise<boolean> {
     return this.deps.store.eraseSeed(userId);
   }

@@ -5,6 +5,7 @@ import { CompetitionService } from "./services/competition-service";
 import { BadgeService } from "./services/badge-service";
 import { BADGE_CODES } from "./badges/catalog";
 import type { WeeklyRewardService } from "./services/weekly-reward-service";
+import type { GiveawayService } from "./services/giveaway-service";
 import type { NftIssuer } from "@tide/xrpl";
 import type { BadgeStore } from "./store/badge-store";
 import { PriceCache } from "./feed/price-cache";
@@ -135,9 +136,11 @@ export interface AppConfig {
   readonly nftIssuer?: NftIssuer;
   /** Store des claims de badges (SQLite en prod). Requis avec `nftIssuer`. */
   readonly badgeStore?: BadgeStore;
-  /** Programme « trade de la semaine » : claim NFT sur le wallet secondaire. */
+  /** Programme « trade de la semaine » : claim NFT sur le wallet Paper principal. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Funnel wallet initial → premier trade → wallet NFT secondaire. */
+  /** Tombola : handle X lié à l'identité et au wallet de participation. */
+  readonly giveaway?: GiveawayService;
+  /** Funnel wallet Paper principal → premier trade → NFT sur ce même wallet. */
   readonly firstTradeRewards?: import("./services/first-trade-reward-service").FirstTradeRewardService;
   /** Option B : garde anti-farming du claim First Trade sur wallet connecté. */
   readonly firstTradeExternalGuard?: (
@@ -256,6 +259,7 @@ export function createApp(config: AppConfig): App {
             operatorUserIds: new Set(config.operatorUserIds ?? []),
             paperWallets: config.paperWalletStore,
             paperRewardWallets: config.paperRewardWalletStore,
+            giveaway: config.giveaway,
             paperWalletNftInventory: config.paperWalletNftInventory,
             simulation: config.simulation,
           }),
@@ -358,6 +362,7 @@ export function createApp(config: AppConfig): App {
     badgeService,
     weeklyRewards: config.weeklyRewards,
     firstTradeRewards: config.firstTradeRewards,
+    giveaway: config.giveaway,
     paperWallets: config.paperWallets,
     ...(admin !== undefined && config.exposeAdminOnPublicServer !== false ? { admin } : {}),
     auth: config.auth,
