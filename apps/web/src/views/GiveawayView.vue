@@ -3,7 +3,7 @@
 // pour les liens existants. Aucun total public d'entrées n'est affiché :
 // `growth/context/05-facts.md` interdit de publier nos chiffres de traction.
 // Le seul compteur est personnel.
-import { computed, onMounted, watch, watchEffect } from "vue";
+import { computed, onBeforeUnmount, onMounted, watch, watchEffect } from "vue";
 import type { TideClient } from "@tide/client";
 import ProductViewer from "../components/giveaway/ProductViewer.vue";
 import TermsPanel from "../components/giveaway/TermsPanel.vue";
@@ -23,7 +23,7 @@ import {
   XAMAN_URL,
   XRPL_BASE_RESERVE_XRP,
 } from "../data/giveaway";
-import { CARRY_OVER_MONTHS, DRAW_WINDOW_DAYS } from "../data/giveaway-terms";
+import { CARRY_OVER_MONTHS, DRAW_WINDOW_DAYS, TERMS_VERSION } from "../data/giveaway-terms";
 import { useI18n } from "../i18n/useI18n";
 // Assets importés en module (convention de `BrandMark.vue`) : Vite les
 // empreinte et les résout aussi bien au build qu'en test.
@@ -74,7 +74,7 @@ const { t, intlLocale } = useI18n({
     step2Title: "Repost the announcement",
     step2Body: "It is how other people find out. We check this on the drawn winner only.",
     step3Title: "Connect your XRPL wallet",
-    step3Body: "On Tide your wallet is your account. No email, no password, no deposit. Connect it once and you are in.",
+    step3Body: "On Tide your wallet is your account. No email, no password, no deposit. Connect it once, enter your X handle below, and you are in.",
     step3Cta: "Connect my wallet",
     walletLabel: "New to XRPL?",
     walletTitle: "Your wallet is your account.",
@@ -105,6 +105,11 @@ const { t, intlLocale } = useI18n({
     ruleDone: "Earned",
     ruleSoon: "Opening soon",
     signedOutNote: "Connect a wallet to see your entries.",
+    xHandleLabel: "Your X handle",
+    xHandlePlaceholder: "your_handle",
+    entrySave: "Save my entry",
+    entrySaving: "Saving…",
+    entrySaved: "Entry saved",
     prizeLabel: "The prize",
     prizeTitle: "Apple AirPods Max",
     prizeBody: "Over-ear, active noise cancellation, spatial audio. One pair, one winner, shipped to you. Colour depends on availability where you live.",
@@ -159,7 +164,7 @@ const { t, intlLocale } = useI18n({
     step2Title: "Reposte l'annonce",
     step2Body: "C'est comme ça que les autres la découvrent. On ne le vérifie que sur le gagnant tiré.",
     step3Title: "Connecte ton wallet XRPL",
-    step3Body: "Sur Tide, ton wallet est ton compte. Pas d'e-mail, pas de mot de passe, pas de dépôt. Tu le connectes une fois et tu participes.",
+    step3Body: "Sur Tide, ton wallet est ton compte. Pas d'e-mail, pas de mot de passe, pas de dépôt. Connecte-le une fois, saisis ton handle X ci-dessous et tu participes.",
     step3Cta: "Connecter mon wallet",
     walletLabel: "Tu débutes sur XRPL ?",
     walletTitle: "Ton wallet est ton compte.",
@@ -190,6 +195,11 @@ const { t, intlLocale } = useI18n({
     ruleDone: "Obtenue",
     ruleSoon: "Bientôt",
     signedOutNote: "Connecte un wallet pour voir tes entrées.",
+    xHandleLabel: "Ton handle X",
+    xHandlePlaceholder: "ton_handle",
+    entrySave: "Enregistrer ma participation",
+    entrySaving: "Enregistrement…",
+    entrySaved: "Participation enregistrée",
     prizeLabel: "Le lot",
     prizeTitle: "Apple AirPods Max",
     prizeBody: "Circum-auriculaire, réduction de bruit active, audio spatial. Une paire, un gagnant, expédiée chez toi. La couleur dépend des disponibilités dans ton pays.",
@@ -253,7 +263,7 @@ const closeDate = computed(() => formatDate(GIVEAWAY_CLOSES_AT));
  * surtout rien à créer au passage sur une page de campagne.
  */
 function resolveUserId(): string {
-  return session.walletConnected.value ? session.liveAddress.value.trim() : "";
+  return session.userId.value.trim();
 }
 
 async function refresh(): Promise<void> {
@@ -285,14 +295,40 @@ function connectWallet(): void {
   walletEntry.show();
 }
 
+const xHandle = giveaway.xHandle;
+const savedEntry = computed(() => xHandle.value.trim() !== "" && giveaway.entries.value > 0);
+
+async function saveEntry(): Promise<void> {
+  if (!terms.accepted.value) {
+    document.getElementById("terms")?.scrollIntoView({ block: "center" });
+    document.querySelector<HTMLInputElement>(".terms-accept input")?.focus();
+    return;
+  }
+  const userId = resolveUserId();
+  if (userId === "" || giveaway.walletAddress.value === null) {
+    walletEntry.show();
+    return;
+  }
+  await giveaway.save(userId, TERMS_VERSION, xHandle.value);
+}
+
+function onPaperWalletChanged(): void {
+  void refresh();
+}
+
 onMounted(() => {
   void refresh();
+  window.addEventListener("tide:paper-wallet-changed", onPaperWalletChanged);
 });
 
 // Le wallet peut se connecter pendant que la page est ouverte (retour de Xaman,
 // signature GemWallet) : les entrées se recalculent sans rechargement.
-watch([session.liveAddress, session.walletConnected], () => {
+watch([session.userId, session.liveAddress], () => {
   void refresh();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("tide:paper-wallet-changed", onPaperWalletChanged);
 });
 
 // `t()` lit `locale` : le titre se retraduit tout seul à la bascule de langue.
@@ -462,11 +498,35 @@ watchEffect(() => {
         <div class="entries-total">
           <span class="lab">{{ t("entriesYours") }}</span>
           <strong class="mono">{{ giveaway.entries.value }}</strong>
-          <span v-if="!session.walletConnected.value" class="entries-note">
+          <span v-if="!session.connected.value" class="entries-note">
             {{ t("signedOutNote") }}
           </span>
         </div>
       </div>
+
+      <form v-if="session.connected.value" class="giveaway-entry" @submit.prevent="saveEntry">
+        <label for="giveaway-x-handle">{{ t("xHandleLabel") }}</label>
+        <div class="giveaway-entry__row">
+          <span aria-hidden="true">@</span>
+          <input
+            id="giveaway-x-handle"
+            v-model="xHandle"
+            :placeholder="t('xHandlePlaceholder')"
+            maxlength="15"
+            pattern="[A-Za-z0-9_]{1,15}"
+            autocomplete="off"
+            required
+          />
+          <button
+            v-if="giveaway.walletAddress.value !== null"
+            type="submit"
+            :disabled="giveaway.saving.value || closed"
+          >{{ giveaway.saving.value ? t("entrySaving") : t("entrySave") }}</button>
+          <button v-else type="button" @click="connectWallet">{{ t("ruleWalletCta") }}</button>
+        </div>
+        <p v-if="giveaway.error.value" class="giveaway-entry__error">{{ giveaway.error.value }}</p>
+        <p v-else-if="savedEntry" class="giveaway-entry__saved">{{ t("entrySaved") }}</p>
+      </form>
 
       <ul class="rule-list">
         <li
@@ -627,6 +687,15 @@ watchEffect(() => {
 .entries-total { display: grid; justify-items: end; gap: 6px; text-align: right; }
 .entries-total strong { font-size: clamp(52px, 8vw, 92px); font-weight: 700; line-height: .9; letter-spacing: -.04em; color: var(--gold); }
 .entries-note { max-width: 240px; font-size: 13px; line-height: 1.45; color: var(--mut2); }
+.giveaway-entry { display: grid; gap: 10px; max-width: 620px; margin-bottom: 30px; }
+.giveaway-entry label { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--soft); }
+.giveaway-entry__row { display: flex; align-items: center; gap: 0; border: 1px solid var(--line3); border-radius: 12px; overflow: hidden; }
+.giveaway-entry__row > span { padding-left: 14px; color: var(--mut2); font: 15px var(--mono); }
+.giveaway-entry input { min-width: 0; flex: 1; padding: 13px 10px; border: 0; outline: 0; background: transparent; color: var(--text); font: 14px var(--mono); }
+.giveaway-entry button { margin: 4px; padding: 10px 15px; border: 0; border-radius: 8px; background: var(--text); color: var(--panel); font-weight: 800; cursor: pointer; }
+.giveaway-entry button:disabled { opacity: .5; cursor: wait; }
+.giveaway-entry__error { color: #ff6b6b; font-size: 13px; }
+.giveaway-entry__saved { color: var(--gold); font-size: 13px; }
 
 .rule-list { display: grid; list-style: none; border-top: 1px solid var(--line3); }
 .rule { display: grid; grid-template-columns: 130px 1fr auto; gap: 32px; align-items: center; padding: 30px 0; border-bottom: 1px solid var(--line3); }

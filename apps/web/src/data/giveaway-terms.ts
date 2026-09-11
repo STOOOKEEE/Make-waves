@@ -19,7 +19,7 @@ export type Localized = Record<Locale, string>;
  * l'acceptation est enregistrée avec cette valeur, donc une nouvelle version
  * invalide les acceptations précédentes et redemande la case à cocher.
  */
-export const TERMS_VERSION = "2026-09-09";
+export const TERMS_VERSION = "2026-09-11";
 
 /**
  * Identité de l'organisateur, telle qu'elle apparaît dans le règlement.
@@ -435,8 +435,8 @@ export const TERMS: readonly TermsArticle[] = [
     title: { en: "Personal data", fr: "Données personnelles" },
     paragraphs: [
       {
-        en: "To run the operation, the Organiser processes the XRP Ledger address used to enter, the entries linked to it, and, for the drawn winner alone, the X handle and the postal address needed to deliver the prize.",
-        fr: "Pour les besoins de l'opération, l'Organisateur traite l'adresse XRP Ledger utilisée pour participer, les entrées qui y sont rattachées et, pour le seul gagnant tiré au sort, le pseudonyme X et l'adresse postale nécessaires à la remise du lot.",
+        en: "To run the operation, the Organiser processes the Tide account identity, the XRP Ledger address linked to it, the X handle supplied at entry, and the entries linked to that identity. The drawn winner may also be asked for a postal address needed to deliver the prize.",
+        fr: "Pour les besoins de l'opération, l'Organisateur traite l'identité du compte Tide, l'adresse XRP Ledger qui lui est reliée, le pseudonyme X fourni lors de la participation et les entrées rattachées à cette identité. Le gagnant tiré au sort peut également être invité à fournir une adresse postale nécessaire à la remise du lot.",
       },
       {
         en: "The legal basis for the processing is performance of these rules, which the entrant accepts before entering. The data is kept for the time needed to run the operation, then for the period required to answer any claim.",

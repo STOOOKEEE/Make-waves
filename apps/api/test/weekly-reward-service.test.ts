@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { NftIssuer } from "@tide/xrpl";
 import {
   PaperWalletService,
-  PAPER_REWARD_WALLET_FUNDING_DROPS,
   PAPER_WALLET_FUNDING_DROPS,
 } from "../src/services/paper-wallet-service";
 import {
@@ -84,8 +83,8 @@ describe("PaperWalletService", () => {
     expect(gateway.funding).toEqual([]);
   });
 
-  it("crée, chiffre et finance une seule fois le wallet au minimum du double funnel", async () => {
-    expect(PAPER_WALLET_FUNDING_DROPS).toBe("2220000");
+  it("crée, chiffre et finance une seule fois le wallet principal", async () => {
+    expect(PAPER_WALLET_FUNDING_DROPS).toBe("1210000");
     const store = new InMemoryPaperWalletStore();
     const gateway = new FakeGateway();
     const svc = new PaperWalletService({
@@ -155,7 +154,6 @@ describe("WeeklyRewardService", () => {
 
     await svc.recordTrade("paper:u1");
     await wallets.ensureFunded("paper:u1");
-    await wallets.ensureRewardFunded("paper:u1");
     const week = weekKey(now);
     expect(await svc.list("paper:u1")).toEqual([
       { week, qualifiedAt: now, status: "eligible", nftTokenId: null, claimedAt: null },
@@ -174,7 +172,7 @@ describe("WeeklyRewardService", () => {
 });
 
 describe("FirstTradeRewardService", () => {
-  it("débloque au premier trade puis claim un wallet 2 financé par le wallet 1", async () => {
+  it("débloque au premier trade puis claim le NFT sur le wallet principal", async () => {
     const now = Date.UTC(2026, 6, 17, 12);
     const gateway = new FakeGateway();
     const wallets = new PaperWalletService({
@@ -201,28 +199,27 @@ describe("FirstTradeRewardService", () => {
 
     const unlocked = await service.status("paper:u1");
     expect(unlocked.walletStatus).toBe("funded");
-    expect(unlocked.rewardWalletStatus).toBe("not_created");
+    expect(unlocked.rewardWalletStatus).toBe("funded");
+    expect(unlocked.rewardWalletAddress).toBe(unlocked.walletAddress);
     expect(unlocked.rewardStatus).toBe("eligible");
 
     await Promise.all([service.claim("paper:u1"), service.claim("paper:u1")]);
 
     const status = await service.status("paper:u1");
     expect(status.walletAddress).toMatch(/^r/);
-    expect(status.walletStatus).toBe("deleted");
-    expect(status.walletDeleteTxHash).toBe("DELETE");
-    expect(status.rewardWalletAddress).toMatch(/^r/);
-    expect(status.rewardWalletAddress).not.toBe(status.walletAddress);
+    expect(status.walletStatus).toBe("funded");
+    expect(status.walletDeleteTxHash).toBeNull();
+    expect(status.rewardWalletAddress).toBe(status.walletAddress);
     expect(status.rewardWalletStatus).toBe("funded");
     expect(status.rewardFundingSourceAddress).toBe(status.walletAddress);
-    expect(status.rewardFundingTxHash).toBe("LINKED_FUND");
+    expect(status.rewardFundingTxHash).toBeNull();
     expect(status.rewardStatus).toBe("claimed");
     expect(status.nftTokenId).toBe(NFT_ID);
     expect(status.claimTxHash).toBe("CLAIM");
-    expect((await wallets.get("paper:u1"))?.encryptedSeed).toBe("");
+    expect((await wallets.get("paper:u1"))?.encryptedSeed).not.toBe("");
     expect(issuer.calls).toBe(1);
     expect(gateway.funding).toHaveLength(1);
-    expect(gateway.linkedFunding).toHaveLength(1);
-    expect(gateway.linkedFunding[0]?.drops).toBe(PAPER_REWARD_WALLET_FUNDING_DROPS);
+    expect(gateway.linkedFunding).toHaveLength(0);
     expect(gateway.accepted).toHaveLength(1);
   });
 

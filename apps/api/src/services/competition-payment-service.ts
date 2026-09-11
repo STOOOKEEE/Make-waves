@@ -1,4 +1,4 @@
-import { Client, convertHexToString } from "xrpl";
+import { Client, convertHexToString, Wallet } from "xrpl";
 import type { Payment } from "xrpl";
 import {
   buildBuyInPayment,
@@ -73,6 +73,18 @@ export interface CompetitionPaymentConfig {
   readonly serverUrl: string;
   readonly prizePoolAddress: string;
   readonly sourceTag: number;
+  /** Injecté par les tests ; le runtime utilise un Client XRPL réel. */
+  readonly clientFactory?: () => CompetitionLedgerClient;
+}
+
+export interface CompetitionLedgerClient {
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  isConnected(): boolean;
+  autofill(transaction: Payment): Promise<Payment>;
+  submitAndWait(txBlob: string): Promise<{
+    readonly result: { readonly hash: string; readonly meta?: unknown };
+  }>;
 }
 
 /**
@@ -109,6 +121,56 @@ export class CompetitionPaymentService {
       throw new CompetitionPaymentInvalidError("Le payout calculé est nul");
     }
     return tx;
+  }
+
+  /** Soumet le ticket exact depuis un seed Paper conservé côté serveur. */
+  async submitManagedEntry(
+    seed: string,
+    competition: CompetitionDefinition,
+  ): Promise<{ readonly account: string; readonly hash: string }> {
+    let wallet: Wallet;
+    try {
+      wallet = Wallet.fromSeed(seed);
+    } catch {
+      throw new CompetitionPaymentInvalidError("Seed Paper invalide");
+    }
+    const expected = this.entryPayment(wallet.classicAddress, competition);
+    const client =
+      this.config.clientFactory?.() ??
+      (new Client(this.config.serverUrl) as unknown as CompetitionLedgerClient);
+    try {
+      await client.connect();
+      const prepared = await client.autofill(expected);
+      const preparedRecord = asRecord(prepared);
+      if (
+        preparedRecord?.["TransactionType"] !== "Payment" ||
+        preparedRecord["Account"] !== expected.Account ||
+        preparedRecord["Destination"] !== expected.Destination ||
+        preparedRecord["Amount"] !== expected.Amount ||
+        preparedRecord["SourceTag"] !== expected.SourceTag ||
+        !hasJoinMemo(preparedRecord, competition.id)
+      ) {
+        throw new CompetitionPaymentInvalidError(
+          "Le ticket Paper préparé ne correspond pas à la compétition",
+        );
+      }
+      const signed = wallet.sign(prepared);
+      const submitted = await client.submitAndWait(signed.tx_blob);
+      const meta = submitted.result.meta;
+      if (
+        typeof meta !== "object" ||
+        meta === null ||
+        (meta as { readonly TransactionResult?: unknown }).TransactionResult !== "tesSUCCESS"
+      ) {
+        throw new CompetitionPaymentInvalidError("Le ticket Paper a été refusé par le ledger");
+      }
+      return { account: wallet.classicAddress, hash: submitted.result.hash };
+    } catch (error) {
+      if (error instanceof CompetitionPaymentInvalidError) throw error;
+      throw new CompetitionPaymentInvalidError("Soumission du ticket Paper impossible");
+    } finally {
+      if (client.isConnected()) await client.disconnect();
+    }
   }
 
   async verifyEntry(

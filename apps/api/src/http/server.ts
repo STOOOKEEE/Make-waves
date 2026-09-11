@@ -43,6 +43,7 @@ import {
   parseOrder,
   parseWeeklyRewardWeek,
   parseProvisionLiveAccount,
+  parseGiveawayConsent,
   parseSignMandateCallback,
   parseUpdateAgent,
   parseUserId,
@@ -63,11 +64,14 @@ import { XamanNotConfiguredError } from "../auth/auth-service";
 import type { AdminService } from "../services/admin-service";
 import { isArenaSimulationUserId, isTechnicalTestUserId } from "../simulation/arena-ids";
 import type { FirstTradeRewardService } from "../services/first-trade-reward-service";
+import type { GiveawayService } from "../services/giveaway-service";
 import { PaperWalletUnavailableError } from "../services/paper-wallet-service";
 import type { PaperWalletAdminService } from "../services/paper-wallet-admin-service";
 import type { PortfolioManagerService } from "../services/portfolio-manager-service";
 import type { ManagedExternalWalletService } from "../services/managed-external-wallet-service";
 import {
+  AlreadyJoinedError,
+  CompetitionPaymentInvalidError,
   CompetitionPaymentUnavailableError,
   CompetitionScoringUnavailableError,
 } from "../services/errors";
@@ -117,7 +121,7 @@ export interface ServerDeps {
   readonly competitionPayments?: Pick<
     CompetitionPaymentService,
     "entryPayment" | "verifyEntry" | "winnerPayout"
-  >;
+  > & { readonly submitManagedEntry?: CompetitionPaymentService["submitManagedEntry"] };
   /** Equity Live réelle, absente tant que l'indexation PnL wallet n'est pas prête. */
   readonly getLiveCompetitionEquity?: (userId: string) => number;
   /** Carte de prix courante (sera câblée au feed de prix off-chain). */
@@ -157,15 +161,17 @@ export interface ServerDeps {
   readonly agentChatCtx?: (agentId: string, userId: string) => Promise<McpContext>;
   /** Service de badges (routes /accounts/:id/badges, /badges/:code/claim) — absent si pas d'issuer NFT. */
   readonly badgeService?: BadgeService;
-  /** Une carte/NFT par semaine active, stockée sur le wallet secondaire. */
+  /** Une carte/NFT par semaine active, stockée sur le wallet Paper principal. */
   readonly weeklyRewards?: WeeklyRewardService;
-  /** Wallet initial Mainnet + compte NFT secondaire du funnel Paper. */
+  /** Tombola : consentement X et entrée reliée à l'identité/wallet. */
+  readonly giveaway?: GiveawayService;
+  /** Wallet Paper principal Mainnet du funnel. */
   readonly firstTradeRewards?: FirstTradeRewardService;
   /** Claims explicites et garde de trading du wallet initial. */
   readonly paperWallets?: Pick<
     import("../services/paper-wallet-service").PaperWalletService,
     "ensureFunded" | "requireFunded"
-  >;
+  > & { readonly decryptSeed?: import("../services/paper-wallet-service").PaperWalletService["decryptSeed"] };
   /** Console admin (route /admin/overview) — absente si TIDE_ADMIN_TOKEN non configuré. */
   readonly admin?: {
     readonly token: string;
@@ -203,6 +209,7 @@ export interface AdminServerDeps {
   readonly paper: PaperService;
   readonly competition: CompetitionService;
   readonly competitionPayments?: NonNullable<ServerDeps["competitionPayments"]>;
+  readonly giveaway?: GiveawayService;
   readonly getPrices: () => PriceMap;
   readonly getLiveCompetitionEquity?: (userId: string) => number;
   readonly corsOrigin?: string | string[];
@@ -397,13 +404,16 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         console.error("[weekly-rewards] qualification échouée:", error);
       }
     }
-    // Appelé à chaque fill : le store rend le déblocage idempotent. Le wallet 2
-    // et le NFT ne seront créés que par le CTA de claim explicite.
+    // Appelé à chaque fill : les stores rendent les déblocages idempotents. Le
+    // wallet et les NFT ne sont créés que par une action explicite.
     if (deps.firstTradeRewards !== undefined) {
       await deps.firstTradeRewards.recordFirstTrade(userId).catch((error: unknown) => {
         console.error("[first-trade-reward] remise échouée:", error);
       });
     }
+    await deps.giveaway?.recordFirstTrade(userId).catch((error: unknown) => {
+      console.error("[giveaway] remise échouée:", error);
+    });
   };
 
   // CORS (F6) : le front (port/domaine distinct) appelle l'API en cross-origin.
@@ -702,6 +712,56 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
         entryEquity: equity,
       });
       return { competitionId: request.params.id, userId, txHash: txHash.toUpperCase() };
+    },
+  );
+
+  // Paper : le serveur signe et soumet le ticket depuis le wallet Paper
+  // principal déjà financé, puis n'enregistre l'entrée qu'après tesSUCCESS.
+  app.post<{ Params: { id: string } }>(
+    "/competitions/:id/paper-join",
+    async (request) => {
+      const payments = deps.competitionPayments;
+      const wallets = deps.paperWallets;
+      if (
+        payments?.submitManagedEntry === undefined ||
+        wallets === undefined ||
+        wallets.decryptSeed === undefined
+      ) {
+        throw new CompetitionPaymentUnavailableError();
+      }
+      const { userId } = parseUserId(request.body, "paperCompetitionJoin");
+      const competition = deps.competition.get(request.params.id);
+      if (competition.mode !== "paper") {
+        throw new CompetitionPaymentInvalidError("Cette route est réservée aux compétitions Paper");
+      }
+      if (competition.status === "ended") {
+        throw new CompetitionPaymentInvalidError("Les inscriptions sont terminées");
+      }
+      if (deps.competition.participants(request.params.id).includes(userId)) {
+        throw new AlreadyJoinedError(`Déjà inscrit: ${userId} -> ${request.params.id}`);
+      }
+      deps.paper.ensureAccount(userId);
+      const wallet = await wallets.ensureFunded(userId);
+      const submitted = await payments.submitManagedEntry(
+        await wallets.decryptSeed(wallet),
+        competition,
+      );
+      if (submitted.account !== wallet.address) {
+        throw new CompetitionPaymentInvalidError("Le ticket Paper ne vient pas du wallet attendu");
+      }
+      const txHash = submitted.hash.toUpperCase();
+      deps.competition.join(request.params.id, {
+        userId,
+        walletAddress: wallet.address,
+        paymentTxHash: txHash,
+        entryEquity: competitionEquity(request.params.id)(userId),
+      });
+      return {
+        competitionId: request.params.id,
+        userId,
+        walletAddress: wallet.address,
+        txHash,
+      };
     },
   );
 
@@ -1154,6 +1214,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     "/accounts/:userId/weekly-rewards",
     (request) => deps.weeklyRewards?.list(request.params.userId) ?? [],
   );
+  if (deps.giveaway !== undefined) {
+    const giveaway = deps.giveaway;
+    app.get<{ Params: { userId: string } }>(
+      "/accounts/:userId/giveaway",
+      (request) => giveaway.status(request.params.userId),
+    );
+    app.post(
+      "/giveaway/consent",
+      (request) => giveaway.saveConsent(parseGiveawayConsent(request.body)),
+    );
+  }
   app.get<{ Params: { userId: string } }>(
     "/accounts/:userId/paper-wallet",
     { schema: { response: { 200: PAPER_WALLET_REWARD_RESPONSE_SCHEMA } } },
@@ -1245,6 +1316,7 @@ function adminDepsFromServer(deps: ServerDeps): AdminServerDeps {
     ...(deps.getLiveCompetitionEquity !== undefined
       ? { getLiveCompetitionEquity: deps.getLiveCompetitionEquity }
       : {}),
+    ...(deps.giveaway !== undefined ? { giveaway: deps.giveaway } : {}),
   };
 }
 
@@ -1272,6 +1344,13 @@ function registerAdminRoutes(app: FastifyInstance, deps: AdminServerDeps): void 
       return { error: "unauthorized" };
     }
     return admin.service.overview(deps.getPrices());
+  });
+  app.get("/admin/giveaway", async (request, reply) => {
+    if (!hasAdminToken(request, admin.token)) {
+      reply.code(401);
+      return { error: "unauthorized" };
+    }
+    return deps.giveaway?.adminList() ?? [];
   });
   // Le log d'actions d'un agent arbitraire, sans le JWT propriétaire qu'exige
   // `/api/agent-actions` : matière des posts « Bot Diary » de la couche growth.

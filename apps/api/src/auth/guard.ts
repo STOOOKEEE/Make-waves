@@ -50,6 +50,7 @@ const PUBLIC_ROUTES: ReadonlyArray<{ method: string; url: string }> = [
   { method: "GET", url: "/admin/overview" },
   { method: "GET", url: "/admin/agent-actions" },
   { method: "GET", url: "/admin/wallet-ops/status" },
+  { method: "GET", url: "/admin/giveaway" },
   { method: "POST", url: "/admin/users/delete-inactive" },
   { method: "POST", url: "/admin/wallets/provision" },
   { method: "POST", url: "/admin/wallets/create-for-users" },
@@ -154,6 +155,9 @@ export async function authorize(
   }
   // Rejoindre une compétition : userId du corps = soi.
   if (routeUrl === "/competitions/:id/join") {
+    return ensure(body.userId === me);
+  }
+  if (routeUrl === "/competitions/:id/paper-join" || routeUrl === "/giveaway/consent") {
     return ensure(body.userId === me);
   }
   if (

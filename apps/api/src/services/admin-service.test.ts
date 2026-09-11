@@ -9,6 +9,7 @@ import type { PriceMap } from "@tide/core";
 import { ArenaSimulationService } from "../simulation/arena-simulation-service";
 import { InMemoryPaperWalletStore } from "../store/paper-wallet-store";
 import { Wallet } from "xrpl";
+import type { GiveawayParticipant } from "../store/giveaway-store";
 
 const PRICES: PriceMap = { XRP: 0.5 };
 
@@ -46,6 +47,7 @@ function mandate(agentId: string, userId: string): Mandate {
 function makeService(
   operatorUserIds: string[],
   addressesWithNfts?: (addresses: readonly string[]) => Promise<ReadonlySet<string>>,
+  giveawayParticipants?: readonly GiveawayParticipant[],
 ) {
   const accounts = new InMemoryAccountStore();
   const paper = new PaperService(undefined, accounts);
@@ -66,6 +68,9 @@ function makeService(
     ...(addressesWithNfts === undefined
       ? {}
       : { paperWalletNftInventory: { addressesWithNfts } }),
+    ...(giveawayParticipants === undefined
+      ? {}
+      : { giveaway: { adminList: async () => giveawayParticipants } }),
   });
   return { paper, agents, mandates, actions, paperWallets, paperRewardWallets, service };
 }
@@ -110,6 +115,49 @@ describe("AdminService.overview", () => {
     expect(totals.agents.total).toBe(1);
     expect(totals.agents.active).toBe(1);
     expect(totals.fundedWalletsWithNft).toBeNull();
+  });
+
+  it("déduplique Paper, externe et giveaway dans le compteur admin", async () => {
+    const externalGiveaway = Wallet.generate().classicAddress;
+    const participant = (userId: string, walletAddress: string): GiveawayParticipant => ({
+      profile: {
+        operationId: "airpods-max-2026",
+        userId,
+        walletAddress,
+        xHandle: userId.replace(/[^a-z]/gi, "").toLowerCase().slice(0, 5) || "user",
+        termsVersion: "2026-09-11",
+        acceptedAt: 1,
+      },
+      entries: [],
+    });
+    const { paper, paperWallets, service } = makeService([], undefined, [
+      participant("paper:base", "rBase"),
+      participant("paper:giveaway-only", "rGiveaway"),
+      participant(externalGiveaway, externalGiveaway),
+    ]);
+    paper.openAccount("paper:base");
+    await paperWallets.create({
+      userId: "paper:wallet-only",
+      address: "rWalletOnly",
+      encryptedSeed: "hidden",
+      masterKeyId: "v1",
+      status: "funded",
+      fundingTxHash: "FUND",
+      fundedAt: 1,
+      createdAt: 1,
+      deleteTxHash: null,
+    });
+
+    const overview = await service.overview(PRICES);
+
+    expect(new Set(overview.users.map((user) => user.userId)).size).toBe(4);
+    expect(overview.totals.users).toBe(4);
+    expect(overview.totals.userSources).toEqual({ paper: 2, external: 0, giveaway: 2 });
+    expect(
+      overview.totals.userSources.paper +
+        overview.totals.userSources.external +
+        overview.totals.userSources.giveaway,
+    ).toBe(overview.totals.users);
   });
 
   it("compte sur XRPL les wallets financés détenant au moins un NFT", async () => {

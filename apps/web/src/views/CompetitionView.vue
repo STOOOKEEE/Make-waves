@@ -3,6 +3,7 @@ import { computed, onMounted, watch } from "vue";
 import type { TideClient } from "@tide/client";
 import StatusBadge from "../components/StatusBadge.vue";
 import { useCompetitions } from "../composables/useCompetitions";
+import { useAuth } from "../composables/useAuth";
 import { useSession } from "../composables/useSession";
 import { useWallet } from "../composables/useWallet";
 import { useI18n } from "../i18n/useI18n";
@@ -11,6 +12,7 @@ const props = defineProps<{ client: TideClient; competitionId?: string }>();
 const emit = defineEmits<{ navigate: [path: string] }>();
 const competitions = useCompetitions(props.client);
 const session = useSession();
+const auth = useAuth(props.client);
 const wallet = useWallet(props.client);
 
 const { t, locale } = useI18n({
@@ -68,7 +70,7 @@ watch(() => props.competitionId, () => void load());
 
 const competition = computed(() => competitions.current.value);
 const joined = computed(
-  () => session.liveAddress.value !== "" && competitions.participants.value.includes(session.liveAddress.value),
+  () => session.userId.value !== "" && competitions.participants.value.includes(session.userId.value),
 );
 const name = computed(() => {
   const value = competition.value;
@@ -97,6 +99,13 @@ function short(value: string): string {
 async function enter(): Promise<void> {
   const value = competition.value;
   if (value === null || joined.value || value.status === "ended") return;
+  if (value.mode === "paper" && !session.walletConnected.value) {
+    const userId = session.userId.value.trim() || await auth.ensurePaperSession();
+    session.setPaperUser(userId);
+    await props.client.joinPaperCompetition(value.id, userId);
+    await load();
+    return;
+  }
   if (!session.walletConnected.value) {
     wallet.connect();
     return;
@@ -109,6 +118,7 @@ const buttonLabel = computed(() => {
   const value = competition.value;
   if (joined.value) return t("joined");
   if (value?.status === "ended") return t("ended");
+  if (value?.mode === "paper" && !session.walletConnected.value) return t("join");
   if (!session.walletConnected.value) return t("connect");
   return t("join");
 });

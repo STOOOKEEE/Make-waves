@@ -95,20 +95,19 @@ const { t } = useI18n({
     virtualBalance: "Virtual balance",
     custodialWallet: "Custodial wallet",
     paperWalletAddress: "Paper wallet public address",
-    rewardWalletAddress: "NFT wallet public address",
     copyAddress: "Copy address",
     addressCopied: "Copied",
     firstTradeNft: "First Trade NFT",
-    claimRewardAccount: "Reveal account + NFT",
-    claimingRewardAccount: "Creating account…",
-    firstTradeNftReady: "First Paper trade completed · hidden account unlocked",
+    claimRewardAccount: "Claim First Trade NFT",
+    claimingRewardAccount: "Claiming NFT…",
+    firstTradeNftReady: "First Paper trade completed · NFT ready on this wallet",
     mysteryLocked: "Mystery reward locked",
     paperSession: "Paper session",
     realBadge: "REAL FUNDS",
     connectToTrade: "Connect wallet",
     walletChoiceKicker: "XRPL MAINNET · CHOOSE YOUR PATH",
     walletChoiceTitle: "Connect a wallet to unlock Paper",
-    walletChoiceBody: "Create a funded Paper wallet, or connect your own wallet. Your choice controls where the First Trade NFT can be claimed.",
+    walletChoiceBody: "Create one funded Paper wallet, or connect your own wallet. The First Trade NFT is claimed on that same wallet.",
     claimFirstTradeNft: "Claim First Trade NFT",
     claimingFirstTradeNft: "Claiming NFT…",
     paperHint: "Simulated — no real funds",
@@ -198,20 +197,19 @@ const { t } = useI18n({
     virtualBalance: "Solde virtuel",
     custodialWallet: "Wallet custodial",
     paperWalletAddress: "Adresse publique du wallet Paper",
-    rewardWalletAddress: "Adresse publique du wallet NFT",
     copyAddress: "Copier l'adresse",
     addressCopied: "Copiée",
     firstTradeNft: "NFT First Trade",
-    claimRewardAccount: "Révéler le compte + NFT",
-    claimingRewardAccount: "Création du compte…",
-    firstTradeNftReady: "Premier trade Paper validé · compte caché débloqué",
+    claimRewardAccount: "Réclamer le NFT First Trade",
+    claimingRewardAccount: "Claim du NFT…",
+    firstTradeNftReady: "Premier trade Paper validé · NFT prêt sur ce wallet",
     mysteryLocked: "Récompense mystère verrouillée",
     paperSession: "Session Paper",
     realBadge: "ARGENT RÉEL",
     connectToTrade: "Connecter le wallet",
     walletChoiceKicker: "XRPL MAINNET · CHOISIS TON PARCOURS",
     walletChoiceTitle: "Connecte un wallet pour débloquer le Paper",
-    walletChoiceBody: "Crée un wallet Paper financé, ou connecte ton propre wallet. Ton choix détermine où ton NFT First Trade pourra être réclamé.",
+    walletChoiceBody: "Crée un seul wallet Paper financé, ou connecte ton propre wallet. Le NFT First Trade sera réclamé sur ce même wallet.",
     claimFirstTradeNft: "Réclamer le NFT First Trade",
     claimingFirstTradeNft: "Claim du NFT…",
     paperHint: "Simulé — aucun fonds réel",
@@ -367,10 +365,7 @@ function paperIdentityLabel(): string {
     return id === "" ? "" : `${t("paperSession")} ${shorten(id)}`;
   }
   const network = reward.network === null ? "XRPL" : reward.network;
-  const rewardAccount = reward.rewardWalletAddress;
-  return rewardAccount === null
-    ? `${t("custodialWallet")} ${network} ${shorten(reward.walletAddress)}`
-    : `${t("custodialWallet")} ${shorten(reward.walletAddress)} → NFT ${shorten(rewardAccount)} ✓`;
+  return `${t("custodialWallet")} ${network} ${shorten(reward.walletAddress)}`;
 }
 /** Nom lisible du wallet connecté. */
 function walletKind(): string {
@@ -2054,10 +2049,6 @@ onUnmounted(() => {
         class="paper-wallet-info__copy"
         @click="copyPaperAddress(paper.walletReward.value.walletAddress)"
       >{{ copiedPaperAddress ? t('addressCopied') : t('copyAddress') }}</button>
-      <div v-if="paper.walletReward.value.rewardWalletAddress" class="paper-wallet-info__item paper-wallet-info__item--reward">
-        <span class="paper-wallet-info__label">{{ t('rewardWalletAddress') }}</span>
-        <code>{{ paper.walletReward.value.rewardWalletAddress }}</code>
-      </div>
     </section>
 
     <div v-if="starterWalletClaimRequired" class="wallet-claim-gate">

@@ -1,4 +1,4 @@
-import type { PriceMap } from "@tide/core";
+import type { LeaderboardEntry, PriceMap } from "@tide/core";
 import { isValidClassicAddress } from "xrpl";
 import type { PaperService } from "./paper-service";
 import type { Agent, AgentStatus, AgentType, AgentStore } from "../store/agent-store";
@@ -11,6 +11,7 @@ import {
 } from "../simulation/arena-ids";
 import type { ArenaSimulationStatus, ArenaSimulationStatusReader } from "../simulation/arena-simulation-service";
 import type { PaperWallet, PaperWalletStore } from "../store/paper-wallet-store";
+import type { GiveawayService } from "./giveaway-service";
 
 /** Origine d'un compte paper. Précédence : operator > agent > frontend. */
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -49,7 +50,7 @@ export type WalletKind = "agent" | "paper" | "external" | "prize_pool";
 export interface AdminWalletRow {
   readonly address: string | null;
   readonly kind: WalletKind;
-  /** Wallet 2 du funnel Paper, celui qui porte les NFT. */
+  /** Rôle legacy ; les nouveaux parcours utilisent le wallet principal. */
   readonly walletRole?: "reward";
   readonly agentId: string | null;
   readonly userId: string | null;
@@ -81,6 +82,12 @@ export interface AdminTotals {
   readonly bySegment: AdminSegmentTotals;
   readonly agents: AdminAgentTotals;
   readonly wallets: number;
+  /** Sources disjointes ; leur somme est `users`. */
+  readonly userSources: {
+    readonly paper: number;
+    readonly external: number;
+    readonly giveaway: number;
+  };
   /** Wallets Paper financés détenant actuellement au moins un NFT sur Mainnet. */
   readonly fundedWalletsWithNft: number | null;
 }
@@ -110,6 +117,7 @@ export interface AdminServiceDeps {
   readonly operatorUserIds: ReadonlySet<string>;
   readonly paperWallets?: Pick<PaperWalletStore, "list" | "get" | "deleteUnfunded">;
   readonly paperRewardWallets?: Pick<PaperWalletStore, "list">;
+  readonly giveaway?: Pick<GiveawayService, "adminList">;
   readonly paperWalletNftInventory?: {
     addressesWithNfts(addresses: readonly string[]): Promise<ReadonlySet<string>>;
   };
@@ -131,13 +139,39 @@ export class AdminService {
     const agents = await this.deps.agents.list();
     const agentOwners = new Set(agents.map((a) => a.userId));
 
-    const users = this.buildUsers(prices, agentOwners);
+    const [paperWallets, giveawayParticipants] = await Promise.all([
+      this.deps.paperWallets?.list() ?? [],
+      this.deps.giveaway?.adminList() ?? [],
+    ]);
+    const baseUsers = this.deps.paper.leaderboard(
+      prices,
+      (userId) => !isArenaSimulationUserId(userId),
+    );
+    const giveawayUserIds = giveawayParticipants.map((participant) => participant.profile.userId);
+    const users = this.buildUsers(
+      baseUsers,
+      agentOwners,
+      [...paperWallets.map((wallet) => wallet.userId), ...giveawayUserIds],
+    );
     const agentRows = await this.buildAgents(agents);
-    const wallets = await this.buildWallets(agents, users);
+    const wallets = await this.buildWallets(agents, users, paperWallets);
     const fundedWalletsWithNft = await this.countFundedWalletsWithNft(wallets);
+    const baseUserIds = new Set([
+      ...baseUsers.map((user) => user.userId),
+      ...paperWallets.map((wallet) => wallet.userId),
+    ]);
+    const giveawayOnlyUserIds = new Set(
+      giveawayUserIds.filter((userId) => !baseUserIds.has(userId)),
+    );
 
     return {
-      totals: this.buildTotals(users, agents, wallets, fundedWalletsWithNft),
+      totals: this.buildTotals(
+        users,
+        agents,
+        wallets,
+        fundedWalletsWithNft,
+        giveawayOnlyUserIds,
+      ),
       users,
       agents: agentRows,
       wallets,
@@ -223,12 +257,13 @@ export class AdminService {
   }
 
   private buildUsers(
-    prices: PriceMap,
+    baseUsers: readonly LeaderboardEntry[],
     agentOwners: ReadonlySet<string>,
+    extraUserIds: readonly string[],
   ): AdminUserRow[] {
     // La console opérateur compte les wallets gérés comme participants agents.
     // Seuls les profils synthétiques de l'arène de charge restent exclus.
-    return this.deps.paper.leaderboard(prices, (userId) => !isArenaSimulationUserId(userId)).map((entry) => ({
+    const users = baseUsers.map((entry) => ({
       userId: entry.userId,
       segment: this.classify(entry.userId, agentOwners),
       equity: entry.equity,
@@ -237,6 +272,21 @@ export class AdminService {
       positions: this.deps.paper.positionsOf(entry.userId).length,
       rank: entry.rank,
     }));
+    const known = new Set(users.map((user) => user.userId));
+    for (const userId of new Set(extraUserIds)) {
+      if (known.has(userId) || isTechnicalTestUserId(userId)) continue;
+      users.push({
+        userId,
+        segment: this.classify(userId, agentOwners),
+        equity: 0,
+        pnl: 0,
+        orders: 0,
+        positions: 0,
+        rank: 0,
+      });
+      known.add(userId);
+    }
+    return users;
   }
 
   private async buildAgents(agents: readonly Agent[]): Promise<AdminAgentRow[]> {
@@ -273,6 +323,7 @@ export class AdminService {
   private async buildWallets(
     agents: readonly Agent[],
     users: readonly AdminUserRow[],
+    paperWallets: readonly PaperWallet[],
   ): Promise<AdminWalletRow[]> {
     const wallets: AdminWalletRow[] = agents
       .filter((a) => a.hasLiveAccount)
@@ -289,10 +340,7 @@ export class AdminService {
         createdAt: null,
         deleteTxHash: null,
       }));
-    const [paperWallets, rewardWallets] = await Promise.all([
-      this.deps.paperWallets?.list() ?? [],
-      this.deps.paperRewardWallets?.list() ?? [],
-    ]);
+    const rewardWallets = await (this.deps.paperRewardWallets?.list() ?? []);
     const paperWalletByUser = new Map(paperWallets.map((wallet) => [wallet.userId, wallet]));
     const userIds = new Set(users.map((user) => user.userId));
     wallets.push(...users.map((user) => {
@@ -376,6 +424,7 @@ export class AdminService {
     agents: readonly Agent[],
     wallets: readonly AdminWalletRow[],
     fundedWalletsWithNft: number | null,
+    giveawayOnlyUserIds: ReadonlySet<string>,
   ): AdminTotals {
     const bySegment: AdminSegmentTotals = {
       operator: users.filter((u) => u.segment === "operator").length,
@@ -392,6 +441,11 @@ export class AdminService {
         stopped: agents.filter((a) => a.status === "stopped").length,
       },
       wallets: wallets.filter((wallet) => wallet.kind !== "paper" || wallet.address !== null).length,
+      userSources: {
+        paper: users.filter((user) => !isExternalWalletUserId(user.userId) && !giveawayOnlyUserIds.has(user.userId)).length,
+        external: users.filter((user) => isExternalWalletUserId(user.userId) && !giveawayOnlyUserIds.has(user.userId)).length,
+        giveaway: [...giveawayOnlyUserIds].filter((userId) => users.some((user) => user.userId === userId)).length,
+      },
       fundedWalletsWithNft,
     };
   }

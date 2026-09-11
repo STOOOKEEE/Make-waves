@@ -25,6 +25,8 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   WeeklyRewardNotEligibleError: 400,
   FirstTradeRewardNotEligibleError: 400,
   CompetitionPaymentInvalidError: 400,
+  GiveawayInvalidHandleError: 400,
+  GiveawayTermsVersionError: 400,
   // 404 — ressource absente
   AccountNotFoundError: 404,
   CompetitionNotFoundError: 404,
@@ -49,6 +51,9 @@ const STATUS_BY_ERROR_NAME: Readonly<Record<string, number>> = {
   WeeklyRewardClaimInProgressError: 409,
   PaperWalletNotClaimedError: 409,
   PaperRewardWalletNotClaimedError: 409,
+  GiveawayClosedError: 409,
+  GiveawayWalletRequiredError: 409,
+  GiveawayIdentityConflictError: 409,
   // 503 — dépendance non configurée
   BadgeClaimUnavailableError: 503,
   WeeklyRewardUnavailableError: 503,

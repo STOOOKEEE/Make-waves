@@ -4,6 +4,8 @@ import type { NftIssuer } from "@tide/xrpl";
 import { buildServer } from "../src/http/server";
 import { PaperService } from "../src/services/paper-service";
 import { CompetitionService } from "../src/services/competition-service";
+import { CompetitionPaymentService } from "../src/services/competition-payment-service";
+import type { CompetitionLedgerClient } from "../src/services/competition-payment-service";
 import { PaperWalletService } from "../src/services/paper-wallet-service";
 import { FirstTradeRewardService } from "../src/services/first-trade-reward-service";
 import { InMemoryPaperWalletStore } from "../src/store/paper-wallet-store";
@@ -77,8 +79,37 @@ class FlowIssuer implements NftIssuer {
   }
 }
 
-describe("funnel Paper à deux wallets", () => {
-  it("impose claim 1 → trade → claim 2, avec financement wallet 1 → wallet 2", async () => {
+class CompetitionLedger implements CompetitionLedgerClient {
+  private connected = false;
+
+  async connect(): Promise<void> {
+    this.connected = true;
+  }
+
+  async disconnect(): Promise<void> {
+    this.connected = false;
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  async autofill(transaction: Parameters<CompetitionLedgerClient["autofill"]>[0]) {
+    return { ...transaction, Fee: "12", Sequence: 1, LastLedgerSequence: 100 };
+  }
+
+  async submitAndWait() {
+    return {
+      result: {
+        hash: "C".repeat(64),
+        meta: { TransactionResult: "tesSUCCESS" },
+      },
+    };
+  }
+}
+
+describe("funnel Paper à un wallet", () => {
+  it("impose claim 1 → trade → claim NFT sur le wallet principal", async () => {
     const paper = new PaperService();
     const gateway = new FlowGateway();
     const issuer = new FlowIssuer();
@@ -134,9 +165,9 @@ describe("funnel Paper à deux wallets", () => {
     expect(firstClaim.json()).toMatchObject({
       walletStatus: "funded",
       fundingTxHash: "FUNDER_TO_WALLET_1",
-      rewardWalletStatus: "not_created",
+      rewardWalletStatus: "funded",
     });
-    expect(gateway.operatorFunding[0]?.amount).toBe("2220000");
+    expect(gateway.operatorFunding[0]?.amount).toBe("1210000");
     const storedStarter = await starterStore.get(USER);
     expect(storedStarter).not.toBeNull();
     const starterSeed = await wallets.decryptSeed(storedStarter!);
@@ -165,7 +196,7 @@ describe("funnel Paper à deux wallets", () => {
     const unlocked = await app.inject({ method: "GET", url: `/accounts/${USER}/paper-wallet` });
     expect(unlocked.json()).toMatchObject({
       rewardStatus: "eligible",
-      rewardWalletStatus: "not_created",
+      rewardWalletStatus: "funded",
     });
     expect(gateway.linkedFunding).toEqual([]);
     expect(issuer.destinations).toEqual([]);
@@ -179,43 +210,27 @@ describe("funnel Paper à deux wallets", () => {
       walletAddress: string;
       rewardWalletAddress: string;
       rewardFundingSourceAddress: string;
-      rewardFundingTxHash: string;
+      rewardFundingTxHash: string | null;
       rewardStatus: string;
     }>();
     expect(result.rewardStatus).toBe("claimed");
     expect(result.rewardFundingSourceAddress).toBe(result.walletAddress);
-    expect(result.rewardFundingTxHash).toBe("WALLET_1_TO_WALLET_2");
-    expect(gateway.linkedFunding).toEqual([
-      {
-        source: result.walletAddress,
-        destination: result.rewardWalletAddress,
-        amount: "1210000",
-      },
-    ]);
-    expect(issuer.destinations).toEqual([result.rewardWalletAddress]);
-    expect(gateway.accepted[0]?.recipient).toBe(result.rewardWalletAddress);
-    // Wallet 1 fermé par AccountDelete : solde restant → wallet 2, fee 0,2 XRP.
-    expect(gateway.deletions).toEqual([
-      {
-        account: result.walletAddress,
-        destination: result.rewardWalletAddress,
-        fee: "200000",
-      },
-    ]);
-    const closedStarter = await starterStore.get(USER);
-    expect(closedStarter?.status).toBe("deleted");
-    expect(closedStarter?.deleteTxHash).toBe("WALLET_1_DELETED");
-    expect(closedStarter?.encryptedSeed).toBe("");
-    await expect(wallets.decryptSeed(closedStarter!)).rejects.toThrow(/Seed.*effacée/);
+    expect(result.rewardFundingTxHash).toBeNull();
+    expect(result.rewardWalletAddress).toBe(result.walletAddress);
+    expect(issuer.destinations).toEqual([result.walletAddress]);
+    expect(gateway.accepted[0]?.recipient).toBe(result.walletAddress);
+    expect(gateway.linkedFunding).toEqual([]);
+    expect(gateway.deletions).toEqual([]);
+    const fundedStarter = await starterStore.get(USER);
+    expect(fundedStarter?.status).toBe("funded");
+    expect(fundedStarter?.deleteTxHash).toBeNull();
+    await expect(wallets.decryptSeed(fundedStarter!)).resolves.toMatch(/^s/);
     expect(secondClaim.json()).toMatchObject({
-      walletStatus: "deleted",
-      walletDeleteTxHash: "WALLET_1_DELETED",
+      walletStatus: "funded",
+      walletDeleteTxHash: null,
     });
     const storedReward = await rewardStore.get(USER);
-    expect(storedReward).not.toBeNull();
-    const rewardSeed = await wallets.decryptSeed(storedReward!);
-    expect(secondClaim.body).not.toContain(rewardSeed);
-    expect(secondClaim.body).not.toContain(storedReward!.encryptedSeed);
+    expect(storedReward).toBeNull();
     expect(secondClaim.body).not.toMatch(/encryptedSeed|masterKeyId|"seed"/i);
 
     const duplicate = await app.inject({
@@ -224,9 +239,65 @@ describe("funnel Paper à deux wallets", () => {
     });
     expect(duplicate.statusCode).toBe(200);
     expect(gateway.operatorFunding).toHaveLength(1);
-    expect(gateway.linkedFunding).toHaveLength(1);
+    expect(gateway.linkedFunding).toHaveLength(0);
     expect(issuer.destinations).toHaveLength(1);
     expect(gateway.accepted).toHaveLength(1);
-    expect(gateway.deletions).toHaveLength(1);
+    expect(gateway.deletions).toHaveLength(0);
+  });
+
+  it("finance puis paie l'entrée Paper depuis le même wallet", async () => {
+    const paper = new PaperService();
+    const gateway = new FlowGateway();
+    const wallets = new PaperWalletService({
+      store: new InMemoryPaperWalletStore(),
+      rewardStore: new InMemoryPaperWalletStore(),
+      gateway,
+      masterKeyHex: MASTER,
+      masterKeyId: "paper-mainnet-v2",
+    });
+    const ledger = new CompetitionLedger();
+    const payments = new CompetitionPaymentService({
+      serverUrl: "ws://unused",
+      prizePoolAddress: Wallet.generate().classicAddress,
+      sourceTag: 7777,
+      clientFactory: () => ledger,
+    });
+    const competition = new CompetitionService(undefined, () => 1_500, () => true);
+    competition.create({
+      id: "paper-cup",
+      nameEn: "Paper cup",
+      nameFr: "Coupe Paper",
+      descriptionEn: "Test",
+      descriptionFr: "Test",
+      mode: "paper",
+      buyIn: 0.01,
+      rakeRatio: 0,
+      payoutWeights: [1],
+      startsAt: 1_000,
+      endsAt: 2_000,
+    });
+    const app = buildServer({
+      paper,
+      competition,
+      competitionPayments: payments,
+      getPrices: () => ({ XRP: 0.5 }),
+      paperWallets: wallets,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/competitions/paper-cup/paper-join",
+      payload: { userId: "paper:competition-user" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const result = response.json<{ walletAddress: string; txHash: string }>();
+    expect(result.txHash).toBe("C".repeat(64));
+    expect(result.walletAddress).toMatch(/^r/);
+    expect(gateway.operatorFunding).toEqual([
+      { destination: result.walletAddress, amount: "1210000" },
+    ]);
+    expect(competition.participants("paper-cup")).toEqual(["paper:competition-user"]);
+    expect(ledger.isConnected()).toBe(false);
   });
 });

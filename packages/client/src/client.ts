@@ -329,6 +329,32 @@ export interface PaperWalletRewardDto {
   readonly claimTxHash: string | null;
 }
 
+export type GiveawayRuleId = "wallet" | "first_trade" | "referral";
+
+export interface GiveawayRuleStatusDto {
+  readonly id: GiveawayRuleId;
+  readonly weight: number;
+  readonly awardedAt: number | null;
+}
+
+export interface GiveawayStatusDto {
+  readonly operationId: string;
+  readonly userId: string;
+  readonly walletAddress: string | null;
+  readonly xHandle: string | null;
+  readonly termsVersion: string | null;
+  readonly acceptedAt: number | null;
+  readonly entries: number;
+  readonly rules: readonly GiveawayRuleStatusDto[];
+}
+
+export interface PaperCompetitionJoinDto {
+  readonly competitionId: string;
+  readonly userId: string;
+  readonly walletAddress: string;
+  readonly txHash: string;
+}
+
 // --- Admin (console opérateur) ---
 
 export type AccountSegment = "operator" | "agent" | "frontend";
@@ -574,6 +600,7 @@ export interface AdminOverviewDto {
     readonly bySegment: { readonly operator: number; readonly frontend: number; readonly agent: number };
     readonly agents: { readonly total: number; readonly active: number; readonly paused: number; readonly stopped: number };
     readonly wallets: number;
+    readonly userSources: { readonly paper: number; readonly external: number; readonly giveaway: number };
     readonly fundedWalletsWithNft: number | null;
   };
   readonly users: readonly AdminUserDto[];
@@ -803,6 +830,21 @@ export class TideClient {
         path: path("competitions", competitionId, "join"),
         method: "POST",
         body: { userId, txHash },
+      },
+      200,
+    );
+  }
+
+  /** Finance et inscrit un compte Paper depuis son wallet custodial principal. */
+  async joinPaperCompetition(
+    competitionId: string,
+    userId: string,
+  ): Promise<PaperCompetitionJoinDto> {
+    return this.call(
+      {
+        path: path("competitions", competitionId, "paper-join"),
+        method: "POST",
+        body: { userId },
       },
       200,
     );
@@ -1123,6 +1165,28 @@ export class TideClient {
     );
   }
 
+  async giveawayStatus(userId: string): Promise<GiveawayStatusDto> {
+    return this.call(
+      { path: path("accounts", userId, "giveaway"), method: "GET" },
+      200,
+    );
+  }
+
+  async saveGiveawayConsent(
+    userId: string,
+    termsVersion: string,
+    xHandle: string,
+  ): Promise<GiveawayStatusDto> {
+    return this.call(
+      {
+        path: "/giveaway/consent",
+        method: "POST",
+        body: { userId, termsVersion, xHandle },
+      },
+      200,
+    );
+  }
+
   /** Claim explicite du premier compte XRPL, financé par Tide. */
   async claimPaperWallet(userId: string): Promise<PaperWalletRewardDto> {
     return this.call(
@@ -1131,7 +1195,7 @@ export class TideClient {
     );
   }
 
-  /** Claim du second compte + NFT, débloqué par le premier trade Paper. */
+  /** Compatibilité API : claim du NFT First Trade sur le wallet Paper principal. */
   async claimPaperRewardWallet(userId: string): Promise<PaperWalletRewardDto> {
     return this.call(
       { path: path("accounts", userId, "paper-wallet", "reward", "claim"), method: "POST" },

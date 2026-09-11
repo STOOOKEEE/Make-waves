@@ -1,5 +1,5 @@
 import { computed, ref, type ComputedRef, type Ref } from "vue";
-import type { BadgeDto } from "@tide/client";
+import type { BadgeDto, GiveawayStatusDto } from "@tide/client";
 import {
   FIRST_TRADE_BADGE_CODE,
   GIVEAWAY_CLOSES_AT,
@@ -11,11 +11,8 @@ import { errorMessage } from "./messages";
  * État de participation d'un visiteur à la tombola.
  *
  * C'est la SEULE couture entre la page et les données : `GiveawayView` ne parle
- * jamais au client directement. Aujourd'hui ce composable recompose ce que le
- * produit sait déjà (wallet XRPL connecté + mérite du badge `first_trade`) ;
- * quand la route serveur existera (cf.
- * docs/superpowers/specs/2026-09-09-giveaway-entries-design.md) il suffira de
- * remplacer la source ici, sans toucher à la vue.
+ * jamais au client directement. Le serveur est prioritaire ; le calcul par
+ * badges reste un repli pour les clients/test doubles plus anciens.
  */
 
 /** Identifiant d'une règle d'entrée. */
@@ -38,6 +35,8 @@ export interface GiveawayRule {
 /** Sous-ensemble du client utilisé ici (implémenté par `TideClient`). */
 export interface GiveawayClient {
   badges(userId: string): Promise<readonly BadgeDto[]>;
+  giveawayStatus?(userId: string): Promise<GiveawayStatusDto>;
+  saveGiveawayConsent?(userId: string, termsVersion: string, xHandle: string): Promise<GiveawayStatusDto>;
 }
 
 export interface GiveawayApi {
@@ -48,13 +47,20 @@ export interface GiveawayApi {
   readonly closed: ComputedRef<boolean>;
   readonly loading: Ref<boolean>;
   readonly error: Ref<string>;
+  readonly walletAddress: Ref<string | null>;
+  readonly xHandle: Ref<string>;
+  readonly saving: Ref<boolean>;
   load(userId: string, hasWallet: boolean): Promise<void>;
+  save(userId: string, termsVersion: string, xHandle: string): Promise<void>;
 }
 
 export function useGiveaway(client: GiveawayClient): GiveawayApi {
   const hasWallet = ref(false);
   const hasFirstTrade = ref(false);
+  const walletAddress = ref<string | null>(null);
+  const xHandle = ref("");
   const loading = ref(false);
+  const saving = ref(false);
   const error = ref("");
   const now = ref(Date.now());
 
@@ -71,8 +77,8 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
       done: hasFirstTrade.value,
       pending: false,
     },
-    // Le parrainage a besoin d'un code et d'un compteur côté serveur : il est
-    // annoncé, jamais compté, tant que cette route n'existe pas.
+    // Le parrainage reste annoncé mais non comptabilisé tant que son mécanisme
+    // n'est pas ouvert.
     {
       id: "referral",
       weight: GIVEAWAY_WEIGHTS.referral,
@@ -92,6 +98,15 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
   // de laisser la dernière réponse arrivée gagner.
   let generation = 0;
 
+  function applyStatus(status: GiveawayStatusDto): void {
+    walletAddress.value = status.walletAddress;
+    xHandle.value = status.xHandle ?? "";
+    hasWallet.value = status.rules.some((rule) => rule.id === "wallet" && rule.awardedAt !== null);
+    hasFirstTrade.value = status.rules.some(
+      (rule) => rule.id === "first_trade" && rule.awardedAt !== null,
+    );
+  }
+
   /**
    * `walletConnected` vient de `useSession` : sur Tide, un compte EST un wallet
    * XRPL signé (Xaman ou GemWallet). Il n'y a pas d'inscription par e-mail, et
@@ -101,6 +116,8 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
     const current = (generation += 1);
     now.value = Date.now();
     hasWallet.value = walletConnected;
+    walletAddress.value = null;
+    xHandle.value = "";
     if (userId.trim() === "") {
       hasFirstTrade.value = false;
       return;
@@ -108,8 +125,15 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
     loading.value = true;
     error.value = "";
     try {
+      if (client.giveawayStatus !== undefined) {
+        const status = await client.giveawayStatus(userId);
+        if (current !== generation) return;
+        applyStatus(status);
+        return;
+      }
       const badges = await client.badges(userId);
       if (current !== generation) return;
+      walletAddress.value = walletConnected ? userId : null;
       hasFirstTrade.value = badges.some(
         (badge) => badge.code === FIRST_TRADE_BADGE_CODE && badge.earned,
       );
@@ -118,11 +142,37 @@ export function useGiveaway(client: GiveawayClient): GiveawayApi {
       // Les badges ne sont montés que si un issuer NFT est configuré : sans eux
       // la page reste utilisable, la ligne « premier trade » est juste vide.
       hasFirstTrade.value = false;
+      walletAddress.value = null;
       error.value = errorMessage(e);
     } finally {
       if (current === generation) loading.value = false;
     }
   }
 
-  return { rules, entries, closed, loading, error, load };
+  async function save(userId: string, termsVersion: string, handle: string): Promise<void> {
+    if (client.saveGiveawayConsent === undefined) return;
+    saving.value = true;
+    error.value = "";
+    try {
+      applyStatus(await client.saveGiveawayConsent(userId, termsVersion, handle));
+    } catch (e) {
+      error.value = errorMessage(e);
+      throw e;
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  return {
+    rules,
+    entries,
+    closed,
+    loading,
+    error,
+    walletAddress,
+    xHandle,
+    saving,
+    load,
+    save,
+  };
 }

@@ -61,7 +61,7 @@ const BADGES = [
   { code: "ten_trades", label: "Ten Trades" },
   { code: "first_competition", label: "First Competition" },
 ] as const;
-const PAPER_WALLET_FUNDING_XRP = 2.22;
+const PAPER_WALLET_FUNDING_XRP = 1.21;
 const paperWallets = computed<AdminWalletDto[]>(() => {
   if (overview.value === null) return [];
   const stored = overview.value.wallets.filter((wallet) =>
@@ -177,7 +177,7 @@ const allRowsSelected = computed(() =>
 const someRowsSelected = computed(() => selectedUserIds.value.length > 0 && !allRowsSelected.value);
 const bulkSetupLabel = computed(() => {
   if (bulkSetupStep.value === "workflow") return "Workflow Paper en cours…";
-  return `Créer + financer + wallet 2 + NFT pour ${String(selectedSetupIds.value.length)}`;
+  return `Créer + financer + NFT sur le wallet principal pour ${String(selectedSetupIds.value.length)}`;
 });
 const walletNetwork = computed<"mainnet">(() => "mainnet");
 const deleteConfirmation = computed(
@@ -243,7 +243,7 @@ function statusLabel(status: AdminWalletDto["status"]): string {
     not_created: "Non créé",
     pending_funding: "Créé · non financé",
     funding_in_progress: "Funding en cours",
-    funded: "Financé · 2,22 XRP",
+    funded: "Financé · 1,21 XRP",
     funding_failed: "Funding à vérifier",
     reclaimed: "Supprimé · récupéré",
     deleted: "Fermé · solde renvoyé",
@@ -321,10 +321,8 @@ async function setupSelectedWallets(): Promise<void> {
   const maximumXrp = fundIds.length * PAPER_WALLET_FUNDING_XRP;
   const confirmed = window.confirm(
     `Traiter ${String(userIds.length)} utilisateur(s) sélectionné(s) sur Mainnet ?\n\n` +
-    `• Créer/financer ${String(fundIds.length)} wallet(s) 1, maximum ${maximumXrp.toFixed(2)} XRP\n` +
-    `• Créer/financer le wallet 2 depuis le wallet 1\n` +
-    `• Mint + envoyer le NFT ${badgeCode} au wallet 2\n` +
-    `• Fermer le wallet 1 et effacer sa seed`,
+    `• Créer/financer ${String(fundIds.length)} wallet(s) principal(aux), maximum ${maximumXrp.toFixed(2)} XRP\n` +
+    `• Mint + envoyer le NFT ${badgeCode} sur ce même wallet`,
   );
   if (!confirmed) return;
 
@@ -451,6 +449,7 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
           <span class="card__label">Users actifs</span>
           <strong class="card__value">{{ overview.totals.users }}</strong>
           <ul class="segments">
+            <li>Paper : {{ overview.totals.userSources.paper }} · externes : {{ overview.totals.userSources.external }} · giveaway uniquement : {{ overview.totals.userSources.giveaway }}</li>
             <li>Via le frontend : {{ frontendActiveUsers }} ({{ pct(frontendActiveUsers, overview.totals.users) }})</li>
             <li>Agents IA : {{ overview.totals.bySegment.agent }} ({{ pct(overview.totals.bySegment.agent, overview.totals.users) }})</li>
           </ul>
@@ -460,8 +459,8 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
           <span class="card__label">Wallets Paper custodiaux</span>
           <strong class="card__value">{{ fundedPaperWallets }}</strong>
           <ul class="segments">
-            <li>Wallet 1 : {{ createdPaperWallets.length }} enregistrés · {{ fundedPaperWallets }} actifs · {{ pendingPaperWallets }} en attente · {{ closedPaperWallets }} fermés / récupérés</li>
-            <li>Wallet 2 : {{ rewardWallets.length }} créés · {{ closedRewardWallets }} fermés / récupérés</li>
+            <li>Wallet principal : {{ createdPaperWallets.length }} enregistrés · {{ fundedPaperWallets }} actifs · {{ pendingPaperWallets }} en attente · {{ closedPaperWallets }} fermés / récupérés</li>
+            <li v-if="rewardWallets.length > 0">Anciennes lignes wallet 2 : {{ rewardWallets.length }} · {{ closedRewardWallets }} fermées / récupérées</li>
           </ul>
         </div>
 
@@ -500,7 +499,7 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
         <div class="wallet-manager__head">
           <div>
             <h2>Participants & wallets Mainnet</h2>
-            <p>Les wallets Paper custodiaux sont séparés des wallets externes. Chaque ligne Paper montre le wallet 1 et, lorsqu’il existe, le wallet 2 qui porte le NFT.</p>
+            <p>Les wallets Paper custodiaux sont séparés des wallets externes. Chaque nouvelle ligne utilise un seul wallet principal pour le funding, les trades et les NFT.</p>
           </div>
           <strong>{{ selectedUserIds.length }} sélectionné(s)</strong>
         </div>
@@ -519,7 +518,7 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
           <button type="button" class="setup" :disabled="loading || bulkSetupRunning || walletJob?.enabled !== true || selectedSetupIds.length === 0" @click="setupSelectedWallets">
             {{ bulkSetupLabel }}
           </button>
-          <span class="hint">Workflow complet : wallet 1 → wallet 2 → NFT → AccountDelete du wallet 1. Les lignes cochées uniquement.</span>
+          <span class="hint">Workflow complet : créer/financer le wallet principal → NFT sur ce même wallet. Les lignes cochées uniquement.</span>
         </div>
 
         <div class="wallet-manager__toolbar wallet-manager__toolbar--advanced">
@@ -547,7 +546,7 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
             <thead>
               <tr>
                 <th><input type="checkbox" :checked="allRowsSelected" :indeterminate="someRowsSelected" aria-label="Sélectionner tous les wallets" @change="updateAllRows" /></th>
-                <th>Utilisateur</th><th>Activité</th><th>Wallet connecté</th><th>Wallet 1 Tide</th><th>Wallet 2 / NFT</th><th>Funding Tide</th><th>Transaction</th><th>Actions</th>
+                <th>Utilisateur</th><th>Activité</th><th>Wallet connecté</th><th>Wallet principal Tide</th><th>Ancien wallet 2</th><th>Funding Tide</th><th>Transaction</th><th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -592,8 +591,8 @@ function managedBadgeLabel(status: "unclaimed" | "offer_pending" | "claimed"): s
                   <span v-else>—</span>
                 </td>
                 <td class="row-actions">
-                  <button type="button" :disabled="loading || walletJob?.enabled !== true || (!walletIsFunded(row.wallet) && !walletIsFunded(row.rewardWallet)) || row.wallet.userId === null" @click="row.wallet.userId !== null && grantNft(row.wallet.userId, batchBadgeCode)">NFT sur wallet 2</button>
-                  <button type="button" class="danger" :disabled="walletJob?.enabled !== true || (!walletIsFunded(row.wallet) && !walletIsFunded(row.rewardWallet)) || loading || walletJob?.state === 'running' || row.wallet.userId === null" @click="row.wallet.userId !== null && confirmReclaim(row.wallet.userId, row.wallet.address ?? row.rewardWallet?.address ?? null)">Récupérer les deux</button>
+                  <button type="button" :disabled="loading || walletJob?.enabled !== true || !walletIsFunded(row.wallet) || row.wallet.userId === null" @click="row.wallet.userId !== null && grantNft(row.wallet.userId, batchBadgeCode)">NFT sur le wallet principal</button>
+                  <button type="button" class="danger" :disabled="walletJob?.enabled !== true || (!walletIsFunded(row.wallet) && !walletIsFunded(row.rewardWallet)) || loading || walletJob?.state === 'running' || row.wallet.userId === null" @click="row.wallet.userId !== null && confirmReclaim(row.wallet.userId, row.wallet.address ?? row.rewardWallet?.address ?? null)">Récupérer les fonds</button>
                   <button type="button" class="danger" :disabled="loading || row.wallet.userId === null || !inactiveUserIds.includes(row.wallet.userId)" @click="row.wallet.userId !== null && deleteInactive([row.wallet.userId])">Supprimer</button>
                 </td>
               </tr>
