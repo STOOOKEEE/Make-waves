@@ -1,0 +1,100 @@
+# Tide pitch research 05: product claims, demo storyboard, wallet funding, vision ladder, team
+
+Audited on 2026-09-16 against `main` (commit 0939069, 262 commits since 2026-06-21) and against the production API at `api.tidetrade.xyz`. Every VERIFIED line names the file or the live endpoint. Every PARTIAL or NOT TRUE line says exactly what is missing so the deck never states it. No em dashes.
+
+## 1. Claim audit
+
+| # | Claim | Verdict | Evidence |
+|---|---|---|---|
+| 1 | 16 lessons, 4 tracks, EN and FR | VERIFIED | 16 files in `apps/web/src/data/learn/articles/`; tracks and bilingual blocks in `apps/web/src/data/learn/index.ts`, `types.ts` (parity enforced at compile time) |
+| 2 | Guided tutorial that cannot write to the server | VERIFIED, but the count is 33 steps, not 19 | `apps/web/src/data/tutorial/index.ts` exports `STEP_COUNT = STEPS.length` = 33 (checked at runtime with tsx). `TutorialView.vue` receives `SandboxFeed`, a read-only pick of `markets`, `history`, `bookDepth`; calling a write route does not compile. The roadmap page and `docs/PITCH.md` still say 19 steps: update them or say "a 33-step tutorial" |
+| 3 | $10,000 starting capital | VERIFIED | `packages/core/src/constants.ts` `PAPER_STARTING_EQUITY = 10_000` |
+| 4 | Top 250 markets via CoinGecko | VERIFIED | `apps/api/src/feed/coingecko-markets.ts` (`per_page` up to 250, `market_cap_desc`); production `GET /markets` returned 249 symbols on 2026-09-16 |
+| 5 | Perps up to 100x, isolated margin, liquidation | PARTIAL | Engine accepts 1..100x: `packages/core/src/constants.ts` `MAX_PAPER_LEVERAGE = 100`, `position/validate.ts`. The terminal slider is capped at 20x: `DashboardView.vue` line 2294 `max="20"`. Liquidation is computed in the tutorial sandbox (`apps/web/src/lib/sandbox/engine.ts`) and PnL is floored at minus margin on close in the backend, but there is no automatic server-side liquidation of live paper positions (CLAUDE.md debt note). Safe wording: "leverage up to 20x in the terminal, engine validated to 100x, isolated margin, loss capped at the margin" |
+| 6 | Prediction markets | NOT TRUE | `grep -ri prediction` over `packages/`, `apps/api/src`, `apps/web/src` finds only lesson prose, the giveaway terms and the roadmap page copy. No market type, no route, no store. The roadmap page and `docs/PITCH.md` assert it in the present tense. Either it ships before 2026-09-21 or the deck says "next" |
+| 7 | Market and limit orders, TP and SL | VERIFIED with a caveat | `DashboardView.vue` (47 references to `takeProfit`/`stopLoss`/`limit`; reasons `market`, `limit`, `tp`, `sl`). Limit, TP and SL are client-side triggers: a closed tab does not trigger them. Only executions reach the backend (`POST /accounts/:id/positions`, `.../close`) |
+| 8 | Maker 0.02 % and taker 0.06 % | VERIFIED | `DashboardView.vue` lines 397 and 398 `PAPER_MAKER_FEE = 0.0002`, `PAPER_TAKER_FEE = 0.0006`; same constants in the sandbox engine |
+| 9 | Real order books from XRPL, Binance, Hyperliquid | VERIFIED | `apps/api/src/feed/binance-book-feed.ts`, `hyperliquid-book-feed.ts`, `gate-book-feed.ts`; XRPL `book_offers` in `packages/xrpl/src/price/book-reader.ts`; route `/book` in `apps/api/src/http/server.ts` |
+| 10 | Leaderboard where humans and AI agents rank on the same numbers | VERIFIED in code, not visible in production data | Agents trade on the owner's paper account: `packages/mcp/src/lib/context.ts` sets `userId: agent.userId`, so an agent's fills flow into the same `equityWithPositions` leaderboard (`packages/core/src/leaderboard/`). Production `GET /leaderboard` on 2026-09-16 showed 96 `paper:` ids plus a few `r...` wallet ids; nothing marks a row as agent-driven. Say "same rails, same leaderboard"; do not claim agents are ranked today |
+| 11 | Competitions with XRP tickets and multisig payouts; a cash-prize competition open now | PARTIAL | Ticket flow verified: `apps/api/src/services/competition-payment-service.ts` (tagged `Payment` to `prizePoolAddress`, verified in a validated ledger), `packages/xrpl/src/tx/multisig.ts` (`buildSignerListSet`), `payout.ts` (`buildPayoutPayments`). Production `GET /competitions` on 2026-09-16: one competition, id `workflow-validation-2026-08`, mode paper, buy-in 0.001 XRP, 55 participants, pot 0.055 XRP (about 7 US cents at 1.28 USD per XRP), status `live`, runs 2026-08-29 to 2026-09-21. It is real and open, but calling it a "cash prize" invites a laugh. Say "first on-chain-ticketed competition, 55 entrants, winner paid by tagged Payment" and only say "cash prize" if a real pot is funded before the demo. No evidence that a payout by multisig quorum has been executed on mainnet yet |
+| 12 | Soulbound XLS-20 NFT badges | VERIFIED | `packages/xrpl/src/tx/nft.ts`: mint with flags omitted (non-transferable, no TransferFee), sell offer for 0 XRP with `tfSellNFToken`, accept. `apps/api/src/badges/`, `BadgeService`, route `POST /badges/:code/claim`. Production route exists (returns 401 without auth) |
+| 13 | Funded onboarding: 2.22 XRP starter, 1.21 XRP to the kept wallet, AccountDelete 0.2 XRP | PARTIAL, the flow changed | `main` now runs a single-wallet path: `apps/api/src/services/paper-wallet-service.ts` line 14 "Nouveau parcours : un seul wallet financé directement par le funder", `PAPER_WALLET_FUNDING_DROPS = 1210000` (1.21 XRP). `first-trade-reward-service.ts` line 20: "le nouveau parcours ne supprime plus le wallet". The First Trade NFT is minted to that same wallet. `ACCOUNT_DELETE_FEE_DROPS` and the reward-wallet code remain for legacy rows and the admin console only. The roadmap page and `docs/PITCH.md` still describe the two-wallet 2.22 XRP flow. Deck must say: "Tide creates the account, encrypts the key, funds it with 1.21 XRP, mints the First Trade NFT into it" |
+| 14 | Live mode: OfferCreate XRP/RLUSD, best execution book plus AMM, slippage bound | VERIFIED | `packages/xrpl/src/exec/` (`planExecution`: `ammPrice`, `bookPrice`, `slippageTolerance`, venue `amm` or `book`, bounded gives/wants); `apps/api/src/exec/plan-live.ts` (RLUSD mainnet issuer `rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De`); routes `POST /exec/plan` and `POST /sign/live-offer`. Production: `GET /config` returns `sourceTag 2606210009`, `quoteSymbol RLUSD`; `POST /exec/plan` answers 401 (mounted, auth required); `POST /sign/connect` answers 201 (Xaman wired) |
+| 15 | SourceTag on every transaction | VERIFIED | 29 `SourceTag` references across `packages/xrpl/src/tx/*.ts`; production SourceTag 2606210009. The attribution indexer (`GET /metrics`) is not mounted in production (404), so we read the tag on-ledger, not from our own dashboard |
+| 16 | 20 MCP tools under a server-enforced mandate | VERIFIED | `packages/mcp/src/tools/`: cancel_order, close_position, get_agent_status, get_balance, get_competition, get_competition_leaderboard, get_config, get_history, get_leaderboard, get_mandate, get_market, get_markets, get_orderbook, get_portfolio, get_positions, get_risk_limits, join_competition, list_competitions, open_position, place_order. Guard in `packages/mcp/src/lib/guard.ts`: max leverage, max trades per day, capital, daily loss, kill switch, allowed pairs, each throwing `RISK_LIMIT` before any order. Production `/api/agents` is mounted (401 without auth) |
+| 17 | AES-256-GCM key custody | VERIFIED | `packages/mcp/src/lib/crypto.ts` (`createCipheriv` aes-256-gcm, versioned master key id); used by `paper-wallet-service.ts` line 132 for starter seeds and by `agent-xrpl-account-service.ts` for agent live accounts. Seeds decrypted in memory only to sign |
+| 18 | Test count | VERIFIED: 1,224 tests, 158 files, 0 failures | `pnpm test` run on 2026-09-16. The roadmap page constant `TEST_COUNT = 1213` is stale by 11 |
+| 19 | Type-checking across 8 workspaces | VERIFIED | `apps/api`, `apps/web`, `packages/client`, `contracts`, `core`, `evm`, `mcp`, `xrpl` |
+| 20 | Supabase auth | VERIFIED | `apps/web/src/composables/useAccountAuth.ts`; `apps/api/src/main.ts` line 552 `readExternalAuthConfig` (Supabase URL and publishable key). Production write routes answer 401 without a token |
+| 21 | Giveaway page | VERIFIED | `#/giveaway` in `useRoute.ts`; "AirPods Max" appears 20 times in the production bundle |
+| 22 | Admin console | VERIFIED, dev only | `App.vue` line 31 and `useRoute.ts` `DEV_ROUTES`: `/admin` is absent from the production build |
+| 23 | Roadmap page at `#/roadmap` | Merged on `main`, NOT deployed | The production bundle (`index-p_OyV896.js`) contains 0 occurrences of "Tide brings the traders". Last production deploy documented on 2026-08-27 (`docs/devlogs.md`). Redeploy before the jury opens the link |
+| 24 | On-chain perp vault (bonus, not in the pitch text) | EXISTS as testnet-grade code | `packages/contracts/src/MarginVault.sol` with Foundry unit and invariant tests, `packages/evm` viem adapter and settlement service. Built for the XRPL EVM sidechain (`docs/ROADMAP-PERP-V2.md`). Useful as proof that the DEX v0 "off-chain matching, on-chain money" is not a slide |
+
+Deployed versus branch: every feature branch is fully merged (`feat/front-app`, `feat/giveaway-airpods-max`, `feat/roadmap-page` are 0 commits ahead of `main`). What is live at tidetrade.xyz is the 2026-08-27 build: landing, Tide School, tutorial, terminal, portfolio, leaderboard, competitions, giveaway, Live planner, Xaman connect, badges, agent routes. Not in production: the roadmap page, the attribution `/metrics` indexer, and anything committed after 2026-08-27.
+
+## 2. Demo storyboard, 3 minutes
+
+Rule: everything that spends real XRP or depends on a public feed is pre-recorded. Everything else is live.
+
+| Time | Step | Path | Live or recorded |
+|---|---|---|---|
+| 0:00 | Landing, one sentence: "Learn to trade. Then prove it on XRPL." | `tidetrade.xyz` | Live |
+| 0:15 | Learn: open Tide School, show the four tracks, click one lesson | `#/learn`, `#/learn/what-is-a-perpetual` | Live (static content, no API) |
+| 0:35 | Tutorial: jump to the perp chapter, open a 10x long, press "accelerate", watch the liquidation line get hit, loss capped at the margin | `#/tutorial/<perp-liquidation-step>` (deep link by step id) | Recorded backup, live if the price feed answers. The sandbox falls back to frozen candles silently, so live is acceptable |
+| 1:05 | Tutorial: the 1 % risk rule refuses a 13.5 % position, accepts 0.42 % | same view, two steps later | Live |
+| 1:20 | Prove: open the terminal, show the funded-wallet gate (deck is blurred until the wallet exists), click "Create my Paper wallet" | `#/dashboard`, `WalletEntryModal` | RECORDED. This calls `POST /accounts/:id/paper-wallet/claim`, which spends 1.21 real XRP and is capped by `TIDE_PAPER_WALLET_MAX_DAILY`. Record it once with the explorer tab open on the funding Payment and its SourceTag |
+| 1:40 | Place a spot order on XRP/RLUSD, then open a perp; the First Trade badge appears in Portfolio; claim it and show the NFT on an explorer | `#/dashboard` then `#/portfolio` | RECORDED (NFT mint and accept are mainnet transactions). Live for the paper order only |
+| 2:10 | Leaderboard: rank, equity, PnL, the competition with 55 entrants and on-chain tickets | `#/leaderboard`, `#/competitions` | Live (read only) |
+| 2:25 | AI agent: show the mandate form (max capital, daily loss, trades, leverage, kill switch), ask the chat agent for a 10x trade, it is capped at the mandate's 3x | `#/agent` if wired; otherwise recorded from a dev build | RECORDED. `AgentView` is not routed in production (CLAUDE.md debt); do not attempt live |
+| 2:45 | Trade: flip the Paper/Live toggle, the terminal turns amber, connect Xaman, the server returns a bounded `OfferCreate` with the SourceTag, sign it | `#/dashboard` Live mode, `SignModal` | RECORDED with a real mainnet swap and its hash on the explorer. A live signature in front of a jury depends on Xaman push and network latency |
+| 2:58 | Close on the explorer: one account, one tag, one track record | XRPL explorer tab on the demo account | Live tab, already open |
+
+Prerequisites: redeploy `main` so the tutorial step ids and roadmap page match; fund the demo account before the day; keep a demo account already past the wallet gate so the live paper order at 1:40 works without spending XRP on stage.
+
+## 3. The "Why we fund wallets" slide
+
+- The hackathon counts XRPL accounts and tagged transactions, and a learner has neither. Tide turns a lesson into an account: on the first explicit click, Tide generates the key, encrypts it with AES-256-GCM under a versioned master key, and funds the account with 1.21 XRP from a dedicated hot wallet (`paper-wallet-service.ts`). The backend refuses every paper order until that funding is confirmed, so every active paper trader is a funded mainnet account by construction.
+- Unit economics: 1.21 XRP per learner, about 1.55 USD at 1.28 USD per XRP (CoinGecko, 2026-09-16). 1.20 XRP is the base reserve plus the first NFT page, 0.01 XRP is fee margin. The XRP stays in the learner's account; Tide spends the reserve, the ledger keeps it as the user's balance. A funded pilot of 300 accounts costs 363 XRP.
+- Nothing is spent until the human acts: the first trade unlocks the First Trade badge, and only an explicit claim mints the soulbound XLS-20 NFT into that account. No transaction is generated on the learner's behalf, no artificial OfferCreate, no wash volume (`docs/PAPER-WALLET-MAINNET.md` point 6).
+- Abuse is bounded by config, not by hope: `TIDE_PAPER_WALLET_MAX_WALLETS` (pilot 300) and `TIDE_PAPER_WALLET_MAX_DAILY` (pilot 25) are re-read from SQLite before every Payment, submissions are serialised, one XRPL address cannot be linked to several paper sessions, linked wallets share one reward history, external claims have a daily cap, and the server refuses to boot without the mainnet acknowledgement and a cold recovery address.
+- Three keys, three blast radii: a hot funder that holds only the campaign budget, a dedicated NFT issuer, a cold recovery address. A user with a wallet connects Xaman or GemWallet instead and Tide never holds their key. Result: the account is the first line of an on-chain track record, and it was earned by a lesson and a trade, not bought on an exchange.
+
+Do not put "2.22 XRP" or "AccountDelete" on the slide; that is the retired two-wallet flow.
+
+## 4. Vision ladder: from prototype to company
+
+| Rung | What it becomes | What already exists in code | What is still a plan |
+|---|---|---|---|
+| 1. Funded traders (H1 2027) | Pass a paper evaluation under risk rules, trade a Tide-funded XRPL account, share results | The rules engine: `packages/mcp/src/lib/guard.ts` enforces max capital, daily loss, trades per day, leverage, allowed pairs and kill switch before every call; mandates with expiry in `mandate-service.ts`; custodial accounts with encrypted keys (`agent-xrpl-account-service.ts`); Live planner on the native DEX (`plan-live.ts`); competitions with entry snapshots and ranking (`packages/core/src/competition/`) | Applying the agent guard to human accounts, the evaluation product, capital allocation policy, the legal wrapper. Never say "prop firm" |
+| 2. The Tide DEX v0 then v1 | Off-chain matching with margin and settlement in RLUSD on the ledger, then on-chain matching | Perp domain: `packages/core/src/position/` (PnL, equity with positions, validation, loss floored at margin); maker and taker fees; the on-chain margin vault `packages/contracts/src/MarginVault.sol` with invariant tests and a viem settlement service (`packages/evm`), built for the EVM sidechain; multisig primitives (`packages/xrpl/src/tx/multisig.ts`) | A matching engine with a real order book, the RLUSD clearing account on L1, funding rates, risk engine for real money, the regulatory perimeter (custodial by construction) |
+| 3. An open on-chain credential | Track-record NFTs readable by any XRPL app: rank, weeks active, competitions won | Badge catalogue and merit derivation (`apps/api/src/badges/`), soulbound XLS-20 mint, offer and accept (`packages/xrpl/src/tx/nft.ts`), weekly reward service (`weekly-reward-service.ts`), NFT metadata route | Badge types beyond First Trade and Weekly Trade Proof, a public verifier, third-party consumers |
+| 4. Classrooms and third-party tournaments (B2B) | A teacher opens a class, every student gets a funded account, classes compete; educators and XRPL projects run their own tournaments on the multisig pool | Competition engine with configurable buy-in, rake ratio, payout weights, memo-tagged tickets (`competition-service.ts`, `competition-payment-service.ts`); funded onboarding with caps; admin console with operator segmentation (`admin-service.ts`); bilingual curriculum | Class and organisation entities, a creator flow for competitions, pricing, sales |
+
+Each rung reuses the rung below it, which is the real argument: the code paths are shared, not forked.
+
+## 5. Team facts (from the repository only)
+
+- Two contributors in `git log`: Armand Sechon (handle STOOOKEEE, university e-mail domain `edu.devinci.fr`, 215 commits) and Eli Benbaruk (handle Rabin-joie, 47 commits). Repository started 2026-06-21, 262 commits on `main` by 2026-09-14.
+- Roles as documented in `docs/ROADMAP.md` and CLAUDE.md: Armand owns the XRPL and backend track (xrpl.js, Xaman, SourceTag, multisig, indexer, custody, production deployment via Docker on his host); Eli owns product, design, front-end direction and the pitch (memory notes: "Eli owns design/front").
+- Team size stated in CLAUDE.md: 2 to 3, full time for the 90-day hackathon.
+- Production is self-hosted with Docker Compose at `tidetrade.xyz` and `api.tidetrade.xyz` (`docs/devlogs.md`, deploy of 2026-08-27).
+- No other names, bios, prior companies or credentials appear in the repo. Do not invent any.
+
+## Summary
+
+1. 1,224 tests pass on `main` (158 files); the roadmap page still says 1,213.
+2. NOT TRUE: prediction markets. No code exists; the roadmap page and PITCH.md assert them in the present tense. Ship or say "next".
+3. PARTIAL: "up to 100x". The engine validates 100x, the terminal slider stops at 20x; there is no automatic server-side liquidation.
+4. PARTIAL: funded onboarding is now one wallet funded with 1.21 XRP, no second wallet, no AccountDelete; the "2.22 XRP" story on the roadmap page is the retired flow.
+5. PARTIAL: the tutorial has 33 steps, not 19.
+6. PARTIAL: the only open competition has a 0.001 XRP buy-in, 55 entrants and a 0.055 XRP pot; real, on-chain-ticketed, but not a "cash prize" anyone would respect unless a pot is funded before the demo. No multisig payout has been observed on mainnet.
+7. PARTIAL: humans and agents share the leaderboard by design, but no agent row is visible in production data today.
+8. Caveat: limit, TP and SL are client-side triggers; only executions reach the server.
+9. The roadmap page is merged but not deployed; production is the 2026-08-27 build. Redeploy before the jury.
+10. Production confirms: SourceTag 2606210009, RLUSD quote, Live planner and Xaman mounted, 249 markets, badges and agent routes mounted behind auth; the attribution `/metrics` indexer is not enabled in prod.
+11. VERIFIED and safe to say: 16 lessons, 4 tracks, EN and FR, $10,000, top 250, 0.02/0.06 % fees, real books from XRPL, Binance and Hyperliquid, soulbound XLS-20 badges, 20 MCP tools with server-side guard and kill switch, AES-256-GCM custody, three-key separation, 8 workspaces type-checked, admin console dev-only.
+12. Bonus asset for the DEX story: `MarginVault.sol` with Foundry invariant tests and a viem settlement service already exist for the EVM sidechain.
+13. Demo: pre-record the wallet claim (spends 1.21 XRP), the NFT claim, the agent chat (AgentView not routed in prod) and the Live swap; run School, tutorial, paper order and leaderboard live.
+14. Wallet slide: 1.21 XRP per learner (about 1.55 USD), stays in the user's account, caps 300 total and 25 per day re-read before each Payment, no auto-generated volume, three separate keys.
+15. Team: two committers, Armand (XRPL, backend, deploy) and Eli (product, design, front, pitch); no bios in the repo.

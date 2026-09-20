@@ -1,0 +1,18 @@
+{
+  "name": "@tide/xrpl",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "ripple-keypairs": "^2.0.0",
+    "xrpl": "^4.0.0"
+  }
+}

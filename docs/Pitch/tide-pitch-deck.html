@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tide brings the traders</title>
+<meta name="description" content="Tide pitch deck for Make Waves on XRPL 2026: the merit-based on-ramp to trading on the XRP Ledger.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* ===== Tide deck. Brand tokens from docs/BRAND.md / tokens.css. Single visual world: blue ground, dark panels. ===== */
+:root{
+  --blue:#4f6aff; --blue-dk:#3f57e6; --panel:#16161b; --panel2:#1f1f26;
+  --text:#ffffff; --soft:rgba(255,255,255,.6); --mut:rgba(255,255,255,.38);
+  --line:rgba(255,255,255,.08); --line2:rgba(255,255,255,.16); --line3:rgba(255,255,255,.22);
+  --up:#bff6ce; --down:#ffb9ac; --gold:#ffd66b; --live:#ff9d3c;
+  --disp:"Archivo",Helvetica,Arial,sans-serif; --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--blue);color:var(--text);font-family:var(--disp);font-weight:500;overflow:hidden;-webkit-font-smoothing:antialiased}
+.grain{position:fixed;inset:0;pointer-events:none;z-index:50;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ---- stage: authored at 1920x1080, scaled uniformly ---- */
+.viewport{position:fixed;inset:0;overflow:hidden}
+.stage{position:absolute;left:0;top:0;width:1920px;height:1080px;transform-origin:0 0}
+.slide{position:absolute;inset:0;padding:96px;display:none;flex-direction:column}
+.slide.active{display:flex}
+.body{flex:1;display:flex;flex-direction:column;min-height:0}
+
+/* ---- type ---- */
+.eyebrow{font-family:var(--mono);font-size:17px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);display:flex;gap:28px;align-items:center}
+.eyebrow b{color:var(--text);font-weight:500}
+.giant{font-weight:900;text-transform:uppercase;letter-spacing:-.035em;line-height:.86;font-size:176px;margin:0;text-wrap:balance}
+.giant.xl{font-size:160px}
+.giant.md{font-size:108px}
+.h1{font-weight:800;letter-spacing:-.03em;line-height:.98;font-size:66px;margin:0;max-width:1240px;text-wrap:balance}
+.h1.narrow{max-width:880px}
+.lead{font-size:28px;line-height:1.35;color:var(--soft);max-width:900px;margin:0}
+.lead strong{color:var(--text);font-weight:700}
+p{margin:0}
+.num{font-family:var(--mono);font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono)}
+.up{color:var(--up)} .down{color:var(--down)} .gold{color:var(--gold)} .amber{color:var(--live)}
+.small{font-size:20px;color:var(--soft);line-height:1.4}
+
+/* ---- panels and grids ---- */
+.panel{background:var(--panel);border-radius:18px;padding:32px 36px;position:relative;overflow:hidden}
+.panel.deep{background:var(--panel2)}
+.panel.white{background:var(--text);color:var(--panel)}
+.panel.white .label{color:rgba(22,22,27,.55)}
+.bento{display:grid;gap:14px}
+.label{font-family:var(--mono);font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.kpi .label{margin-bottom:22px}
+.kpi .v{font-family:var(--mono);font-weight:700;letter-spacing:-.03em;font-size:112px;line-height:.9;font-variant-numeric:tabular-nums}
+.kpi .v.sm{font-size:64px}
+.kpi .d{margin-top:14px;font-size:20px;color:var(--soft);line-height:1.35}
+.pill{display:inline-flex;align-items:center;gap:10px;border:1.5px solid rgba(255,255,255,.4);border-radius:100px;padding:8px 18px;font-family:var(--mono);font-size:15px;letter-spacing:.12em;text-transform:uppercase}
+.pill.white{background:var(--text);color:var(--blue);border-color:var(--text);font-weight:700}
+.pill.live{border-color:var(--live);color:var(--live)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--up);box-shadow:0 0 0 4px rgba(191,246,206,.16)}
+.dot.live{background:var(--live);box-shadow:0 0 0 4px rgba(255,157,60,.18)}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:16px}
+.list li{position:relative;padding-left:48px;font-size:24px;line-height:1.35;color:var(--soft)}
+.list li::before{content:"·";position:absolute;left:0;top:-2px;font-family:var(--mono);font-weight:700;color:var(--text);font-size:30px;line-height:1}
+.list li strong{color:var(--text);font-weight:700}
+.two,.body.two{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:start;flex:1;min-height:0}
+.rule{height:1px;background:var(--line3);width:100%}
+
+/* ---- section kicker (replaces the mono eyebrow on content slides) ---- */
+.kicker{font-weight:900;text-transform:uppercase;letter-spacing:-.03em;font-size:44px;line-height:1;color:rgba(255,255,255,.55);margin:0}
+.kicker b{color:var(--text);font-weight:900}
+.ladder{display:flex;flex-direction:column;gap:12px}
+.rung{display:grid;grid-template-columns:70px 1fr 1fr;align-items:center;gap:24px;background:var(--panel);border-radius:16px;padding:20px 30px}
+.rung .i{font-family:var(--mono);font-weight:700;font-size:20px;color:var(--mut)}
+.rung .a{font-size:26px;font-weight:800;letter-spacing:-.02em;color:var(--text);line-height:1.1}
+.rung .b{font-size:19px;color:var(--soft);line-height:1.3}
+.rung .b span{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--up);display:block;margin-bottom:4px}
+.rung.top{background:var(--text)}
+.rung.top .a{color:var(--panel)} .rung.top .b{color:rgba(22,22,27,.7)} .rung.top .i{color:var(--blue)} .rung.top .b span{color:var(--blue)}
+/* ---- cover ---- */
+.cover .brand{display:flex;align-items:center;gap:18px}
+.cover .brand img{width:56px;height:56px}
+.cover .brand span{font-weight:900;letter-spacing:-.02em;font-size:34px}
+.cover .body{justify-content:flex-end}
+.cover .tag{display:flex;gap:16px;align-items:center;margin-top:44px}
+
+/* ---- three step flow ---- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;flex:1;min-height:0}
+.step{display:flex;flex-direction:column;gap:18px}
+.step .n{font-family:var(--mono);font-size:15px;letter-spacing:.14em;color:var(--mut)}
+.step h3{font-size:36px;font-weight:800;letter-spacing:-.03em;margin:0;line-height:1}
+.step .small{font-size:19px}
+.step .facts{display:grid;grid-template-columns:1fr auto;gap:8px 20px;margin-top:auto;font-size:17px;color:var(--soft);border-top:1px solid var(--line2);padding-top:18px}
+.step .facts .num{color:var(--text);font-size:17px;text-align:right}
+.step.live{outline:1.5px solid var(--live);outline-offset:-1.5px}
+.step.live .n{color:var(--live)}
+
+/* ---- screenshots ---- */
+.shot{border-radius:18px;overflow:hidden;background:var(--panel);position:relative;border:1px solid var(--line2)}
+.shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left}
+.callouts{display:flex;flex-direction:column;gap:18px}
+.co{display:grid;grid-template-columns:44px 1fr;gap:16px;align-items:start}
+.co .k{width:36px;height:36px;border-radius:50%;background:var(--text);color:var(--blue);font-family:var(--mono);font-weight:700;font-size:16px;display:grid;place-items:center}
+.co p{font-size:23px;line-height:1.35;color:var(--soft)}
+.co p strong{color:var(--text)}
+
+/* ---- ledger flow ---- */
+.flow{display:grid;grid-template-columns:1fr 60px 1fr 60px 1fr;align-items:center;gap:0}
+.node{background:var(--panel);border-radius:18px;padding:28px 32px;min-height:190px;display:flex;flex-direction:column;gap:10px}
+.node .label{margin-bottom:4px}
+.node h4{margin:0;font-size:28px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+.node p{font-size:19px;color:var(--soft);line-height:1.35}
+.arrow{display:grid;place-items:center;color:var(--text);font-family:var(--mono);font-size:26px}
+.txtag{display:inline-block;border:1px solid var(--line3);border-radius:8px;padding:6px 10px;font-family:var(--mono);font-size:14px;letter-spacing:.06em;color:var(--text);margin-top:6px;width:max-content}
+
+/* ---- the wall ---- */
+.wall{display:flex;flex-direction:column;gap:10px}
+.brick{display:grid;grid-template-columns:52px 1fr;align-items:center;gap:16px;background:var(--panel);border-radius:12px;padding:16px 22px;font-size:22px;color:var(--soft)}
+.brick .i{font-family:var(--mono);font-weight:700;font-size:16px;color:var(--mut)}
+.brick s{text-decoration-color:var(--down);text-decoration-thickness:2px;color:var(--soft)}
+.brick.tide{background:var(--text);color:var(--panel);font-weight:700}
+.brick.tide .i{color:var(--blue)}
+
+/* ---- timeline ---- */
+.timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;flex:1;min-height:0}
+.tl{display:flex;flex-direction:column;gap:16px;border-top:3px solid var(--line3);padding-top:22px}
+.tl.now{border-top-color:var(--up)}
+.tl .when{font-family:var(--mono);font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut)}
+.tl.now .when{color:var(--up)}
+.tl h3{margin:0;font-size:32px;font-weight:800;letter-spacing:-.03em;line-height:1}
+.tl ul{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:12px}
+.tl li{font-size:20px;line-height:1.3;color:var(--soft);padding-left:18px;position:relative}
+.tl li::before{content:"";position:absolute;left:0;top:11px;width:6px;height:6px;border-radius:50%;background:var(--text)}
+.tl li strong{color:var(--text)}
+.tl .built{margin-top:auto;font-family:var(--mono);font-size:14px;line-height:1.5;color:var(--mut);border-top:1px solid var(--line2);padding-top:12px}
+
+/* ---- tables ---- */
+table{border-collapse:collapse;width:100%}
+th{font-family:var(--mono);font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);text-align:left;padding:0 18px 14px 0;border-bottom:1px solid var(--line2);font-weight:500}
+td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);font-size:21px;line-height:1.3;color:var(--soft);vertical-align:top}
+td:first-child{color:var(--text);font-weight:700}
+td.mono{font-family:var(--mono);font-size:19px;color:var(--text)}
+
+/* ---- chart bits ---- */
+svg text{font-family:var(--mono)}
+
+/* ---- chrome ---- */
+.progress{position:fixed;left:0;top:0;height:4px;background:var(--text);width:0;z-index:60;transition:width .3s var(--ease)}
+.counter{position:fixed;left:24px;bottom:18px;font-family:var(--mono);font-size:13px;letter-spacing:.14em;color:rgba(255,255,255,.6);z-index:60;display:flex;gap:18px;align-items:center}
+.counter kbd{font-family:var(--mono);border:1px solid rgba(255,255,255,.3);border-radius:6px;padding:2px 7px;font-size:11px}
+.notes{position:fixed;right:24px;bottom:18px;width:560px;max-height:40vh;overflow:auto;background:var(--panel);color:var(--soft);border-radius:14px;padding:18px 22px;font-size:15px;line-height:1.5;z-index:70;display:none;border:1px solid var(--line2)}
+.notes .t{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+body.show-notes .notes{display:block}
+aside.speaker{display:none}
+button:focus-visible,a:focus-visible{outline:2px solid var(--text);outline-offset:3px}
+
+/* ---- reveal ---- */
+.slide.active .rv{animation:rv .9s var(--ease) both}
+.slide.active .rv:nth-child(2){animation-delay:.08s}
+.slide.active .rv:nth-child(3){animation-delay:.16s}
+.slide.active .rv:nth-child(4){animation-delay:.24s}
+@keyframes rv{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.slide.active .rv{animation:none}.progress{transition:none}}
+
+/* ---- print ---- */
+@media print{
+  @page{size:1920px 1080px;margin:0}
+  html,body{height:auto;overflow:visible;background:var(--blue)}
+  .viewport{position:static;inset:auto;overflow:visible;display:block}
+  .stage{transform:none!important;position:static;width:1920px;height:auto}
+  .slide{position:relative;inset:auto;display:flex!important;width:1920px;height:1080px;overflow:hidden;page-break-after:always;break-after:page;background:var(--blue)}
+  .slide:last-child{page-break-after:auto;break-after:auto}
+  .slide.active .rv,.rv{animation:none!important;opacity:1!important;transform:none!important}
+  .grain,.progress,.counter,.notes{display:none!important}
+}
+</style>
+</head>
+<body>
+<div class="grain"></div>
+<div class="progress" id="progress"></div>
+<div class="viewport"><div class="stage" id="stage">
+
+<!-- 01 COVER -->
+<section class="slide cover" data-name="Cover">
+  <div class="eyebrow"><span class="brand"><img src="assets/logo.svg" alt="Tide wave mark"><span>TIDE</span></span><span style="margin-left:auto">Make Waves 2026 · tidetrade.xyz</span></div>
+  <div class="body">
+    <h1 class="giant xl rv">Learn to trade.<br>Prove it.<br>Get funded.<br>On the ledger.</h1>
+    <p class="lead rv" style="margin-top:40px;max-width:1100px;font-size:30px;color:var(--text)">Tide is the merit-based on-ramp to trading on the XRP Ledger. Free to learn, paid by results, live on mainnet.</p>
+  </div>
+  <aside class="speaker">One sentence, then the problem. Do not describe the product yet.</aside>
+</section>
+
+<!-- 02 PROBLEM -->
+<section class="slide" data-name="Problem">
+  <h2 class="kicker">Problem</h2>
+  <div class="body">
+    <h3 class="h1 rv" style="margin-top:36px">A generation is learning to trade by losing money. Every place it could practise is a dead end.</h3>
+    <div class="bento rv" style="grid-template-columns:1fr 1fr 1fr;margin-top:64px">
+      <div class="panel kpi"><div class="label">Crypto owners worldwide</div><div class="v sm">741 M</div><div class="d">49 % of Gen Z plan to buy some this year. Their first instrument is a perp, not a stock.</div></div>
+      <div class="panel kpi"><div class="label">Retail accounts that lose money</div><div class="v sm down">74 to 89 %</div><div class="d">The warning every EU broker must print. $150 B liquidated in crypto in 2025.</div></div>
+      <div class="panel kpi"><div class="label">Simulators that lead somewhere</div><div class="v sm down">0</div><div class="d">School games end at a score. Exchange demos end at "deposit". XRPL apps start at "connect a funded wallet".</div></div>
+    </div>
+  </div>
+  <aside class="speaker">Sources in the research memos: Crypto.com 2025, Gemini 2025, ESMA, CoinGlass. The point: demand for learning is huge and unserved, and the venues that train people are the venues that profit when they lose.</aside>
+</section>
+
+<!-- 03 INSIGHT -->
+<section class="slide" data-name="Insight">
+  <h2 class="kicker">Insight</h2>
+  <div class="body" style="justify-content:center">
+    <h3 class="giant rv" style="font-size:136px">Every simulator<br>stops at the<br>simulation.<br><span style="color:var(--panel)">Tide's ends<br>on the ledger.</span></h3>
+  </div>
+  <aside class="speaker">The thesis in eleven words. A learner leaves with a funded XRPL account, a proof of first trade nobody can fake, prizes paid on-chain, and next, real capital. The score has consequences. That is what makes people come, stay, and pay.</aside>
+</section>
+
+<!-- 04 PRODUCT -->
+<section class="slide" data-name="Product">
+  <h2 class="kicker">Product</h2>
+  <div class="body" style="margin-top:32px">
+    <h3 class="giant md rv" style="margin-bottom:28px">Learn. Prove. Trade.</h3>
+    <div class="steps">
+      <div class="panel step rv">
+        <div class="n">01 · LEARN · FREE, NO ACCOUNT</div>
+        <h3>A school and a guided sandbox</h3>
+        <p class="small">Place a first order, open a 10x perp, get liquidated, then size a position at 1 % risk. Real prices, fake money.</p>
+        <div class="facts"><span>Lessons</span><span class="num">16</span><span>Tutorial steps</span><span class="num">33</span><span>Languages</span><span class="num">EN · FR</span></div>
+      </div>
+      <div class="panel step rv">
+        <div class="n">02 · PROVE · VIRTUAL CAPITAL, REAL PRICES</div>
+        <h3>Paper trading with consequences</h3>
+        <p class="small">Spot and perps on real order books, a leaderboard shared with AI agents, on-chain-ticketed competitions, milestones minted as soulbound NFTs.</p>
+        <div class="facts"><span>Starting capital</span><span class="num">$10,000</span><span>Markets</span><span class="num">Top 250</span><span>Leverage (simulated)</span><span class="num">up to 20x</span></div>
+      </div>
+      <div class="panel step live rv">
+        <div class="n">03 · TRADE · REAL, NON-CUSTODIAL</div>
+        <h3>Live spot on the native DEX</h3>
+        <p class="small">Same terminal, one toggle. A real OfferCreate signed in Xaman or GemWallet, XRP against RLUSD, every transaction tagged. No swap fee.</p>
+        <div class="facts"><span>Quote</span><span class="num">RLUSD</span><span>Swap fee</span><span class="num">0</span><span>Settlement</span><span class="num">3 to 5 s</span></div>
+      </div>
+    </div>
+  </div>
+  <aside class="speaker">One product, two modes. Paper and Live share the feed, the interface and the leaderboard; only settlement differs, so the funnel is a toggle. Demo here: tutorial liquidation, one paper order, the leaderboard.</aside>
+</section>
+
+<!-- 05 FUNDED ACCOUNT -->
+<section class="slide" data-name="Funded account">
+  <h2 class="kicker">The unlock</h2>
+  <div class="body two" style="margin-top:36px;gap:64px;grid-template-columns:1.1fr 1fr">
+    <div>
+      <h3 class="h1 narrow rv">We give every learner a funded XRPL account. It costs us $1.55.</h3>
+      <p class="lead rv" style="margin-top:32px;max-width:820px">Our users come from a lesson, not from an exchange. Six steps and real money stand between a beginner and lesson one on XRPL: <strong>a wallet-and-deposit wall is a paywall on a free school.</strong> So Tide pays the entry, and the reserve stays in the learner's balance.</p>
+      <div class="bento rv" style="grid-template-columns:1fr 1fr;margin-top:32px">
+        <div class="panel white kpi"><div class="label">Tide, per learner</div><div class="v sm">$1.55</div><div class="d" style="color:rgba(22,22,27,.7)">1.21 XRP. Becomes the user's balance.</div></div>
+        <div class="panel kpi"><div class="label">Robinhood, best-ever CAC</div><div class="v sm">$15</div><div class="d">Per funded account. Coinbase pays $10 per referral.</div></div>
+      </div>
+    </div>
+    <div class="wall rv">
+      <div class="brick"><span class="i">01</span><s>Install a wallet app</s></div>
+      <div class="brick"><span class="i">02</span><s>Write down a seed phrase</s></div>
+      <div class="brick"><span class="i">03</span><s>Open an exchange account, pass KYC</s></div>
+      <div class="brick"><span class="i">04</span><s>Buy XRP</s></div>
+      <div class="brick"><span class="i">05</span><s>Withdraw it to the wallet</s></div>
+      <div class="brick"><span class="i">06</span><s>Lock 1 XRP as reserve</s></div>
+      <div class="brick tide"><span class="i">TIDE</span>One click. The account exists, funded, encrypted, and it is yours.</div>
+    </div>
+  </div>
+  <aside class="speaker">The growth model in one slide. We can reach a beginner audience on X because the door is free; a wallet and a deposit in front of it would stop that audience at the door. Mechanics: 1.21 XRP tagged Payment, key AES-256-GCM, no paper order until funded, First Trade NFT minted only after a real fill, caps and one address per person, three separate keys. Every learner becomes a funded, tagged XRPL account: the hackathon metric by construction.</aside>
+</section>
+
+<!-- 06 WHY NOW -->
+<section class="slide" data-name="Why now">
+  <h2 class="kicker">Why now</h2>
+  <div class="body">
+    <h3 class="h1 rv" style="margin-top:36px">The rails just arrived. The crowd did not. The first product that turns learners into XRPL accounts owns the on-ramp.</h3>
+    <div class="bento rv" style="grid-template-columns:1fr 1fr 1fr;margin-top:64px">
+      <div class="panel kpi"><div class="label">Accounts trading the XRPL DEX per day</div><div class="v sm down">1,111</div><div class="d">Down 40 % in a year, while the ledger runs 2.44 M transactions a day. Institutions came. Retail did not.</div></div>
+      <div class="panel kpi"><div class="label">RLUSD, Sept 2026</div><div class="v sm">$2.38 B</div><div class="d">A dollar quote worth trading, a $1.25 B prime broker, $3 B+ of tokenised assets, all in eighteen months.</div></div>
+      <div class="panel kpi"><div class="label">Hyperliquid revenue, 2025</div><div class="v sm">$844 M</div><div class="d">The instruments beginners meet went mainstream. Nobody teaches them. And MCP made agents first-class traders.</div></div>
+    </div>
+  </div>
+  <aside class="speaker">Why has nobody built this before? Until 2025 XRPL had no dollar quote worth trading, no perps culture to teach, and no agent standard. All three arrived in eighteen months. Ripple has put $550 M into about 200 XRPL projects and now funds through XRPL Commons: the ecosystem is paying for exactly this.</aside>
+</section>
+
+<!-- 07 MARKET -->
+<section class="slide" data-name="Market">
+  <h2 class="kicker">Market</h2>
+  <div class="body two" style="margin-top:36px;gap:56px;grid-template-columns:1fr 1.05fr">
+    <div>
+      <h3 class="h1 narrow rv">15 million beginners who would try a free simulator. Two proven end states worth hundreds of millions each.</h3>
+      <div class="panel rv" style="margin-top:32px;padding:28px 32px">
+        <svg viewBox="0 0 700 330" width="700" height="330" aria-label="Market funnel, widths on a log scale">
+          <rect x="0" y="0" width="680" height="50" rx="10" fill="#ffffff" fill-opacity=".95"/>
+          <rect x="0" y="82" width="588" height="50" rx="10" fill="#ffffff" fill-opacity=".75"/>
+          <rect x="0" y="164" width="447" height="50" rx="10" fill="#ffffff" fill-opacity=".55"/>
+          <rect x="0" y="246" width="210" height="50" rx="10" fill="#4f6aff" stroke="#ffffff" stroke-opacity=".6"/>
+          <g font-size="24" font-weight="700">
+            <text x="18" y="34" fill="#16161b">741 M</text><text x="18" y="116" fill="#16161b">≈ 150 M</text><text x="18" y="198" fill="#16161b">≈ 15 M</text><text x="18" y="280" fill="#ffffff">300 k</text>
+          </g>
+          <g font-size="14" fill="rgba(255,255,255,.7)">
+            <text x="0" y="70">Crypto owners, 2025</text>
+            <text x="0" y="152">Reachable in EN and FR retail markets · assumption 20 %</text>
+            <text x="0" y="234">Beginners who would try a free simulator · assumption 10 %</text>
+            <text x="0" y="316">Registered learners, 2027 target · 2 %</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div class="bento" style="grid-template-columns:1fr;gap:14px;align-content:start">
+      <div class="panel kpi rv"><div class="label">Serviceable market, per year</div><div class="v sm">≈ $180 M</div><div class="d">15 M beginners × $12 blended revenue per user (rake, coach, evaluations). Bottom-up, assumptions on the slide.</div></div>
+      <div class="panel kpi rv"><div class="label">End state 1 · funded traders</div><div class="v sm">$329 M</div><div class="d">FTMO's 2024 revenue selling evaluations, $62.5 M net profit, on a 5 to 14 % pass rate.</div></div>
+      <div class="panel kpi rv"><div class="label">End state 2 · the venue</div><div class="v sm">$844 M</div><div class="d">Hyperliquid's 2025 revenue on about $3 T of perps, built by a crowd that trusted it.</div></div>
+    </div>
+  </div>
+  <aside class="speaker">Airbnb-style market: count people, label every assumption. The ceiling reference is Robinhood at $191 revenue per user a year. The two end states are not hypothetical: FTMO and Hyperliquid are the businesses Tide's funnel feeds, and Tide owns the top of that funnel.</aside>
+</section>
+
+<!-- 08 BUSINESS MODEL -->
+<section class="slide" data-name="Business model">
+  <h2 class="kicker">Business model</h2>
+  <div class="body" style="margin-top:36px">
+    <h3 class="h1 rv">Free to learn. We earn when the score has consequences.</h3>
+    <table class="rv" style="margin-top:40px">
+      <thead><tr><th style="width:330px">Revenue line</th><th style="width:150px">When</th><th style="width:560px">Unit economics (assumptions)</th><th>Benchmark</th></tr></thead>
+      <tbody>
+        <tr><td>Tournament buy-ins</td><td class="mono">Now</td><td>8 % rake on a $20 buy-in, 2 tournaments a month: <span class="num" style="color:var(--text)">$3.20</span> per competitor per month</td><td>Poker tournaments take about 10 %</td></tr>
+        <tr><td>AI coach</td><td class="mono">Q4 2026</td><td><span class="num" style="color:var(--text)">$8</span> a month, 5 % of monthly actives</td><td>Duolingo converts 9.2 %</td></tr>
+        <tr><td>Classrooms, hosted competitions</td><td class="mono">Q4 2026</td><td><span class="num" style="color:var(--text)">$5</span> per seat per semester; 5 % fee on hosted prize pools</td><td>1.3 M students a year in three US school simulators</td></tr>
+        <tr><td>Funded-trader evaluations</td><td class="mono">H1 2027</td><td><span class="num" style="color:var(--text)">$99</span> per evaluation, 2 % of learners a year</td><td>FTMO: $155 to $1,080 per evaluation</td></tr>
+        <tr><td>The Tide DEX</td><td class="mono">2027</td><td><span class="num" style="color:var(--text)">2.5 bps</span> net on perp volume; spot on the native DEX stays free</td><td>Hyperliquid: about 2.9 bps</td></tr>
+      </tbody>
+    </table>
+    <div class="bento rv" style="grid-template-columns:1fr 1fr 1fr;margin-top:28px">
+      <div class="panel kpi"><div class="label">2027, 60,000 monthly actives</div><div class="v sm">≈ $1.4 M ARR</div><div class="d">Before any DEX fee. Every line scales linearly with actives.</div></div>
+      <div class="panel kpi"><div class="label">Cost of a learner</div><div class="v sm">$1.55</div><div class="d">The growth budget is the users' first balance.</div></div>
+      <div class="panel kpi"><div class="label">Fee on spot swaps</div><div class="v sm">0</div><div class="d">The school never profits from the learner's losses.</div></div>
+    </div>
+  </div>
+  <aside class="speaker">The order matters: rake now, coach and classrooms next quarter, evaluations in H1 2027, the venue after. The evaluation line is the one FTMO proved scales to hundreds of millions, and the one where a public ledger fixes that industry's trust problem: 80 to 100 such firms vanished in two years.</aside>
+</section>
+
+<!-- 09 WHY WE WIN -->
+<section class="slide" data-name="Why we win">
+  <h2 class="kicker">Why we win</h2>
+  <div class="body" style="margin-top:36px">
+    <h3 class="h1 rv">Nobody else can end the simulation on a public ledger, and nobody else wants to.</h3>
+    <div class="bento rv" style="grid-template-columns:1fr 1fr 1fr;margin-top:56px">
+      <div class="panel"><div class="label">Unfair advantage 1</div><h4 style="margin:18px 0 12px;font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.05">The diploma is an XRPL account</h4><p class="small">Funded, with a soulbound proof of first trade and results paid on the ledger. A CEX demo ends in a deposit to the CEX. TradingView ends in a broker referral. Neither can end on a neutral ledger.</p></div>
+      <div class="panel"><div class="label">Unfair advantage 2</div><h4 style="margin:18px 0 12px;font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.05">The evaluation engine already runs</h4><p class="small">One rule book for humans and AI agents, enforced by the server: max capital, daily loss, trades, leverage, kill switch. Funded-trader firms sell opacity; we sell a public audit trail.</p></div>
+      <div class="panel"><div class="label">Unfair advantage 3</div><h4 style="margin:18px 0 12px;font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.05">Zero to the native DEX, no exchange in between</h4><p class="small">No KYC, no purchase, no swap fee, every transaction tagged. Built on primitives that have been on mainnet for years. The ecosystem funds this; no exchange will.</p></div>
+    </div>
+    <p class="lead rv" style="margin-top:36px;max-width:1600px">The code is copyable. <strong>The corpus is not:</strong> track records on the ledger, outcome data from lesson one to funded account, cohorts and classrooms. It compounds with every learner.</p>
+  </div>
+  <aside class="speaker">Competition in one line each: simulators and academies end at a score or a referral; exchange demos end at a deposit and a demo that delays it is a cost centre; FTMO and Breakout (Kraken) sell the evaluation and keep pass rates opaque; Coinbase for Agents is real money, Coinbase only; XRPL front-ends serve people who already trade.</aside>
+</section>
+
+<!-- 10 VISION -->
+<section class="slide" data-name="Vision">
+  <h2 class="kicker">Vision</h2>
+  <div class="body two" style="margin-top:36px;gap:56px;grid-template-columns:1fr 1.2fr">
+    <div>
+      <h3 class="h1 narrow rv">Every trader on XRPL starts on Tide. The school builds the crowd; the crowd gets the venue.</h3>
+      <p class="lead rv" style="margin-top:32px;max-width:820px">Hyperliquid proved a venue is not a matching engine, it is a crowd that trusts it. Tide trains the crowd first, funds the best of it, then gives it a venue: <strong>TideTrade, the perpetuals exchange of the XRP Ledger.</strong></p>
+    </div>
+    <div class="ladder rv">
+      <div class="rung top"><span class="i">04</span><div class="a">The Tide DEX: the Hyperliquid of XRPL</div><div class="b"><span>Exists today</span>The paper perps engine, an on-chain margin vault, multisig builders.</div></div>
+      <div class="rung"><span class="i">03</span><div class="a">Funded traders, H1 2027</div><div class="b"><span>Exists today</span>The mandate guard, encrypted accounts, the Live planner.</div></div>
+      <div class="rung"><span class="i">02</span><div class="a">An open credential any XRPL app can read</div><div class="b"><span>Exists today</span>Soulbound badges, merit derived from results.</div></div>
+      <div class="rung"><span class="i">01</span><div class="a">Leagues, classrooms, tournaments run by others</div><div class="b"><span>Exists today</span>Funded onboarding, the competition engine.</div></div>
+    </div>
+  </div>
+  <aside class="speaker">Every rung reuses the code of the one below: the risk rules on agents become the evaluation; the paper perps engine becomes the venue v0 with RLUSD settlement on a multisig; matching moves on-chain when native programmability ships. Tokenised stocks join the terminal as they land on XRPL.</aside>
+</section>
+
+<!-- 11 TRACTION AND ASK -->
+<section class="slide" data-name="Traction and ask">
+  <h2 class="kicker">Where we are</h2>
+  <div class="body two" style="margin-top:36px;gap:56px;grid-template-columns:1fr 1.15fr">
+    <div>
+      <h3 class="h1 narrow rv">Live on mainnet after 90 days. The next 180 turn a school into a funnel.</h3>
+      <div class="bento rv" style="grid-template-columns:1fr 1fr;margin-top:32px">
+        <div class="panel kpi"><div class="label">Automated tests</div><div class="v sm">1,224</div><div class="d">No smart contract, no bridge, no oracle.</div></div>
+        <div class="panel kpi"><div class="label">Commits in 90 days</div><div class="v sm">262</div><div class="d">Full time since 21 June.</div></div>
+      </div>
+      <ul class="list rv" style="margin-top:28px">
+        <li><strong>In production:</strong> funded onboarding, an on-chain-ticketed competition, Live spot on the native DEX, AI agents under mandate, Tide School.</li>
+      </ul>
+    </div>
+    <div class="timeline" style="grid-template-columns:1fr 1fr;flex:none">
+      <div class="tl rv"><div class="when">Q4 2026 · the ask funds this</div><h3>Education at scale</h3><ul><li>Video lessons, workshops, webinars with XRPL guests.</li><li>The AI coach: a review after every trade.</li><li>Weekly leagues, promotion and relegation.</li><li>Tide for classrooms and tournaments run by others.</li><li>A funded pilot of learner accounts.</li></ul></div>
+      <div class="tl rv"><div class="when">H1 2027</div><h3>Funded traders</h3><ul><li>The evaluation, under the rules already enforced on agents.</li><li>Real capital on the native DEX.</li><li>A reputation any XRPL app can read.</li><li>Then the venue.</li></ul></div>
+    </div>
+  </div>
+  <aside class="speaker">The ask: the Make Waves grand prize and a place in The Aquarium fund the Q4 programme and the first funded-learner cohort; a seed round funds the school at scale and the evaluation product. Put the amount you want on this slide before the VC version goes out. No traction numbers on the slide by policy; the ledger and the Make Waves leaderboard are the source of truth.</aside>
+</section>
+
+<!-- 12 CLOSING -->
+<section class="slide" data-name="Closing">
+  <h2 class="kicker">Tide</h2>
+  <div class="body" style="justify-content:center">
+    <h3 class="giant rv" style="font-size:150px">The XRP Ledger<br>has the exchange.<br><span style="color:var(--panel)">Tide brings<br>the traders.</span></h3>
+    <div class="tag rv" style="display:flex;gap:16px;align-items:center;margin-top:52px">
+      <span class="pill white">Open Tide · tidetrade.xyz</span>
+      <span class="pill">Live on XRPL mainnet</span>
+    </div>
+  </div>
+  <aside class="speaker">Echo the thesis. Then stop talking. Hard questions and every source are in docs/Pitch/research.</aside>
+</section>
+
+</div></div>
+
+<div class="counter" id="counter"><span id="ctext">01 / 12</span><span><kbd>←</kbd> <kbd>→</kbd> navigate · <kbd>N</kbd> notes · <kbd>F</kbd> fullscreen · <kbd>P</kbd> print</span></div>
+<div class="notes" id="notes"><div class="t">Speaker notes</div><div id="ntext"></div></div>
+
+<script>
+(function(){
+  var slides=[].slice.call(document.querySelectorAll('.slide'));
+  var stage=document.getElementById('stage'), progress=document.getElementById('progress');
+  var ctext=document.getElementById('ctext'), ntext=document.getElementById('ntext');
+  var i=0;
+  function pad(n){return (n<10?'0':'')+n}
+  function fit(){
+    var vw=window.innerWidth, vh=window.innerHeight, s=Math.min(vw/1920, vh/1080);
+    stage.style.transform='translate('+((vw-1920*s)/2)+'px,'+((vh-1080*s)/2)+'px) scale('+s+')';
+  }
+  function show(n,push){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach(function(s,k){s.classList.toggle('active',k===i)});
+    progress.style.width=((i+1)/slides.length*100)+'%';
+    ctext.textContent=pad(i+1)+' / '+pad(slides.length)+'  ·  '+(slides[i].dataset.name||'');
+    var a=slides[i].querySelector('aside.speaker'); ntext.textContent=a?a.textContent:'(no notes)';
+    if(push!==false){ try{ history.replaceState(null,'','#'+(i+1)); }catch(e){} }
+  }
+  function fromHash(){ var h=parseInt(location.hash.replace('#',''),10); show(isNaN(h)?0:h-1,false); }
+  window.addEventListener('resize',fit); fit(); fromHash();
+  window.addEventListener('hashchange',fromHash);
+  document.addEventListener('keydown',function(e){
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    switch(e.key){
+      case 'ArrowRight': case ' ': case 'PageDown': case 'Enter': e.preventDefault(); show(i+1); break;
+      case 'ArrowLeft': case 'PageUp': case 'Backspace': e.preventDefault(); show(i-1); break;
+      case 'Home': show(0); break;
+      case 'End': show(slides.length-1); break;
+      case 'n': case 'N': document.body.classList.toggle('show-notes'); break;
+      case 'f': case 'F': if(document.fullscreenElement){document.exitFullscreen()} else if(document.documentElement.requestFullscreen){document.documentElement.requestFullscreen()} break;
+      case 'p': case 'P': window.print(); break;
+    }
+  });
+  stage.addEventListener('click',function(e){ if(e.target.closest('a,button')) return; show(e.clientX < window.innerWidth*0.15 ? i-1 : i+1); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "@tide/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Contrats Solidity Tide (perp v2, XRPL EVM Sidechain) — Foundry",
+  "scripts": {
+    "build": "forge build",
+    "test": "forge test",
+    "fmt": "forge fmt"
+  }
+}

@@ -1,0 +1,64 @@
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Build
+dist/
+.output/
+.nuxt/
+.nitro/
+*.tsbuildinfo
+
+# Tests / couverture
+coverage/
+
+# Env & secrets (jamais commit)
+.env
+.env.*
+!.env.example
+api.env
+deploy/api.env
+!deploy/api.env.example
+
+# Base SQLite locale (runtime)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / éditeur
+.DS_Store
+._*
+.idea/
+.vscode/
+.history/
+
+# Caches Python (scripts de skills)
+__pycache__/
+*.pyc
+
+# Outils Claude Code (local, hors dépôt)
+.claude/
+skills-lock.json
+
+# tokensave (code graph MCP, local)
+.tokensave/
+
+# Growth: PNG maîtres régénérables via growth/assets/make_meme*.py (les JPG sont les fichiers postés)
+growth/assets/*.png
+!growth/assets/2026-07-30-stop-loss-tab.png
+
+# Captures et logs du CLI Playwright (scratch de debug, jamais versionné)
+.playwright-cli/
+
+# Outils opérateur locaux
+/scripts/
+/apps/api/src/scripts/bootstrap-paper-wallet-testnet.ts
+/apps/api/src/scripts/reclaim-managed-wallets.ts
+/docs/XRPL-ACTIVITY-PLAN.md
+/deploy/docker-compose.server-private.yml

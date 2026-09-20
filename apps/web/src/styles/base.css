@@ -1,0 +1,316 @@
+/* ===== TIDE — base globale partagée (app) =====
+ * Portée depuis design_site/app.css. Reset, fond bleu, app-bar, cartes, pills,
+ * segmented control, helpers, grain, reveal. Source de vérité : docs/BRAND.md.
+ */
+@import "./tokens.css";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  background: var(--blue);
+  color: var(--text);
+  font-family: var(--disp);
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.4;
+  font-size: 14px;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+::selection {
+  background: #fff;
+  color: var(--blue);
+}
+
+/* helpers */
+.mono {
+  font-family: var(--mono);
+}
+.up {
+  color: var(--up);
+}
+.down {
+  color: var(--down);
+}
+.soft {
+  color: var(--soft);
+}
+.lab {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--soft);
+}
+
+/* grain film global */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* APP BAR */
+.appbar {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  height: 64px;
+  padding: 0 22px;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--blue);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.brand .mk {
+  width: 30px;
+  height: 30px;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+}
+.brand .mk img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+}
+.tabs a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.6);
+  min-height: 34px;
+  padding: 7px 13px;
+  border: 1px solid transparent;
+  border-radius: 100px;
+  background: transparent;
+  transition:
+    color 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+  cursor: pointer;
+}
+.tabs a:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+.tabs a.on {
+  color: #fff;
+  background: rgba(17, 22, 48, 0.13);
+  border-color: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    inset 0 0 0 1px rgba(79, 106, 255, 0.12),
+    0 4px 14px rgba(23, 31, 77, 0.12);
+}
+.spacer {
+  flex: 1;
+}
+.rankchip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 100px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+.rankchip b {
+  font-family: var(--mono);
+  font-weight: 700;
+}
+.equity {
+  text-align: right;
+  line-height: 1.2;
+}
+.equity .v {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: 15px;
+}
+.equity .l {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.7);
+}
+.wallet {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: #fff;
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 100px;
+  padding: 10px 16px;
+  border: none;
+}
+.wallet .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--up);
+}
+@media (max-width: 1000px) {
+  .tabs {
+    display: none;
+  }
+}
+
+/* CARD + PAGE */
+.card {
+  background: var(--panel);
+  border-radius: 18px;
+  overflow: hidden;
+}
+.page {
+  padding: 6px 22px 40px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 24px 2px 26px;
+}
+.page-head h1 {
+  font-weight: 900;
+  text-transform: uppercase;
+  font-size: clamp(34px, 5vw, 64px);
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+}
+.page-head p {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 15px;
+  margin-top: 8px;
+  max-width: 440px;
+}
+
+/* reveal au scroll (directive v-reveal → .rv + .in) */
+.rv {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.8s var(--ease),
+    transform 0.8s var(--ease);
+  transition-delay: var(--rv-delay, 0ms);
+}
+.rv.in {
+  opacity: 1;
+  transform: none;
+}
+
+/* pills / segmented / boutons */
+.seg {
+  display: inline-flex;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 100px;
+  padding: 4px;
+}
+.seg button {
+  border: none;
+  background: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 100px;
+  transition: 0.25s;
+}
+.seg button.on {
+  background: #fff;
+  color: var(--blue);
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 100px;
+  padding: 13px 24px;
+  border: none;
+  transition:
+    transform 0.3s var(--ease),
+    filter 0.2s;
+}
+.btn-white {
+  background: #fff;
+  color: var(--blue);
+}
+.btn-white:hover {
+  transform: translateY(-2px);
+}
+.btn-dark {
+  background: var(--panel);
+  color: #fff;
+}
+.btn-line {
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  background: none;
+}
+.btn-line:hover {
+  background: #fff;
+  color: var(--blue);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+  }
+  .rv {
+    opacity: 1;
+    transform: none;
+  }
+}

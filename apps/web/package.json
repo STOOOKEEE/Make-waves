@@ -1,0 +1,27 @@
+{
+  "name": "@tide/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@gemwallet/api": "^3.8.0",
+    "@supabase/supabase-js": "^2.110.8",
+    "@tide/client": "workspace:*",
+    "@tide/core": "workspace:*",
+    "three": "^0.180.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.11",
+    "happy-dom": "^20.10.6",
+    "vite": "^6.4.3",
+    "vue-tsc": "^2.1.10"
+  }
+}

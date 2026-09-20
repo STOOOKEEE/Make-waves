@@ -1,0 +1,57 @@
+# Déploiement Tide : front (nginx) + backend (node) + Cloudflare Tunnel.
+# Rien publié sur l'hôte — Cloudflare atteint les services par le réseau privé.
+#
+#   (depuis deploy/, sur le serveur)
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Requiert dans deploy/.env : TUNNEL_TOKEN=...
+# Requiert dans deploy/api.env : les secrets backend (voir api.env.example).
+# Routes à créer dans le dashboard Cloudflare (tunnel) :
+#   tidetrade.xyz      -> http://web:80
+#   api.tidetrade.xyz  -> http://api:3000
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    image: tide-api:prod
+    container_name: tide-api
+    restart: unless-stopped
+    env_file: ./api.env
+    environment:
+      PORT: "3000"
+      TIDE_DB_PATH: /data/tide.db
+    volumes:
+      - tide-data:/data
+    # Console opérateur privée : jamais accessible sur une interface publique.
+    # Depuis le Mac, utiliser un tunnel SSH vers 127.0.0.1:3101.
+    ports:
+      - "127.0.0.1:3101:3101"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/config',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  web:
+    image: nginx:alpine
+    container_name: tide-web
+    restart: unless-stopped
+    volumes:
+      - ./dist:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: tide-app-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - web
+      - api
+
+volumes:
+  tide-data:

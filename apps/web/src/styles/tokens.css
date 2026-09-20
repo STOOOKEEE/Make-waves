@@ -1,0 +1,46 @@
+/* ===== TIDE — design tokens (« terminal éditorial ») =====
+ * Source de vérité : docs/BRAND.md (ex design_site/DESIGN.md).
+ * Fond cornflower blue, panneaux sombres en bento, Archivo + JetBrains Mono.
+ */
+:root {
+  /* Marque & surfaces */
+  --blue: #4f6aff; /* accent primaire / fond app / CTA / états actifs */
+  --blue-dk: #3f57e6; /* variante pressée / hover */
+  --panel: #16161b; /* surface des cartes (sur le bleu) */
+  --panel2: #1f1f26; /* surface enfoncée / hover de ligne / inputs */
+
+  /* Texte */
+  --text: #ffffff;
+  --soft: rgba(255, 255, 255, 0.6);
+  --mut2: rgba(255, 255, 255, 0.38);
+
+  /* Lignes */
+  --line: rgba(255, 255, 255, 0.08);
+  --line2: rgba(255, 255, 255, 0.16);
+  /* Filets éditoriaux : séparateurs pleine largeur des pages de contenu
+     (marquee, étapes, grille de features). Plus marqués que --line2 parce
+     qu'ils structurent la page au lieu de border un composant. */
+  --line3: rgba(255, 255, 255, 0.22);
+
+  /* Sémantique — RÉSERVÉE à la donnée, jamais décoratif */
+  --up: #bff6ce; /* gain / P&L positif / long / hausse */
+  --down: #ffb9ac; /* perte / P&L négatif / short */
+  --gold: #ffd66b; /* récompenses / cagnottes / podium */
+
+  /* État Live (argent réel) — signal de mode, pas décoratif */
+  --live: #ff9d3c; /* ambre : mode Live actif, garde-fou anti-erreur */
+  --live-dk: #e8862a;
+
+  /* Guidage pédagogique — RÉSERVÉ au projecteur du tutoriel.
+     Rouge franc, volontairement distinct du corail `--down` : ici la couleur
+     ne dit pas « perte », elle dit « regarde ici ». */
+  --guide: #ff4d3d;
+  --guide-glow: rgba(255, 77, 61, 0.3);
+
+  /* Typo */
+  --disp: "Archivo", Helvetica, Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Motion */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
